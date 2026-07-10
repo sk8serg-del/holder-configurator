@@ -8,6 +8,7 @@
   function $(id) { return document.getElementById(id); }
 
   var parts = [];        // [{type, d, w, h, chamfer, qtyMode:'max'|'qty', qty, allowRotate}]
+  var ctrlHoles = [];    // [{x, y, d, on, name}] — позиции из каталога, наличие/диаметр задаёт технолог
   var lastResult = null; // результат последней раскладки; сбрасывается при изменении параметров
 
   // ---------- каталог ----------
@@ -48,6 +49,53 @@
     $("clPP").value = d.partPart;
     $("clPE").value = d.partEdge;
     $("clPC").value = d.partControl;
+  }
+
+  // ---------- контрольные отверстия ----------
+
+  function rebuildControlHoles() {
+    ctrlHoles = currentControl().holes.map(function (h) {
+      return {
+        x: h.x, y: h.y, d: h.d, on: true,
+        name: h.name || ("X " + h.x + ", Y " + h.y)
+      };
+    });
+    renderControlHoles();
+  }
+
+  function renderControlHoles() {
+    var host = $("controlList");
+    host.innerHTML = "";
+    ctrlHoles.forEach(function (h) {
+      var div = document.createElement("div");
+      div.className = "ctrl-row";
+      div.innerHTML =
+        '<label><input type="checkbox" class="c-on"' + (h.on ? " checked" : "") + ">" + h.name + "</label>" +
+        '<span class="hint">Ø, мм</span>' +
+        '<input type="number" class="c-d" min="0.1" step="0.1" value="' + h.d + '"' + (h.on ? "" : " disabled") + ">";
+      div.querySelector(".c-on").addEventListener("change", function (e) {
+        h.on = e.target.checked;
+        div.querySelector(".c-d").disabled = !h.on;
+        markDirty();
+      });
+      div.querySelector(".c-d").addEventListener("input", function (e) {
+        h.d = parseFloat(e.target.value);
+        markDirty();
+      });
+      host.appendChild(div);
+    });
+  }
+
+  function activeControlHoles() {
+    return ctrlHoles.filter(function (h) { return h.on; }).map(function (h) {
+      return { x: h.x, y: h.y, d: h.d };
+    });
+  }
+
+  function controlSummary() {
+    var act = ctrlHoles.filter(function (h) { return h.on; });
+    if (!act.length) return "нет";
+    return act.map(function (h) { return h.name + " Ø" + h.d; }).join("; ");
   }
 
   // ---------- детали ----------
@@ -169,6 +217,9 @@
       }
       if (p.qtyMode === "qty" && !(p.qty >= 1)) errs.push(n + "укажите количество (целое ≥ 1).");
     });
+    ctrlHoles.forEach(function (h) {
+      if (h.on && !(h.d > 0)) errs.push("Контрольное отверстие «" + h.name + "»: укажите диаметр.");
+    });
     ["clPP", "clPE", "clPC"].forEach(function (id) {
       var v = parseFloat($(id).value);
       if (!(v >= 0)) errs.push("Все зазоры должны быть числами ≥ 0.");
@@ -180,10 +231,10 @@
     var errs = validate();
     if (errs.length) { setStatus(errs.join("\n"), "error"); return; }
 
-    var disc = currentDisc(), ctrl = currentControl();
+    var disc = currentDisc();
     var opts = {
       discDiameter: disc.diameter,
-      controlHoles: ctrl.holes,
+      controlHoles: activeControlHoles(),
       clearances: {
         pp: parseFloat($("clPP").value),
         pe: parseFloat($("clPE").value),
@@ -205,7 +256,7 @@
     function p2(x) { return (x < 10 ? "0" : "") + x; }
     lastResult = {
       opts: opts, placed: res.placed, perPart: res.perPart,
-      disc: disc, control: ctrl,
+      disc: disc, controlName: controlSummary(),
       orderId: "PD-" + now.getFullYear() + p2(now.getMonth() + 1) + p2(now.getDate()) + "-" + p2(now.getHours()) + p2(now.getMinutes()),
       dateISO: now.toISOString(),
       dateHuman: p2(now.getDate()) + "." + p2(now.getMonth() + 1) + "." + now.getFullYear() + " " + p2(now.getHours()) + ":" + p2(now.getMinutes())
@@ -235,7 +286,7 @@
     $("svgHost").innerHTML = HC.renderSVG({
       discDiameter: lastResult.disc.diameter,
       edgeClearance: lastResult.opts.clearances.pe,
-      controlHoles: lastResult.control.holes,
+      controlHoles: lastResult.opts.controlHoles,
       placed: lastResult.placed,
       showNumbers: $("showNumbers").checked
     });
@@ -255,8 +306,8 @@
         contact: $("custContact").value.trim()
       },
       disc: { id: lr.disc.id, name: lr.disc.name, diameter: lr.disc.diameter },
-      controlName: lr.control.name,
-      controlHoles: lr.control.holes,
+      controlName: lr.controlName,
+      controlHoles: lr.opts.controlHoles,
       clearances: lr.opts.clearances,
       placed: lr.placed,
       partsSummary: lr.perPart.map(function (r, i) {
@@ -296,6 +347,7 @@
 
   fillDiscSelect();
   fillControlSelect();
+  rebuildControlHoles();
   applyDefaultClearances();
   parts = [defaultPart()];
   renderParts();
@@ -303,10 +355,14 @@
 
   $("discSelect").addEventListener("change", function () {
     fillControlSelect();
+    rebuildControlHoles();
     applyDefaultClearances();
     markDirty();
   });
-  $("controlSelect").addEventListener("change", markDirty);
+  $("controlSelect").addEventListener("change", function () {
+    rebuildControlHoles();
+    markDirty();
+  });
   ["clPP", "clPE", "clPC"].forEach(function (id) { $(id).addEventListener("input", markDirty); });
   $("clReset").addEventListener("click", function () { applyDefaultClearances(); markDirty(); });
   $("addPart").addEventListener("click", function () { parts.push(defaultPart()); renderParts(); markDirty(); });
@@ -324,7 +380,7 @@
     var svg = HC.renderSVG({
       discDiameter: lastResult.disc.diameter,
       edgeClearance: lastResult.opts.clearances.pe,
-      controlHoles: lastResult.control.holes,
+      controlHoles: lastResult.opts.controlHoles,
       placed: lastResult.placed,
       showNumbers: true
     });

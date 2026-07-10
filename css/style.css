@@ -151,6 +151,17 @@ input[type="checkbox"], input[type="radio"] {
 .qty-line label { margin: 0; display: inline-flex; align-items: center; }
 .qty-line .p-qty { width: 70px; }
 
+.ctrl-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.ctrl-row label { margin: 0; flex: 1; display: inline-flex; align-items: center; }
+.ctrl-row .c-d { width: 80px; margin-top: 0; }
+.ctrl-row .hint { white-space: nowrap; }
+
 .clearances { display: flex; gap: 8px; }
 .clearances label { flex: 1; }
 
