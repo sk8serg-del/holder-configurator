@@ -129,6 +129,7 @@
       '<option value="oct"' + (p.type === "oct" ? " selected" : "") + ">Прямоугольная с фаской</option>" +
       "</select></label>" +
       '<div class="dims">' + dims + "</div>" +
+      '<div class="part-preview">' + HC.renderPartPreview(p) + "</div>" +
       '<div class="qty-line">' +
       '<label><input type="radio" name="qty' + i + '" value="max"' + (p.qtyMode === "max" ? " checked" : "") + ">максимум</label>" +
       '<label><input type="radio" name="qty' + i + '" value="qty"' + (p.qtyMode === "qty" ? " checked" : "") + ">количество:</label>" +
@@ -142,11 +143,14 @@
       var el = div.querySelector(sel);
       if (el) el.addEventListener(ev, fn);
     }
+    function refreshPreview() {
+      div.querySelector(".part-preview").innerHTML = HC.renderPartPreview(p);
+    }
     on(".p-type", "change", function (e) { p.type = e.target.value; renderParts(); markDirty(); });
-    on(".p-d", "input", function (e) { p.d = parseFloat(e.target.value); markDirty(); });
-    on(".p-w", "input", function (e) { p.w = parseFloat(e.target.value); markDirty(); });
-    on(".p-h", "input", function (e) { p.h = parseFloat(e.target.value); markDirty(); });
-    on(".p-ch", "input", function (e) { p.chamfer = parseFloat(e.target.value); markDirty(); });
+    on(".p-d", "input", function (e) { p.d = parseFloat(e.target.value); refreshPreview(); markDirty(); });
+    on(".p-w", "input", function (e) { p.w = parseFloat(e.target.value); refreshPreview(); markDirty(); });
+    on(".p-h", "input", function (e) { p.h = parseFloat(e.target.value); refreshPreview(); markDirty(); });
+    on(".p-ch", "input", function (e) { p.chamfer = parseFloat(e.target.value); refreshPreview(); markDirty(); });
     on(".p-qty", "input", function (e) { p.qty = parseInt(e.target.value, 10); markDirty(); });
     on(".p-rot", "change", function (e) { p.allowRotate = e.target.checked; markDirty(); });
     on(".p-del", "click", function () { parts.splice(i, 1); renderParts(); markDirty(); });

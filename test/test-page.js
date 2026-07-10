@@ -41,8 +41,19 @@ check("контрольные отверстия: 3 строки", d.querySelect
 check("дефолтный Ø контрольного = 24.7",
   d.querySelectorAll("#controlList .c-d")[1].value === "24.7",
   d.querySelectorAll("#controlList .c-d")[1].value);
-check("зазоры предзаполнены", $("clPP").value === "2" && $("clPE").value === "2" && $("clPC").value === "3");
+check("зазоры предзаполнены (6/3/6)", $("clPP").value === "6" && $("clPE").value === "3" && $("clPC").value === "6",
+  $("clPP").value + "/" + $("clPE").value + "/" + $("clPC").value);
 check("есть строка детали", d.querySelectorAll("#partsList .part-row").length === 1);
+
+// --- предпросмотр детали ---
+check("предпросмотр круга отрисован", d.querySelector(".part-preview svg") !== null &&
+  d.querySelector(".part-preview").innerHTML.indexOf("Ø10") !== -1);
+const dInput = d.querySelector("#partsList .p-d");
+dInput.value = "12";
+dInput.dispatchEvent(new w.Event("input"));
+check("предпросмотр обновился при вводе", d.querySelector(".part-preview").innerHTML.indexOf("Ø12") !== -1);
+dInput.value = "10";
+dInput.dispatchEvent(new w.Event("input"));
 
 // --- раскладка ---
 $("custName").value = "Тестов Т.Т.";
@@ -73,14 +84,16 @@ check("в отчёте есть имя технолога", rep.indexOf("Тес�
 check("в отчёте контрольные без выключенного центра", rep.indexOf("Ø222 / 7°") !== -1 && rep.indexOf("Центр Ø") === -1);
 
 // --- смена диска и типа детали ---
+$("clPE").value = "9"; // испортим, чтобы проверить сброс к дефолту
 $("discSelect").value = "disc-100";
 $("discSelect").dispatchEvent(new w.Event("change"));
-check("после смены диска зазоры обновились", $("clPE").value === "5", $("clPE").value);
+check("после смены диска зазоры сброшены к дефолту", $("clPE").value === "3", $("clPE").value);
 const typeSel = d.querySelector("#partsList .p-type");
 typeSel.value = "oct";
 typeSel.dispatchEvent(new w.Event("change"));
 check("для восьмиугольника есть поле фаски", d.querySelector("#partsList .p-ch") !== null);
 check("для восьмиугольника есть галочка поворота", d.querySelector("#partsList .p-rot") !== null);
+check("предпросмотр восьмиугольника — полигон", d.querySelector(".part-preview polygon") !== null);
 $("packBtn").click();
 check("раскладка восьмиугольников прошла", $("summary").textContent.indexOf("размещено") !== -1, $("summary").textContent);
 

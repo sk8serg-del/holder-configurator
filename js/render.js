@@ -30,6 +30,33 @@
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
+  // Мини-предпросмотр формы детали для карточки в форме заказа.
+  // spec = {type:'circle'|'rect'|'oct', d, w, h, chamfer}
+  HC.renderPartPreview = function (spec) {
+    var w = spec.type === "circle" ? spec.d : spec.w;
+    var h = spec.type === "circle" ? spec.d : spec.h;
+    if (!(w > 0) || !(h > 0)) return "";
+    var pad = Math.max(w, h) * 0.14;
+    var vb = fmt(-w / 2 - pad) + " " + fmt(-h / 2 - pad) + " " + fmt(w + 2 * pad) + " " + fmt(h + 2 * pad);
+    var sw = Math.max(w, h) / 50;
+    var col = PART_COLORS[0];
+    var out = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + vb + '" font-family="system-ui, Segoe UI, sans-serif">'];
+    if (spec.type === "circle") {
+      out.push('<circle cx="0" cy="0" r="' + fmt(spec.d / 2) + '" fill="' + col.fill + '" stroke="' + col.stroke + '" stroke-width="' + fmt(sw) + '"/>');
+    } else {
+      var poly = spec.type === "rect"
+        ? HC.geom.rectPoly(0, 0, spec.w, spec.h, 0)
+        : HC.geom.octPoly(0, 0, spec.w, spec.h, spec.chamfer || 0, 0);
+      var pts = poly.map(function (q) { return fmt(q.x) + "," + fmt(q.y); }).join(" ");
+      out.push('<polygon points="' + pts + '" fill="' + col.fill + '" stroke="' + col.stroke + '" stroke-width="' + fmt(sw) + '"/>');
+    }
+    var label = spec.type === "circle" ? "Ø" + fmt(spec.d) : fmt(spec.w) + "×" + fmt(spec.h);
+    var fs = Math.min(h * 0.45, (w * 1.5) / label.length);
+    out.push('<text x="0" y="0" font-size="' + fmt(fs) + '" text-anchor="middle" dominant-baseline="central" fill="#1a3550">' + esc(label) + "</text>");
+    out.push("</svg>");
+    return out.join("");
+  };
+
   HC.renderSVG = function (model) {
     var R = model.discDiameter / 2;
     var pad = Math.max(4, R * 0.08);

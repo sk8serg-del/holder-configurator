@@ -141,6 +141,15 @@ input[type="checkbox"], input[type="radio"] {
 .dims { display: flex; gap: 8px; }
 .dims label { flex: 1; }
 
+.part-preview {
+  height: 64px;
+  display: flex;
+  justify-content: center;
+  margin: 2px 0 8px;
+}
+.part-preview:empty { display: none; }
+.part-preview svg { height: 100%; max-width: 100%; }
+
 .qty-line {
   display: flex;
   gap: 12px;

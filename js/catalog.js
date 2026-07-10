@@ -1,4 +1,4 @@
-/*
+﻿/*
  * catalog.js — справочник подложек (подложкодержателей).
  *
  * ЭТО ЕДИНСТВЕННЫЙ ФАЙЛ, КОТОРЫЙ НУЖНО ПРАВИТЬ ПРИ ДОБАВЛЕНИИ НОВЫХ ПОДЛОЖЕК.
@@ -49,7 +49,7 @@
           },
           { id: "none", name: "Без контрольных отверстий", holes: [] }
         ],
-        defaults: { partPart: 2, partEdge: 2, partControl: 3 }
+        defaults: { partPart: 6, partEdge: 3, partControl: 6 }
       },
       {
         id: "disc-100",
@@ -67,7 +67,7 @@
             ]
           }
         ],
-        defaults: { partPart: 2, partEdge: 5, partControl: 3 }
+        defaults: { partPart: 6, partEdge: 3, partControl: 6 }
       },
       {
         id: "disc-150",
@@ -87,7 +87,7 @@
             ]
           }
         ],
-        defaults: { partPart: 2, partEdge: 6, partControl: 3 }
+        defaults: { partPart: 6, partEdge: 3, partControl: 6 }
       }
     ]
   };
