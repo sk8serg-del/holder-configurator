@@ -1,7 +1,65 @@
+/* Палитра — через токены; тёмная тема переопределяет только их.
+   Печатный отчёт всегда светлый (см. блок «отчёт»). */
 :root {
   --accent: #2b6cb0;
+  --accent-contrast: #ffffff;
   --err: #c53030;
   --ok: #2f855a;
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --text: #1f2933;
+  --muted: #7b8794;
+  --label: #44505e;
+  --border: #cbd2d9;
+  --row-bg: #fafbfc;
+  --row-border: #e0e4ea;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #4e8fce;
+    --accent-contrast: #0d1219;
+    --err: #e88585;
+    --ok: #7fc79b;
+    --bg: #14181e;
+    --panel: #1e242c;
+    --text: #dde3ea;
+    --muted: #8b96a3;
+    --label: #aab4bf;
+    --border: #3b4450;
+    --row-bg: #242b34;
+    --row-border: #333c47;
+  }
+}
+
+:root[data-theme="dark"] {
+  --accent: #4e8fce;
+  --accent-contrast: #0d1219;
+  --err: #e88585;
+  --ok: #7fc79b;
+  --bg: #14181e;
+  --panel: #1e242c;
+  --text: #dde3ea;
+  --muted: #8b96a3;
+  --label: #aab4bf;
+  --border: #3b4450;
+  --row-bg: #242b34;
+  --row-border: #333c47;
+}
+
+:root[data-theme="light"] {
+  --accent: #2b6cb0;
+  --accent-contrast: #ffffff;
+  --err: #c53030;
+  --ok: #2f855a;
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --text: #1f2933;
+  --muted: #7b8794;
+  --label: #44505e;
+  --border: #cbd2d9;
+  --row-bg: #fafbfc;
+  --row-border: #e0e4ea;
 }
 
 * { box-sizing: border-box; }
@@ -10,8 +68,8 @@ body {
   margin: 0;
   font-family: system-ui, "Segoe UI", sans-serif;
   font-size: 14px;
-  background: #eef1f5;
-  color: #1f2933;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .app { max-width: 1200px; margin: 0 auto; padding: 12px 16px; }
@@ -21,9 +79,9 @@ header h1 { font-size: 22px; margin: 8px 0 16px; }
 main { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 
 .panel {
-  background: #fff;
+  background: var(--panel);
   border-radius: 10px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
   padding: 16px;
 }
 
@@ -32,18 +90,19 @@ main { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 
 section { margin-bottom: 20px; }
 
-h2 { font-size: 14px; margin: 0 0 10px; color: #33404f; }
+h2 { font-size: 14px; margin: 0 0 10px; color: var(--label); }
 
-label { display: block; font-size: 13px; margin-bottom: 8px; color: #44505e; }
+label { display: block; font-size: 13px; margin-bottom: 8px; color: var(--label); }
 
 input, select {
   width: 100%;
   padding: 6px 8px;
   margin-top: 2px;
-  border: 1px solid #cbd2d9;
+  border: 1px solid var(--border);
   border-radius: 6px;
   font: inherit;
-  background: #fff;
+  background: var(--panel);
+  color: var(--text);
 }
 
 input[type="checkbox"], input[type="radio"] {
@@ -52,14 +111,14 @@ input[type="checkbox"], input[type="radio"] {
   vertical-align: -1px;
 }
 
-.hint { font-size: 12px; color: #7b8794; }
+.hint { font-size: 12px; color: var(--muted); }
 
 .part-row {
-  border: 1px solid #e0e4ea;
+  border: 1px solid var(--row-border);
   border-radius: 8px;
   padding: 10px;
   margin-bottom: 10px;
-  background: #fafbfc;
+  background: var(--row-bg);
 }
 
 .part-row .row-head {
@@ -72,7 +131,7 @@ input[type="checkbox"], input[type="radio"] {
 .p-del {
   border: none;
   background: none;
-  color: #98a2ae;
+  color: var(--muted);
   font-size: 15px;
   padding: 0 4px;
   cursor: pointer;
@@ -98,14 +157,15 @@ input[type="checkbox"], input[type="radio"] {
 button {
   font: inherit;
   border-radius: 8px;
-  border: 1px solid #cbd2d9;
-  background: #fff;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
   padding: 8px 14px;
   cursor: pointer;
 }
-button:hover:not(:disabled) { border-color: #9aa5b1; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-button.primary:hover:not(:disabled) { background: #245a94; }
+button:hover:not(:disabled) { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+button.primary:hover:not(:disabled) { filter: brightness(0.92); }
 button:disabled { opacity: 0.45; cursor: default; }
 button.link {
   border: none;
@@ -114,6 +174,10 @@ button.link {
   padding: 2px 0;
   font-size: 12px;
   text-decoration: underline;
+}
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 #packBtn { width: 100%; padding: 10px; font-size: 15px; }
@@ -131,7 +195,7 @@ button.link {
   margin-bottom: 8px;
 }
 .summary { font-size: 13px; white-space: pre-line; }
-.numbers-toggle { font-size: 12px; color: #7b8794; white-space: nowrap; }
+.numbers-toggle { font-size: 12px; color: var(--muted); white-space: nowrap; }
 
 .svg-host svg {
   width: 100%;
@@ -142,14 +206,14 @@ button.link {
 
 .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 
-footer { margin: 14px 4px; font-size: 12px; color: #7b8794; }
+footer { margin: 14px 4px; font-size: 12px; color: var(--muted); }
 
-/* ---------- отчёт ---------- */
+/* ---------- отчёт (печать — всегда светлый) ---------- */
 
 #report { display: none; }
 
 #report h1 { font-size: 18px; margin: 0 0 10px; }
-#report h2 { font-size: 14px; margin: 16px 0 6px; }
+#report h2 { font-size: 14px; margin: 16px 0 6px; color: #000; }
 
 .rep-meta td { padding: 2px 12px 2px 0; font-size: 12px; vertical-align: top; }
 .rep-meta td:first-child { color: #555; white-space: nowrap; }
@@ -166,6 +230,6 @@ footer { margin: 14px 4px; font-size: 12px; color: #7b8794; }
 @media print {
   body { background: #fff; }
   .app { display: none; }
-  #report { display: block; color: #000; }
+  #report { display: block; color: #000; background: #fff; }
   .rep-table tr { break-inside: avoid; }
 }
