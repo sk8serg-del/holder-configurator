@@ -101,7 +101,12 @@
   // ---------- детали ----------
 
   function defaultPart() {
-    return { type: "circle", d: 10, w: 20, h: 10, chamfer: 2, qtyMode: "max", qty: 10, allowRotate: true };
+    return {
+      type: "circle", d: 10, w: 20, h: 10, chamfer: 2,
+      qtyMode: "max", qty: 10,
+      orientation: "grid",           // fixed | grid | radial-w | radial-h
+      anchor: "center", anchorD: 150 // расположение при неполном заполнении
+    };
   }
 
   function renderParts() {
@@ -130,14 +135,31 @@
       "</select></label>" +
       '<div class="dims">' + dims + "</div>" +
       '<div class="part-preview">' + HC.renderPartPreview(p) + "</div>" +
+      (p.type !== "circle"
+        ? '<label>Ориентация<select class="p-orient">' +
+          '<option value="fixed"' + (p.orientation === "fixed" ? " selected" : "") + ">фиксированная (без поворота)</option>" +
+          '<option value="grid"' + (p.orientation === "grid" ? " selected" : "") + ">свободная (0° / 90°)</option>" +
+          '<option value="radial-w"' + (p.orientation === "radial-w" ? " selected" : "") + ">радиальная — ширина вдоль радиуса</option>" +
+          '<option value="radial-h"' + (p.orientation === "radial-h" ? " selected" : "") + ">радиальная — высота вдоль радиуса</option>" +
+          "</select></label>"
+        : "") +
       '<div class="qty-line">' +
       '<label><input type="radio" name="qty' + i + '" value="max"' + (p.qtyMode === "max" ? " checked" : "") + ">максимум</label>" +
       '<label><input type="radio" name="qty' + i + '" value="qty"' + (p.qtyMode === "qty" ? " checked" : "") + ">количество:</label>" +
       '<input type="number" class="p-qty" min="1" step="1" value="' + p.qty + '"' + (p.qtyMode === "max" ? " disabled" : "") + ">" +
-      (p.type !== "circle"
-        ? '<label><input type="checkbox" class="p-rot"' + (p.allowRotate ? " checked" : "") + ">разрешить поворот</label>"
-        : "") +
-      "</div>";
+      "</div>" +
+      (p.qtyMode === "qty"
+        ? '<div class="place-line">' +
+          '<label>Расположение<select class="p-anchor">' +
+          '<option value="center"' + (p.anchor === "center" ? " selected" : "") + ">от центра</option>" +
+          '<option value="edge"' + (p.anchor === "edge" ? " selected" : "") + ">от края</option>" +
+          '<option value="diameter"' + (p.anchor === "diameter" ? " selected" : "") + ">по диаметру</option>" +
+          "</select></label>" +
+          (p.anchor === "diameter"
+            ? '<label>Ø расположения, мм<input type="number" class="p-anchor-d" min="1" step="1" value="' + p.anchorD + '"></label>'
+            : "") +
+          "</div>"
+        : "");
 
     function on(sel, ev, fn) {
       var el = div.querySelector(sel);
@@ -152,12 +174,14 @@
     on(".p-h", "input", function (e) { p.h = parseFloat(e.target.value); refreshPreview(); markDirty(); });
     on(".p-ch", "input", function (e) { p.chamfer = parseFloat(e.target.value); refreshPreview(); markDirty(); });
     on(".p-qty", "input", function (e) { p.qty = parseInt(e.target.value, 10); markDirty(); });
-    on(".p-rot", "change", function (e) { p.allowRotate = e.target.checked; markDirty(); });
+    on(".p-orient", "change", function (e) { p.orientation = e.target.value; markDirty(); });
+    on(".p-anchor", "change", function (e) { p.anchor = e.target.value; renderParts(); markDirty(); });
+    on(".p-anchor-d", "input", function (e) { p.anchorD = parseFloat(e.target.value); markDirty(); });
     on(".p-del", "click", function () { parts.splice(i, 1); renderParts(); markDirty(); });
     div.querySelectorAll('input[name="qty' + i + '"]').forEach(function (r) {
       r.addEventListener("change", function (e) {
         p.qtyMode = e.target.value;
-        div.querySelector(".p-qty").disabled = p.qtyMode === "max";
+        renderParts(); // показать/скрыть строку «Расположение»
         markDirty();
       });
     });
@@ -220,6 +244,9 @@
         }
       }
       if (p.qtyMode === "qty" && !(p.qty >= 1)) errs.push(n + "укажите количество (целое ≥ 1).");
+      if (p.qtyMode === "qty" && p.anchor === "diameter" && !(p.anchorD > 0)) {
+        errs.push(n + "укажите диаметр расположения.");
+      }
     });
     ctrlHoles.forEach(function (h) {
       if (h.on && !(h.d > 0)) errs.push("Контрольное отверстие «" + h.name + "»: укажите диаметр.");
@@ -249,7 +276,10 @@
           type: p.type, d: p.d, w: p.w, h: p.h,
           chamfer: p.type === "oct" ? p.chamfer : 0,
           qty: p.qtyMode === "max" ? null : p.qty,
-          allowRotate: p.type !== "circle" && p.allowRotate
+          orientation: p.type === "circle" ? "fixed" : p.orientation,
+          anchor: p.qtyMode === "qty"
+            ? { mode: p.anchor, d: p.anchorD }
+            : { mode: "center" }
         };
       })
     };
@@ -316,9 +346,13 @@
       placed: lr.placed,
       partsSummary: lr.perPart.map(function (r, i) {
         var s = lr.opts.parts[i];
+        var orientNote = {
+          "radial-w": " — радиально, ширина вдоль радиуса",
+          "radial-h": " — радиально, высота вдоль радиуса"
+        }[s.orientation] || "";
         return {
           type: s.type,
-          size: s.type === "circle" ? "Ø" + s.d : s.w + " × " + s.h + (s.type === "oct" ? ", фаска " + s.chamfer : ""),
+          size: (s.type === "circle" ? "Ø" + s.d : s.w + " × " + s.h + (s.type === "oct" ? ", фаска " + s.chamfer : "")) + orientNote,
           requested: r.requested,
           placed: r.placed
         };

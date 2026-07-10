@@ -156,6 +156,78 @@ check("9: oct(фаска 0) эквивалентен rect по расстоян�
     { type: "circle", cx: 30, cy: 0, d: 10 }
   ) - 15) < 1e-6);
 
+// --- 10. Радиальная ориентация: ширина вдоль радиуса, максимум ---
+var opts10 = {
+  discDiameter: 298,
+  controlHoles: [
+    { x: 0, y: 0, d: 23 },
+    { x: -110.173, y: -13.527, d: 24.7 },
+    { x: -43.371, y: -102.176, d: 24.7 }
+  ],
+  clearances: { pp: 6, pe: 3, pc: 6 },
+  parts: [{ type: "rect", w: 20, h: 10, qty: null, orientation: "radial-w" }]
+};
+var res10 = HC.pack(opts10);
+console.log("10) радиально (ширина по R) 20×10 на Ø298: размещено " + res10.placed.length);
+check("10: размещено достаточно (>50)", res10.placed.length > 50, String(res10.placed.length));
+verifyLayout("10", opts10, res10);
+function angDelta(aDeg, bDeg) {
+  var d = Math.abs(aDeg - bDeg) % 180;
+  return Math.min(d, 180 - d);
+}
+check("10: ширина каждой детали — вдоль радиуса", res10.placed.every(function (p) {
+  var th = (Math.atan2(p.cy, p.cx) * 180) / Math.PI;
+  return angDelta(p.rot, th) < 1e-6;
+}));
+
+// --- 11. Радиальная: высота вдоль радиуса (восьмиугольники) ---
+var opts11 = Object.assign({}, opts10, {
+  parts: [{ type: "oct", w: 20, h: 10, chamfer: 2, qty: null, orientation: "radial-h" }]
+});
+var res11 = HC.pack(opts11);
+console.log("11) радиально (высота по R) 20×10×2: размещено " + res11.placed.length);
+check("11: размещены (>30)", res11.placed.length > 30, String(res11.placed.length));
+verifyLayout("11", opts11, res11);
+check("11: высота каждой детали — вдоль радиуса", res11.placed.every(function (p) {
+  var th = (Math.atan2(p.cy, p.cx) * 180) / Math.PI;
+  return angDelta(p.rot, th + 90) < 1e-6;
+}));
+
+// --- 12. Расположение при неполном заполнении: край / центр / диаметр ---
+function radii(res) { return res.placed.map(function (p) { return Math.hypot(p.cx, p.cy); }); }
+var base12 = { discDiameter: 298, controlHoles: [], clearances: { pp: 6, pe: 3, pc: 6 } };
+
+var resEdge = HC.pack(Object.assign({}, base12, {
+  parts: [{ type: "circle", d: 10, qty: 10, anchor: { mode: "edge" } }]
+}));
+check("12: «от края» — все радиусы > 120",
+  resEdge.placed.length === 10 && radii(resEdge).every(function (r) { return r > 120; }),
+  JSON.stringify(radii(resEdge).map(Math.round)));
+
+var resCenter = HC.pack(Object.assign({}, base12, {
+  parts: [{ type: "circle", d: 10, qty: 7, anchor: { mode: "center" } }]
+}));
+check("12: «от центра» — все радиусы < 35",
+  resCenter.placed.length === 7 && radii(resCenter).every(function (r) { return r < 35; }),
+  JSON.stringify(radii(resCenter).map(Math.round)));
+
+var resDia = HC.pack(Object.assign({}, base12, {
+  parts: [{ type: "circle", d: 10, qty: 12, anchor: { mode: "diameter", d: 150 } }]
+}));
+check("12: «по Ø150» — все радиусы 75±16",
+  resDia.placed.length === 12 && radii(resDia).every(function (r) { return Math.abs(r - 75) <= 16; }),
+  JSON.stringify(radii(resDia).map(Math.round)));
+verifyLayout("12-диаметр", base12, resDia);
+
+// --- 13. Радиальная + количество + расположение от края ---
+var res13 = HC.pack(Object.assign({}, base12, {
+  parts: [{ type: "rect", w: 20, h: 10, qty: 8, orientation: "radial-w", anchor: { mode: "edge" } }]
+}));
+check("13: радиально от края — 8 из 8, радиусы > 110",
+  res13.placed.length === 8 && radii(res13).every(function (r) { return r > 110; }),
+  JSON.stringify(radii(res13).map(Math.round)));
+verifyLayout("13", Object.assign({}, base12, { parts: [] }), res13);
+
 console.log("\nВремя: " + (Date.now() - t0) + " мс");
 if (failures) {
   console.log("ПРОВАЛЕНО ПРОВЕРОК: " + failures);

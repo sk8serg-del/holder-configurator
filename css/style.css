@@ -171,6 +171,9 @@ input[type="checkbox"], input[type="radio"] {
 .ctrl-row .c-d { width: 80px; margin-top: 0; }
 .ctrl-row .hint { white-space: nowrap; }
 
+.place-line { display: flex; gap: 8px; margin-top: 8px; }
+.place-line label { flex: 1; margin: 0; }
+
 .clearances { display: flex; gap: 8px; }
 .clearances label { flex: 1; }
 

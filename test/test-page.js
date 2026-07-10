@@ -92,12 +92,35 @@ const typeSel = d.querySelector("#partsList .p-type");
 typeSel.value = "oct";
 typeSel.dispatchEvent(new w.Event("change"));
 check("для восьмиугольника есть поле фаски", d.querySelector("#partsList .p-ch") !== null);
-check("для восьмиугольника есть галочка поворота", d.querySelector("#partsList .p-rot") !== null);
+check("для восьмиугольника есть селект ориентации", d.querySelector("#partsList .p-orient") !== null);
 check("предпросмотр восьмиугольника — полигон", d.querySelector(".part-preview polygon") !== null);
 $("packBtn").click();
 check("раскладка восьмиугольников прошла", $("summary").textContent.indexOf("размещено") !== -1, $("summary").textContent);
 
+// --- радиальная ориентация + количество с расположением от края ---
+const orientSel = d.querySelector("#partsList .p-orient");
+orientSel.value = "radial-w";
+orientSel.dispatchEvent(new w.Event("change"));
+d.querySelector('#partsList input[value="qty"]').click();
+check("появилась строка «Расположение»", d.querySelector("#partsList .p-anchor") !== null);
+const anchorSel = d.querySelector("#partsList .p-anchor");
+anchorSel.value = "edge";
+anchorSel.dispatchEvent(new w.Event("change"));
+const qtyInp = d.querySelector("#partsList .p-qty");
+qtyInp.value = "6";
+qtyInp.dispatchEvent(new w.Event("input"));
+$("packBtn").click();
+check("радиальная раскладка от края: 6 из 6",
+  $("summary").textContent.indexOf("размещено 6 из 6") !== -1, $("summary").textContent);
+
+// --- расположение «по диаметру» показывает поле Ø ---
+const anchorSel2 = d.querySelector("#partsList .p-anchor");
+anchorSel2.value = "diameter";
+anchorSel2.dispatchEvent(new w.Event("change"));
+check("поле Ø расположения появилось", d.querySelector("#partsList .p-anchor-d") !== null);
+
 // --- отправка без настроенного URL даёт понятную ошибку ---
+$("packBtn").click(); // после правок формы раскладываем заново, чтобы кнопки ожили
 $("sendBtn").click();
 setTimeout(() => {
   check("отправка без URL — понятное сообщение", $("sendMsg").textContent.indexOf("не настроена") !== -1, $("sendMsg").textContent);
