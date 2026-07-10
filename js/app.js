@@ -1,0 +1,370 @@
+/*
+ * app.js — состояние формы и связывание модулей.
+ */
+(function (g) {
+  "use strict";
+  var HC = g.HC;
+
+  function $(id) { return document.getElementById(id); }
+
+  var parts = [];        // [{type, d, w, h, chamfer, qtyMode:'max'|'qty', qty, allowRotate}]
+  var lastResult = null; // результат последней раскладки; сбрасывается при изменении параметров
+
+  // ---------- каталог ----------
+
+  function currentDisc() {
+    var id = $("discSelect").value;
+    for (var i = 0; i < HC.CATALOG.discs.length; i++) {
+      if (HC.CATALOG.discs[i].id === id) return HC.CATALOG.discs[i];
+    }
+    return HC.CATALOG.discs[0];
+  }
+
+  function currentControl() {
+    var d = currentDisc();
+    var id = $("controlSelect").value;
+    for (var i = 0; i < d.controlVariants.length; i++) {
+      if (d.controlVariants[i].id === id) return d.controlVariants[i];
+    }
+    return d.controlVariants[0];
+  }
+
+  function fillDiscSelect() {
+    $("discSelect").innerHTML = HC.CATALOG.discs.map(function (d) {
+      return '<option value="' + d.id + '">' + d.name + "</option>";
+    }).join("");
+  }
+
+  function fillControlSelect() {
+    var d = currentDisc();
+    $("controlSelect").innerHTML = d.controlVariants.map(function (v) {
+      return '<option value="' + v.id + '">' + v.name + "</option>";
+    }).join("");
+    $("discInfo").textContent = "Диаметр диска: " + d.diameter + " мм";
+  }
+
+  function applyDefaultClearances() {
+    var d = currentDisc().defaults;
+    $("clPP").value = d.partPart;
+    $("clPE").value = d.partEdge;
+    $("clPC").value = d.partControl;
+  }
+
+  // ---------- детали ----------
+
+  function defaultPart() {
+    return { type: "circle", d: 10, w: 20, h: 10, chamfer: 2, qtyMode: "max", qty: 10, allowRotate: true };
+  }
+
+  function renderParts() {
+    var host = $("partsList");
+    host.innerHTML = "";
+    parts.forEach(function (p, i) { host.appendChild(partRow(p, i)); });
+  }
+
+  function partRow(p, i) {
+    var div = document.createElement("div");
+    div.className = "part-row";
+    var dims = p.type === "circle"
+      ? '<label>Диаметр, мм<input type="number" class="p-d" min="0.1" step="0.1" value="' + p.d + '"></label>'
+      : '<label>Ширина, мм<input type="number" class="p-w" min="0.1" step="0.1" value="' + p.w + '"></label>' +
+        '<label>Высота, мм<input type="number" class="p-h" min="0.1" step="0.1" value="' + p.h + '"></label>' +
+        (p.type === "oct" ? '<label>Фаска, мм<input type="number" class="p-ch" min="0" step="0.1" value="' + p.chamfer + '"></label>' : "");
+
+    div.innerHTML =
+      '<div class="row-head"><strong>Деталь ' + (i + 1) + "</strong>" +
+      (parts.length > 1 ? '<button type="button" class="p-del" title="Удалить деталь">✕</button>' : "") +
+      "</div>" +
+      '<label>Форма<select class="p-type">' +
+      '<option value="circle"' + (p.type === "circle" ? " selected" : "") + ">Круглая</option>" +
+      '<option value="rect"' + (p.type === "rect" ? " selected" : "") + ">Прямоугольная</option>" +
+      '<option value="oct"' + (p.type === "oct" ? " selected" : "") + ">Прямоугольная с фаской</option>" +
+      "</select></label>" +
+      '<div class="dims">' + dims + "</div>" +
+      '<div class="qty-line">' +
+      '<label><input type="radio" name="qty' + i + '" value="max"' + (p.qtyMode === "max" ? " checked" : "") + ">максимум</label>" +
+      '<label><input type="radio" name="qty' + i + '" value="qty"' + (p.qtyMode === "qty" ? " checked" : "") + ">количество:</label>" +
+      '<input type="number" class="p-qty" min="1" step="1" value="' + p.qty + '"' + (p.qtyMode === "max" ? " disabled" : "") + ">" +
+      (p.type !== "circle"
+        ? '<label><input type="checkbox" class="p-rot"' + (p.allowRotate ? " checked" : "") + ">разрешить поворот</label>'
+        : "") +
+      "</div>";
+
+    function on(sel, ev, fn) {
+      var el = div.querySelector(sel);
+      if (el) el.addEventListener(ev, fn);
+    }
+    on(".p-type", "change", function (e) { p.type = e.target.value; renderParts(); markDirty(); });
+    on(".p-d", "input", function (e) { p.d = parseFloat(e.target.value); markDirty(); });
+    on(".p-w", "input", function (e) { p.w = parseFloat(e.target.value); markDirty(); });
+    on(".p-h", "input", function (e) { p.h = parseFloat(e.target.value); markDirty(); });
+    on(".p-ch", "input", function (e) { p.chamfer = parseFloat(e.target.value); markDirty(); });
+    on(".p-qty", "input", function (e) { p.qty = parseInt(e.target.value, 10); markDirty(); });
+    on(".p-rot", "change", function (e) { p.allowRotate = e.target.checked; markDirty(); });
+    on(".p-del", "click", function () { parts.splice(i, 1); renderParts(); markDirty(); });
+    div.querySelectorAll('input[name="qty' + i + '"]').forEach(function (r) {
+      r.addEventListener("change", function (e) {
+        p.qtyMode = e.target.value;
+        div.querySelector(".p-qty").disabled = p.qtyMode === "max";
+        markDirty();
+      });
+    });
+    return div;
+  }
+
+  // ---------- статусы ----------
+
+  function setActions(enabled) {
+    $("csvBtn").disabled = !enabled;
+    $("reportBtn").disabled = !enabled;
+    $("sendBtn").disabled = !enabled;
+  }
+
+  function setStatus(text, cls) {
+    var el = $("statusMsg");
+    el.textContent = text || "";
+    el.className = "status" + (cls ? " " + cls : "");
+  }
+
+  function setSendMsg(text, cls) {
+    var el = $("sendMsg");
+    el.textContent = text || "";
+    el.className = "status" + (cls ? " " + cls : "");
+  }
+
+  function markDirty() {
+    if (lastResult) {
+      lastResult = null;
+      $("svgHost").innerHTML = "";
+      $("summary").textContent = "Параметры изменены — нажмите «Разложить»";
+    }
+    setActions(false);
+    setStatus("");
+    setSendMsg("");
+  }
+
+  // ---------- раскладка ----------
+
+  function typeShort(spec) {
+    if (spec.type === "circle") return "круглая Ø" + spec.d;
+    if (spec.type === "rect") return "прямоугольная " + spec.w + "×" + spec.h;
+    return "с фаской " + spec.w + "×" + spec.h + "×" + spec.chamfer;
+  }
+
+  function validate() {
+    var errs = [];
+    var disc = currentDisc();
+    if (!parts.length) errs.push("Добавьте хотя бы одну деталь.");
+    parts.forEach(function (p, i) {
+      var n = "Деталь " + (i + 1) + ": ";
+      if (p.type === "circle") {
+        if (!(p.d > 0)) errs.push(n + "укажите диаметр.");
+        else if (p.d >= disc.diameter) errs.push(n + "деталь больше диска.");
+      } else {
+        if (!(p.w > 0) || !(p.h > 0)) errs.push(n + "укажите ширину и высоту.");
+        else if (p.type === "oct") {
+          if (!(p.chamfer >= 0)) errs.push(n + "укажите фаску (0 — без фаски).");
+          else if (p.chamfer >= Math.min(p.w, p.h) / 2) errs.push(n + "фаска должна быть меньше половины меньшей стороны.");
+        }
+      }
+      if (p.qtyMode === "qty" && !(p.qty >= 1)) errs.push(n + "укажите количество (целое ≥ 1).");
+    });
+    ["clPP", "clPE", "clPC"].forEach(function (id) {
+      var v = parseFloat($(id).value);
+      if (!(v >= 0)) errs.push("Все зазоры должны быть числами ≥ 0.");
+    });
+    return errs;
+  }
+
+  function doPack() {
+    var errs = validate();
+    if (errs.length) { setStatus(errs.join("\n"), "error"); return; }
+
+    var disc = currentDisc(), ctrl = currentControl();
+    var opts = {
+      discDiameter: disc.diameter,
+      controlHoles: ctrl.holes,
+      clearances: {
+        pp: parseFloat($("clPP").value),
+        pe: parseFloat($("clPE").value),
+        pc: parseFloat($("clPC").value)
+      },
+      parts: parts.map(function (p) {
+        return {
+          type: p.type, d: p.d, w: p.w, h: p.h,
+          chamfer: p.type === "oct" ? p.chamfer : 0,
+          qty: p.qtyMode === "max" ? null : p.qty,
+          allowRotate: p.type !== "circle" && p.allowRotate
+        };
+      })
+    };
+
+    var res = HC.pack(opts);
+
+    var now = new Date();
+    function p2(x) { return (x < 10 ? "0" : "") + x; }
+    lastResult = {
+      opts: opts, placed: res.placed, perPart: res.perPart,
+      disc: disc, control: ctrl,
+      orderId: "PD-" + now.getFullYear() + p2(now.getMonth() + 1) + p2(now.getDate()) + "-" + p2(now.getHours()) + p2(now.getMinutes()),
+      dateISO: now.toISOString(),
+      dateHuman: p2(now.getDate()) + "." + p2(now.getMonth() + 1) + "." + now.getFullYear() + " " + p2(now.getHours()) + ":" + p2(now.getMinutes())
+    };
+
+    var lines = [], warn = false;
+    res.perPart.forEach(function (r, i) {
+      var label = "Деталь " + (i + 1) + " (" + typeShort(opts.parts[i]) + "): ";
+      if (r.requested == null) lines.push(label + "максимум — размещено " + r.placed);
+      else if (r.placed >= r.requested) lines.push(label + "размещено " + r.placed + " из " + r.requested);
+      else { lines.push(label + "влезло только " + r.placed + " из " + r.requested + " ⚠"); warn = true; }
+    });
+    lines.push("Всего отверстий под детали: " + res.placed.length);
+    $("summary").textContent = lines.join("\n");
+
+    refreshSVG();
+    setActions(res.placed.length > 0);
+    if (!res.placed.length) {
+      setStatus("Ни одна деталь не поместилась: проверьте размеры и зазоры.", "error");
+    } else {
+      setStatus(warn ? "Поместились не все детали — уменьшите количество, зазоры или размеры." : "Готово.", warn ? "error" : "ok");
+    }
+  }
+
+  function refreshSVG() {
+    if (!lastResult) return;
+    $("svgHost").innerHTML = HC.renderSVG({
+      discDiameter: lastResult.disc.diameter,
+      edgeClearance: lastResult.opts.clearances.pe,
+      controlHoles: lastResult.control.holes,
+      placed: lastResult.placed,
+      showNumbers: $("showNumbers").checked
+    });
+  }
+
+  // ---------- заказ ----------
+
+  function assembleOrder() {
+    var lr = lastResult;
+    return {
+      id: lr.orderId,
+      date: lr.dateISO,
+      dateHuman: lr.dateHuman,
+      customer: {
+        name: $("custName").value.trim(),
+        org: $("custOrg").value.trim(),
+        contact: $("custContact").value.trim()
+      },
+      disc: { id: lr.disc.id, name: lr.disc.name, diameter: lr.disc.diameter },
+      controlName: lr.control.name,
+      controlHoles: lr.control.holes,
+      clearances: lr.opts.clearances,
+      placed: lr.placed,
+      partsSummary: lr.perPart.map(function (r, i) {
+        var s = lr.opts.parts[i];
+        return {
+          type: s.type,
+          size: s.type === "circle" ? "Ø" + s.d : s.w + " × " + s.h + (s.type === "oct" ? ", фаска " + s.chamfer : ""),
+          requested: r.requested,
+          placed: r.placed
+        };
+      })
+    };
+  }
+
+  // ---------- заказчик: запоминание полей ----------
+
+  function saveCustomer() {
+    try {
+      localStorage.setItem("hc-customer", JSON.stringify({
+        name: $("custName").value, org: $("custOrg").value, contact: $("custContact").value
+      }));
+    } catch (e) { /* localStorage может быть недоступен — не критично */ }
+  }
+
+  function loadCustomer() {
+    try {
+      var v = JSON.parse(localStorage.getItem("hc-customer") || "null");
+      if (v) {
+        $("custName").value = v.name || "";
+        $("custOrg").value = v.org || "";
+        $("custContact").value = v.contact || "";
+      }
+    } catch (e) { /* игнорируем */ }
+  }
+
+  // ---------- инициализация ----------
+
+  fillDiscSelect();
+  fillControlSelect();
+  applyDefaultClearances();
+  parts = [defaultPart()];
+  renderParts();
+  loadCustomer();
+
+  $("discSelect").addEventListener("change", function () {
+    fillControlSelect();
+    applyDefaultClearances();
+    markDirty();
+  });
+  $("controlSelect").addEventListener("change", markDirty);
+  ["clPP", "clPE", "clPC"].forEach(function (id) { $(id).addEventListener("input", markDirty); });
+  $("clReset").addEventListener("click", function () { applyDefaultClearances(); markDirty(); });
+  $("addPart").addEventListener("click", function () { parts.push(defaultPart()); renderParts(); markDirty(); });
+  $("packBtn").addEventListener("click", doPack);
+  $("showNumbers").addEventListener("change", refreshSVG);
+  ["custName", "custOrg", "custContact"].forEach(function (id) { $(id).addEventListener("change", saveCustomer); });
+
+  $("csvBtn").addEventListener("click", function () {
+    if (lastResult) HC.downloadCSV(assembleOrder());
+  });
+
+  $("reportBtn").addEventListener("click", function () {
+    if (!lastResult) return;
+    var order = assembleOrder();
+    var svg = HC.renderSVG({
+      discDiameter: lastResult.disc.diameter,
+      edgeClearance: lastResult.opts.clearances.pe,
+      controlHoles: lastResult.control.holes,
+      placed: lastResult.placed,
+      showNumbers: true
+    });
+    HC.showReport(order, svg);
+  });
+
+  $("sendBtn").addEventListener("click", function () {
+    if (!lastResult) return;
+    var order = assembleOrder();
+    if (!order.customer.name) {
+      setSendMsg("Укажите ФИО технолога — им подписывается заказ.", "error");
+      $("custName").focus();
+      return;
+    }
+    saveCustomer();
+    var typeLabel = { circle: "круг", rect: "прямоуг.", oct: "с фаской" };
+    var payload = {
+      id: order.id,
+      date: order.date,
+      name: order.customer.name,
+      org: order.customer.org,
+      contact: order.customer.contact,
+      disc: order.disc.name + " (Ø" + order.disc.diameter + ")",
+      control: order.controlName,
+      parts: order.partsSummary.map(function (r, i) {
+        return (i + 1) + ") " + typeLabel[r.type] + " " + r.size + " — " + r.placed +
+          (r.requested == null ? " (макс.)" : " из " + r.requested);
+      }).join("; "),
+      placed: order.placed.length,
+      clearances: order.clearances.pp + " / " + order.clearances.pe + " / " + order.clearances.pc,
+      csv: HC.buildCSV(order)
+    };
+    $("sendBtn").disabled = true;
+    setSendMsg("Отправляю…");
+    HC.submitOrder(payload).then(function () {
+      setSendMsg("Заказ " + order.id + " отправлен и записан в таблицу.", "ok");
+      $("sendBtn").disabled = false;
+    }).catch(function (err) {
+      setSendMsg("Не удалось отправить: " + err.message, "error");
+      $("sendBtn").disabled = false;
+    });
+  });
+})(typeof globalThis !== "undefined" ? globalThis : window);

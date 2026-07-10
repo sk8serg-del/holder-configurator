@@ -1,0 +1,170 @@
+' HolderFromCSV — правило iLogic для Autodesk Inventor.
+'
+' Читает CSV из веб-конфигуратора подложкодержателей и вырезает отверстия
+' в ОТКРЫТОЙ детали (вашей болванке диска). Само тело диска правило не строит.
+'
+' Требования к болванке:
+'   - диск построен с центром в начале координат;
+'   - ось диска — ось Z (эскиз основания на плоскости XY).
+'
+' Установка: Inventor → Управление → iLogic → создать правило (или внешнее
+' правило) и вставить этот код целиком.
+'
+' При запуске правило спросит:
+'   1) какой CSV-файл использовать;
+'   2) строить ли контрольные отверстия (если они уже есть в болванке — «Нет»).
+' Все контуры отверстий собираются в один эскиз «HolderFromCSV» и режутся
+' одним вырезом насквозь (симметрично, чтобы не зависеть от толщины диска).
+
+Sub Main()
+	If ThisApplication.ActiveDocument Is Nothing OrElse _
+	   ThisApplication.ActiveDocument.DocumentType <> DocumentTypeEnum.kPartDocumentObject Then
+		MessageBox.Show("Откройте деталь — болванку диска.", "HolderFromCSV", _
+			MessageBoxButtons.OK, MessageBoxIcon.Warning)
+		Return
+	End If
+	Dim doc As PartDocument = ThisApplication.ActiveDocument
+	Dim compDef As PartComponentDefinition = doc.ComponentDefinition
+	If compDef.SurfaceBodies.Count = 0 Then
+		MessageBox.Show("В детали нет тела — сначала постройте диск.", "HolderFromCSV", _
+			MessageBoxButtons.OK, MessageBoxIcon.Warning)
+		Return
+	End If
+
+	' --- выбор CSV ---
+	Dim dlg As New System.Windows.Forms.OpenFileDialog()
+	dlg.Title = "Выберите CSV из конфигуратора"
+	dlg.Filter = "CSV конфигуратора (*.csv)|*.csv|Все файлы (*.*)|*.*"
+	If dlg.ShowDialog() <> System.Windows.Forms.DialogResult.OK Then Return
+
+	Dim inv As System.Globalization.CultureInfo = System.Globalization.CultureInfo.InvariantCulture
+	Dim lines() As String = System.IO.File.ReadAllLines(dlg.FileName)
+
+	' --- разбор файла ---
+	Dim discDia As Double = 0
+	Dim rows As New List(Of String())
+	Dim dataStarted As Boolean = False
+	For Each rawLine As String In lines
+		Dim t As String = rawLine.Trim().TrimStart(ChrW(65279)) ' срезаем BOM
+		If t = "" Then Continue For
+		Dim f() As String = t.Split(";"c)
+		If dataStarted Then
+			If f.Length >= 8 Then rows.Add(f)
+		ElseIf f(0) = "disc" AndAlso f.Length >= 4 Then
+			discDia = Double.Parse(f(3), inv)
+		ElseIf f(0) = "columns" Then
+			dataStarted = True
+		End If
+	Next
+	If rows.Count = 0 Then
+		MessageBox.Show("В файле не найдено ни одного отверстия. Это CSV из конфигуратора?", _
+			"HolderFromCSV", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+		Return
+	End If
+
+	' --- контрольные отверстия: строить или пропустить ---
+	Dim hasControl As Boolean = False
+	For Each f() As String In rows
+		If f(0) = "control" Then hasControl = True : Exit For
+	Next
+	Dim buildControl As Boolean = False
+	If hasControl Then
+		buildControl = InputRadioBox("Контрольные отверстия:", _
+			"Строить из CSV", "Не строить (уже есть в болванке)", False, "HolderFromCSV")
+	End If
+
+	' --- сверка диаметра болванки с CSV (внутренние единицы Inventor — см) ---
+	Dim rb As Box = compDef.SurfaceBodies.Item(1).RangeBox
+	Dim curDia As Double = Math.Max(rb.MaxPoint.X - rb.MinPoint.X, rb.MaxPoint.Y - rb.MinPoint.Y) * 10.0
+	If discDia > 0 AndAlso Math.Abs(curDia - discDia) > 0.05 Then
+		If MessageBox.Show("Диаметр открытого диска: " & curDia.ToString("0.##") & " мм," & vbCrLf & _
+			"в CSV указан: " & discDia.ToString("0.##") & " мм." & vbCrLf & vbCrLf & "Продолжить?", _
+			"HolderFromCSV", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) <> _
+			System.Windows.Forms.DialogResult.Yes Then Return
+	End If
+
+	' --- эскиз на плоскости XY ---
+	Dim tg As TransientGeometry = ThisApplication.TransientGeometry
+	Dim sk As PlanarSketch = compDef.Sketches.Add(compDef.WorkPlanes.Item(3)) ' XY
+	sk.Name = "HolderFromCSV"
+
+	' Точки задаём в модельных координатах и переводим в координаты эскиза —
+	' так результат не зависит от ориентации осей эскиза.
+	Dim mm As Double = 0.1 ' мм → см
+
+	Dim built As Integer = 0
+	Try
+		For Each f() As String In rows
+			Dim typ As String = f(0)
+			If typ = "control" AndAlso Not buildControl Then Continue For
+
+			Dim cx As Double = Double.Parse(f(1), inv) * mm
+			Dim cy As Double = Double.Parse(f(2), inv) * mm
+
+			If typ = "circle" OrElse typ = "control" Then
+				Dim dia As Double = Double.Parse(f(7), inv) * mm
+				Dim c2d As Point2d = sk.ModelToSketchSpace(tg.CreatePoint(cx, cy, 0))
+				sk.SketchCircles.AddByCenterRadius(c2d, dia / 2)
+				built += 1
+			ElseIf typ = "rect" OrElse typ = "oct" Then
+				Dim w As Double = Double.Parse(f(3), inv) * mm
+				Dim h As Double = Double.Parse(f(4), inv) * mm
+				Dim ch As Double = 0
+				If f(5) <> "" Then ch = Double.Parse(f(5), inv) * mm
+				Dim rotDeg As Double = 0
+				If f(6) <> "" Then rotDeg = Double.Parse(f(6), inv)
+
+				' вершины контура вокруг (0,0)
+				Dim pts As New List(Of Double())
+				If typ = "rect" Then
+					pts.Add({-w / 2, -h / 2}) : pts.Add({w / 2, -h / 2})
+					pts.Add({w / 2, h / 2}) : pts.Add({-w / 2, h / 2})
+				Else
+					pts.Add({-w / 2 + ch, -h / 2}) : pts.Add({w / 2 - ch, -h / 2})
+					pts.Add({w / 2, -h / 2 + ch}) : pts.Add({w / 2, h / 2 - ch})
+					pts.Add({w / 2 - ch, h / 2}) : pts.Add({-w / 2 + ch, h / 2})
+					pts.Add({-w / 2, h / 2 - ch}) : pts.Add({-w / 2, -h / 2 + ch})
+				End If
+
+				' поворот + перенос, модельные координаты → координаты эскиза
+				Dim a As Double = rotDeg * Math.PI / 180
+				Dim cosA As Double = Math.Cos(a), sinA As Double = Math.Sin(a)
+				Dim p2d As New List(Of Point2d)
+				For Each p As Double() In pts
+					Dim px As Double = cx + p(0) * cosA - p(1) * sinA
+					Dim py As Double = cy + p(0) * sinA + p(1) * cosA
+					p2d.Add(sk.ModelToSketchSpace(tg.CreatePoint(px, py, 0)))
+				Next
+
+				' замкнутый контур с общими вершинами
+				Dim firstLine As SketchLine = sk.SketchLines.AddByTwoPoints(p2d(0), p2d(1))
+				Dim prevLine As SketchLine = firstLine
+				For k As Integer = 1 To p2d.Count - 2
+					prevLine = sk.SketchLines.AddByTwoPoints(prevLine.EndSketchPoint, p2d(k + 1))
+				Next
+				sk.SketchLines.AddByTwoPoints(prevLine.EndSketchPoint, firstLine.StartSketchPoint)
+				built += 1
+			End If
+		Next
+
+		If built = 0 Then
+			sk.Delete()
+			MessageBox.Show("Нечего строить: все отверстия пропущены.", "HolderFromCSV")
+			Return
+		End If
+
+		' --- один вырез насквозь на все контуры ---
+		Dim prof As Profile = sk.Profiles.AddForSolid
+		Dim exDef As ExtrudeDefinition = compDef.Features.ExtrudeFeatures.CreateExtrudeDefinition( _
+			prof, PartFeatureOperationEnum.kCutOperation)
+		exDef.SetThroughAllExtent(PartFeatureExtentDirectionEnum.kSymmetricExtentDirection)
+		compDef.Features.ExtrudeFeatures.Add(exDef)
+	Catch ex As Exception
+		MessageBox.Show("Ошибка построения: " & ex.Message, "HolderFromCSV", _
+			MessageBoxButtons.OK, MessageBoxIcon.Error)
+		Return
+	End Try
+
+	doc.Update()
+	MessageBox.Show("Готово: вырезано отверстий — " & built.ToString() & ".", "HolderFromCSV")
+End Sub

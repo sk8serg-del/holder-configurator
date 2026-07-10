@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Конфигуратор подложкодержателей</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Конфигуратор подложкодержателей</h1>
+  </header>
+  <main>
+    <form class="panel form-panel" id="orderForm" autocomplete="on" onsubmit="return false">
+      <section>
+        <h2>1. Заказчик</h2>
+        <label>Технолог (ФИО)
+          <input id="custName" name="name" autocomplete="name" placeholder="Иванов И. И." required>
+        </label>
+        <label>Организация
+          <input id="custOrg" name="organization" autocomplete="organization">
+        </label>
+        <label>Контакт (e-mail / телефон)
+          <input id="custContact" name="email" autocomplete="email">
+        </label>
+      </section>
+
+      <section>
+        <h2>2. Подложка</h2>
+        <label>Диск
+          <select id="discSelect"></select>
+        </label>
+        <label>Контрольные отверстия
+          <select id="controlSelect"></select>
+        </label>
+        <div class="hint" id="discInfo"></div>
+      </section>
+
+      <section>
+        <h2>3. Детали</h2>
+        <div id="partsList"></div>
+        <button type="button" id="addPart" class="secondary">+ Добавить деталь</button>
+      </section>
+
+      <section>
+        <h2>4. Минимальные зазоры, мм</h2>
+        <div class="clearances">
+          <label>деталь–деталь<input id="clPP" type="number" min="0" step="0.1"></label>
+          <label>деталь–край<input id="clPE" type="number" min="0" step="0.1"></label>
+          <label>деталь–контр. отв.<input id="clPC" type="number" min="0" step="0.1"></label>
+        </div>
+        <button type="button" id="clReset" class="link">сбросить к значениям по умолчанию</button>
+      </section>
+
+      <button type="button" id="packBtn" class="primary">Разложить</button>
+      <div id="statusMsg" class="status"></div>
+    </form>
+
+    <div class="panel preview-panel">
+      <div class="preview-head">
+        <div id="summary" class="summary">Выберите параметры и нажмите «Разложить»</div>
+        <label class="numbers-toggle"><input type="checkbox" id="showNumbers"> номера позиций</label>
+      </div>
+      <div id="svgHost" class="svg-host"></div>
+      <div class="actions">
+        <button type="button" id="csvBtn" disabled>Скачать CSV для Inventor</button>
+        <button type="button" id="reportBtn" disabled>Отчёт / PDF</button>
+        <button type="button" id="sendBtn" class="primary" disabled>Отправить заказ</button>
+      </div>
+      <div id="sendMsg" class="status"></div>
+    </div>
+  </main>
+  <footer>Координаты отверстий — от центра диска, единицы — мм. Контрольные отверстия фиксированы и изменению не подлежат.</footer>
+</div>
+
+<div id="report"></div>
+
+<script src="js/catalog.js"></script>
+<script src="js/geometry.js"></script>
+<script src="js/packer.js"></script>
+<script src="js/render.js"></script>
+<script src="js/export-csv.js"></script>
+<script src="js/report.js"></script>
+<script src="js/sheets.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
