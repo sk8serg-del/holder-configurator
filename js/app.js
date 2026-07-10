@@ -134,7 +134,7 @@
       '<label><input type="radio" name="qty' + i + '" value="qty"' + (p.qtyMode === "qty" ? " checked" : "") + ">количество:</label>" +
       '<input type="number" class="p-qty" min="1" step="1" value="' + p.qty + '"' + (p.qtyMode === "max" ? " disabled" : "") + ">" +
       (p.type !== "circle"
-        ? '<label><input type="checkbox" class="p-rot"' + (p.allowRotate ? " checked" : "") + ">разрешить поворот</label>'
+        ? '<label><input type="checkbox" class="p-rot"' + (p.allowRotate ? " checked" : "") + ">разрешить поворот</label>"
         : "") +
       "</div>";
 

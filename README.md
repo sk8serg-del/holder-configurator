@@ -21,6 +21,13 @@
 node test/test-packer.js
 ```
 
+Smoke-тест всей страницы (форма → раскладка → CSV → отчёт; требует один раз
+`npm install jsdom`):
+
+```
+node test/test-page.js
+```
+
 ## Как добавить/изменить подложку
 
 Все подложки — в файле [`js/catalog.js`](js/catalog.js). Одна запись = один диск:
