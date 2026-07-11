@@ -228,6 +228,37 @@ check("13: радиально от края — 8 из 8, радиусы > 110",
   JSON.stringify(radii(res13).map(Math.round)));
 verifyLayout("13", Object.assign({}, base12, { parts: [] }), res13);
 
+// --- 14. Круги «от края»/«по диаметру» распределены по всей окружности,
+//         а не собраны в один сектор гекс-сетки (regression-тест бага) ---
+function angleSpread(res) {
+  var angs = res.placed.map(function (p) { return Math.atan2(p.cy, p.cx); }).sort(function (a, b) { return a - b; });
+  var maxGap = 0;
+  for (var i = 0; i < angs.length; i++) {
+    var next = i + 1 < angs.length ? angs[i + 1] : angs[0] + 2 * Math.PI;
+    maxGap = Math.max(maxGap, next - angs[i]);
+  }
+  return maxGap; // радиан; для равномерного кольца << 2π, для «клина» ~ 2π
+}
+
+var res14edge = HC.pack(Object.assign({}, base12, {
+  parts: [{ type: "circle", d: 15, qty: 6, anchor: { mode: "edge" } }]
+}));
+check("14: «от края» — круги по всему кольцу (макс. разрыв < 130°)",
+  angleSpread(res14edge) < (130 * Math.PI) / 180,
+  (angleSpread(res14edge) * 180 / Math.PI).toFixed(0) + "°");
+verifyLayout("14-edge", base12, res14edge);
+
+var res14dia = HC.pack(Object.assign({}, base12, {
+  parts: [{ type: "circle", d: 15, qty: 8, anchor: { mode: "diameter", d: 150 } }]
+}));
+check("14: «по диаметру» — круги по всему кольцу (макс. разрыв < 100°)",
+  angleSpread(res14dia) < (100 * Math.PI) / 180,
+  (angleSpread(res14dia) * 180 / Math.PI).toFixed(0) + "°");
+check("14: «по диаметру» — радиус близок к цели 75", res14dia.placed.every(function (p) {
+  return Math.abs(Math.hypot(p.cx, p.cy) - 75) < 5;
+}));
+verifyLayout("14-diameter", base12, res14dia);
+
 console.log("\nВремя: " + (Date.now() - t0) + " мс");
 if (failures) {
   console.log("ПРОВАЛЕНО ПРОВЕРОК: " + failures);
