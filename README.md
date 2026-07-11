@@ -28,6 +28,19 @@ Smoke-тест всей страницы (форма → раскладка → 
 node test/test-page.js
 ```
 
+## Сборка в один файл
+
+Для отправки страницы одним файлом (почта, флешка, хостинг без папок) — CSS
+и все скрипты инлайнятся прямо в HTML:
+
+```
+node tools/build-single-file.js
+```
+
+Результат — `dist/holder-configurator.html`, ничего кроме node не требуется.
+Файл не хранится в репозитории (генерируется), пересобирайте заново после
+любых правок в `index.html`, `css/` или `js/` — источник правды всегда там.
+
 ## Как добавить/изменить подложку
 
 Все подложки — в файле [`js/catalog.js`](js/catalog.js). Одна запись = один диск:
@@ -132,4 +145,6 @@ js/app.js                        — логика формы
 inventor/HolderFromCSV.iLogicVb  — правило iLogic
 apps-script/Code.gs              — приёмник заказов для Google Таблицы
 test/test-packer.js              — численные тесты раскладки
+test/test-page.js                — сквозной smoke-тест страницы (jsdom)
+tools/build-single-file.js       — сборка index.html в один файл (dist/)
 ```
