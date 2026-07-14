@@ -68,10 +68,15 @@ check("зазоры предзаполнены (6/3/6)", $("clPP").value === "6"
   $("clPP").value + "/" + $("clPE").value + "/" + $("clPC").value);
 check("есть строка детали", d.querySelectorAll("#partsList .part-row").length === 1);
 
+// --- раскладка посчиталась сама при загрузке, без нажатия кнопки ---
+check("автораскладка при загрузке: сводка и SVG уже есть",
+  $("summary").textContent.indexOf("размещено") !== -1 && $("svgHost").innerHTML.indexOf("<svg") !== -1,
+  $("summary").textContent);
+
 // --- предпросмотр детали (для круга — крупная схема d/D/CA, авторасчёт) ---
-check("схема отверстия отрисована с авто D/CA для d=10 (D10,2/CA8,5)",
+check("стандартная деталь d=25.4, авто D/CA (D25,6/CA23,9)",
   d.querySelector("#partsList .part-preview.hole-diagram svg") !== null &&
-  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d10 (D10,2/CA8,5)") !== -1,
+  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d25,4 (D25,6/CA23,9)") !== -1,
   d.querySelector("#partsList .part-preview").innerHTML);
 const dInput = d.querySelector("#partsList .p-d");
 const seatInput = d.querySelector("#partsList .p-seat-d");

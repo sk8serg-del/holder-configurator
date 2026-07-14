@@ -178,10 +178,18 @@
     var cm = R * 0.03;
     out.push('<path d="M ' + fmt(-cm) + ' 0 H ' + fmt(cm) + ' M 0 ' + fmt(-cm) + ' V ' + fmt(cm) + '" stroke="#999" stroke-width="' + fmt(sw) + '"/>');
 
-    // контрольные отверстия — красные, с перекрестием
+    // контрольные отверстия — полная схема (посадка/деталь/CA/паз), как у
+    // деталей; красное перекрестие в центре отличает их от обычных деталей
     (model.controlHoles || []).forEach(function (h) {
-      var r = h.d / 2, c = r * 1.6;
-      out.push('<circle cx="' + fmt(h.x) + '" cy="' + fmt(h.y) + '" r="' + fmt(r) + '" fill="#fff5f5" stroke="#c53030" stroke-width="' + fmt(sw * 1.5) + '"/>');
+      var seat = h.seatD != null ? h.seatD : h.d;
+      var slotAngle = (Math.atan2(h.y, h.x) * 180) / Math.PI; // ориентация паза свободная — радиально
+      var swC = Math.max(sw * 1.5, (seat || 1) / 70);
+      out.push(
+        '<g transform="translate(' + fmt(h.x) + "," + fmt(h.y) + ')">' +
+        circleFeatureSVG({ d: h.d, seatD: seat, apertureCA: h.apertureCA, slotOn: h.slotOn, slotAngle: slotAngle }, swC) +
+        "</g>"
+      );
+      var c = ((seat || 1) / 2) * 0.5;
       out.push('<path d="M ' + fmt(h.x - c) + ' ' + fmt(h.y) + ' H ' + fmt(h.x + c) + ' M ' + fmt(h.x) + ' ' + fmt(h.y - c) + ' V ' + fmt(h.y + c) + '" stroke="#c53030" stroke-width="' + fmt(sw * 0.8) + '"/>');
     });
 

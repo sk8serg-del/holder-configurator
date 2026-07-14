@@ -33,7 +33,8 @@
     L.push(["clearances", num(order.clearances.pp), num(order.clearances.pe), num(order.clearances.pc)].join(";"));
     L.push("columns;type;cx;cy;w;h;chamfer;rotation;diameter");
     (order.controlHoles || []).forEach(function (h) {
-      L.push(["control", num(h.x), num(h.y), "", "", "", "", num(h.d)].join(";"));
+      // диаметр контрольного отверстия в CSV — Ø посадки, если задан
+      L.push(["control", num(h.x), num(h.y), "", "", "", "", num(h.seatD != null ? h.seatD : h.d)].join(";"));
     });
     (order.placed || []).forEach(function (p) {
       if (p.type === "circle") {

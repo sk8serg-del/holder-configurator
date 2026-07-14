@@ -169,7 +169,11 @@
 
   function activeControlHoles() {
     return ctrlHoles.filter(function (h) { return h.on; }).map(function (h) {
-      return { x: h.x, y: h.y, d: h.seatD };
+      return {
+        x: h.x, y: h.y,
+        d: h.d, seatD: h.seatD, apertureCA: h.apertureCA,
+        depth: h.depth, slotOn: h.slotOn
+      };
     });
   }
 
@@ -196,7 +200,7 @@
   }
 
   function defaultPart() {
-    var d = 10;
+    var d = 25.4; // стандартная деталь
     return {
       type: "circle", d: d, w: 20, h: 10, chamfer: 2,
       // посадка (D) и зона напыления (CA) — только для круглых; авто, пока пользователь не поправит вручную
@@ -349,15 +353,20 @@
     el.className = "status" + (cls ? " " + cls : "");
   }
 
+  var autoPackTimer = null;
+
   function markDirty() {
     if (lastResult) {
       lastResult = null;
-      $("svgHost").innerHTML = "";
-      $("summary").textContent = "Параметры изменены — нажмите «Разложить»";
+      $("summary").textContent = "Пересчитываю…";
     }
     setActions(false);
     setStatus("");
     setSendMsg("");
+    // авторазложение: пересчитываем сами, с небольшой паузой, чтобы не
+    // дёргать раскладку на каждый символ при вводе числа
+    if (autoPackTimer) clearTimeout(autoPackTimer);
+    autoPackTimer = setTimeout(doPack, 400);
   }
 
   // ---------- раскладка ----------
@@ -424,8 +433,13 @@
   }
 
   function doPack() {
+    if (autoPackTimer) { clearTimeout(autoPackTimer); autoPackTimer = null; }
     var errs = validate();
-    if (errs.length) { setStatus(errs.join("\n"), "error"); return; }
+    if (errs.length) {
+      setStatus(errs.join("\n"), "error");
+      $("summary").textContent = "Исправьте ошибки в форме — раскладка обновится сама.";
+      return;
+    }
 
     var disc = currentDisc();
     var opts = {
@@ -559,6 +573,7 @@
   parts = [defaultPart()];
   renderParts();
   loadCustomer();
+  doPack(); // первая раскладка сразу при открытии, дальше — автоматически при правках
 
   $("discSelect").addEventListener("change", function () {
     fillControlSelect();

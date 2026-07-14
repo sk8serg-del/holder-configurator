@@ -331,7 +331,8 @@
         pc: opts.clearances.pc
       },
       keepouts: (opts.controlHoles || []).map(function (h) {
-        return { type: "circle", cx: h.x, cy: h.y, d: h.d };
+        // занятая зона контрольного отверстия — Ø посадки, если задан
+        return { type: "circle", cx: h.x, cy: h.y, d: h.seatD != null ? h.seatD : h.d };
       }),
       placed: []
     };
