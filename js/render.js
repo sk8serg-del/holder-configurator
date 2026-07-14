@@ -88,7 +88,8 @@
   // линия внутри. Используется и в карточке детали, и в общей раскладке.
   // spec = {d, seatD, apertureCA, slotOn, slotAngle} — d и все поля кроме
   // seatD необязательны (например, у контрольного отверстия без «детали»
-  // рисуются только D/CA).
+  // рисуются только D/CA). spec.fill/spec.stroke переопределяют цвет детали,
+  // spec.seatFill — заливку посадки (для серых контрольных отверстий).
   function circleFeatureSVG(spec, sw) {
     var d = spec.d > 0 ? spec.d : null;
     var D = spec.seatD > 0 ? spec.seatD : null;
@@ -106,10 +107,10 @@
       );
     }
     if (D != null) {
-      out.push('<circle cx="0" cy="0" r="' + fmt(D / 2) + '" fill="none" stroke="#000" stroke-width="' + fmt(sw) + '"/>');
+      out.push('<circle cx="0" cy="0" r="' + fmt(D / 2) + '" fill="' + (spec.seatFill || "none") + '" stroke="#000" stroke-width="' + fmt(sw) + '"/>');
     }
     if (d != null) {
-      out.push('<circle cx="0" cy="0" r="' + fmt(d / 2) + '" fill="#2b6cb0" stroke="#1a4971" stroke-width="' + fmt(sw * 0.6) + '"/>');
+      out.push('<circle cx="0" cy="0" r="' + fmt(d / 2) + '" fill="' + (spec.fill || "#2b6cb0") + '" stroke="' + (spec.stroke || "#1a4971") + '" stroke-width="' + fmt(sw * 0.6) + '"/>');
     }
     if (CA != null) {
       out.push(
@@ -179,18 +180,19 @@
     out.push('<path d="M ' + fmt(-cm) + ' 0 H ' + fmt(cm) + ' M 0 ' + fmt(-cm) + ' V ' + fmt(cm) + '" stroke="#999" stroke-width="' + fmt(sw) + '"/>');
 
     // контрольные отверстия — полная схема (посадка/деталь/CA/паз), как у
-    // деталей; красное перекрестие в центре отличает их от обычных деталей
+    // деталей; серая заливка отличает их от обычных деталей
     (model.controlHoles || []).forEach(function (h) {
       var seat = h.seatD != null ? h.seatD : h.d;
       var slotAngle = (Math.atan2(h.y, h.x) * 180) / Math.PI; // ориентация паза свободная — радиально
       var swC = Math.max(sw * 1.5, (seat || 1) / 70);
       out.push(
         '<g transform="translate(' + fmt(h.x) + "," + fmt(h.y) + ')">' +
-        circleFeatureSVG({ d: h.d, seatD: seat, apertureCA: h.apertureCA, slotOn: h.slotOn, slotAngle: slotAngle }, swC) +
+        circleFeatureSVG({
+          d: h.d, seatD: seat, apertureCA: h.apertureCA, slotOn: h.slotOn, slotAngle: slotAngle,
+          fill: "#9aa1a9", stroke: "#5f666e", seatFill: "#dfe2e6"
+        }, swC) +
         "</g>"
       );
-      var c = ((seat || 1) / 2) * 0.5;
-      out.push('<path d="M ' + fmt(h.x - c) + ' ' + fmt(h.y) + ' H ' + fmt(h.x + c) + ' M ' + fmt(h.x) + ' ' + fmt(h.y - c) + ' V ' + fmt(h.y + c) + '" stroke="#c53030" stroke-width="' + fmt(sw * 0.8) + '"/>');
     });
 
     // детали
