@@ -62,15 +62,40 @@
     return out.join("");
   };
 
+  // Ширина паза под пинцет: стандарт 9 мм, но не больше 0.75 диаметра посадки
+  function slotWidth(D) {
+    return Math.min(9, D * 0.75);
+  }
+
+  // Контур «стадиона» (паза с круглыми торцами) вдоль оси X с центром в (0,0):
+  // прямая часть длиной (L-W), торцы — полукруги радиусом W/2.
+  function stadiumPath(L, W) {
+    var r = W / 2;
+    var hs = Math.max(0, L / 2 - r);
+    return (
+      "M " + fmt(-hs) + " " + fmt(-r) +
+      " L " + fmt(hs) + " " + fmt(-r) +
+      " A " + fmt(r) + " " + fmt(r) + " 0 0 1 " + fmt(hs) + " " + fmt(r) +
+      " L " + fmt(-hs) + " " + fmt(r) +
+      " A " + fmt(r) + " " + fmt(r) + " 0 0 1 " + fmt(-hs) + " " + fmt(-r) +
+      " Z"
+    );
+  }
+
   // Крупная схема отверстия под круглую деталь: посадка (D, зенковка,
-  // пунктир) + деталь (d, сплошная) + зона напыления (CA, сквозное отверстие).
-  // spec = {d, seatD, apertureCA} — seatD/apertureCA необязательны (null/NaN — не рисуются).
+  // пунктир) + деталь (d, сплошная) + зона напыления (CA, сквозное отверстие)
+  // + паз под пинцет (slotOn/slotAngle) — длина D+2×2.5, ширина min(9, 0.75×D),
+  // проходит через центр симметрично, торчит на 2.5 мм за посадку с двух сторон.
+  // spec = {d, seatD, apertureCA, slotOn, slotAngle} — необязательные поля не рисуются.
   HC.renderHoleDiagram = function (spec) {
     var d = spec.d;
     if (!(d > 0)) return "";
     var D = spec.seatD > 0 ? spec.seatD : null;
     var CA = spec.apertureCA > 0 ? spec.apertureCA : null;
-    var outer = Math.max(d, D || 0);
+    var showSlot = !!spec.slotOn && D != null;
+    var slotL = showSlot ? D + 2 * 2.5 : 0;
+    var slotW = showSlot ? slotWidth(D) : 0;
+    var outer = Math.max(d, D || 0, slotL);
     var R = outer / 2;
     var sidePad = R * 0.18;
     var textH = R * 0.62;
@@ -80,6 +105,13 @@
     var col = PART_COLORS[0];
     var out = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + vb + '" font-family="system-ui, Segoe UI, sans-serif">'];
 
+    if (showSlot) {
+      out.push(
+        '<g transform="rotate(' + fmt(spec.slotAngle || 0) + ')">' +
+        '<path d="' + stadiumPath(slotL, slotW) + '" fill="#fdfdfc" stroke="#c05621" stroke-width="' + fmt(sw) + '"/>' +
+        "</g>"
+      );
+    }
     if (D != null) {
       out.push(
         '<circle cx="0" cy="0" r="' + fmt(D / 2) + '" fill="none" stroke="' + col.stroke +
@@ -96,6 +128,7 @@
     if (D != null) labelParts.push("D" + fmtRu(D));
     if (CA != null) labelParts.push("CA" + fmtRu(CA));
     var label = "d" + fmtRu(d) + (labelParts.length ? " (" + labelParts.join("/") + ")" : "");
+    if (showSlot) label += " · паз " + fmtRu(slotW) + "×" + fmtRu(slotL) + ", " + fmtRu(spec.slotAngle || 0) + "°";
     var fs = Math.min(textH * 0.5, (2 * half * 0.92) / (label.length * 0.56));
     out.push(
       '<text x="0" y="' + fmt(half + textH * 0.58) + '" font-size="' + fmt(fs) +

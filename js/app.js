@@ -121,6 +121,7 @@
       // посадка (D) и зона напыления (CA) — только для круглых; авто, пока пользователь не поправит вручную
       seatD: autoSeatD(d), seatDAuto: true,
       apertureCA: autoCA(d), apertureCAAuto: true,
+      slotOn: false, slotAngle: 0, // паз под пинцет — только для круглых, требует заданного D
       qtyMode: "max", qty: 10,
       orientation: "grid",           // fixed | grid | radial-w | radial-h
       anchor: "center", anchorD: 150 // расположение при неполном заполнении
@@ -155,6 +156,12 @@
       '<option value="oct"' + (p.type === "oct" ? " selected" : "") + ">Прямоугольная с фаской</option>" +
       "</select></label>" +
       '<div class="dims">' + dims + "</div>" +
+      (p.type === "circle"
+        ? '<div class="slot-line">' +
+          '<label><input type="checkbox" class="p-slot-on"' + (p.slotOn ? " checked" : "") + '> паз под пинцет <span class="hint">(нужен Ø посадки D)</span></label>' +
+          '<label>Угол, °<input type="number" class="p-slot-angle" min="0" max="359" step="1" value="' + p.slotAngle + '"' + (p.slotOn ? "" : " disabled") + "></label>" +
+          "</div>"
+        : "") +
       '<div class="part-preview' + (p.type === "circle" ? " hole-diagram" : "") + '">' +
       (p.type === "circle" ? HC.renderHoleDiagram(p) : HC.renderPartPreview(p)) + "</div>" +
       (p.type !== "circle"
@@ -215,6 +222,13 @@
     on(".p-d", "input", function (e) { p.d = parseFloat(e.target.value); syncAutoFields(); refreshPreview(); markDirty(); });
     on(".p-seat-d", "input", function (e) { p.seatD = e.target.value === "" ? null : parseFloat(e.target.value); p.seatDAuto = false; refreshPreview(); markDirty(); });
     on(".p-ca", "input", function (e) { p.apertureCA = e.target.value === "" ? null : parseFloat(e.target.value); p.apertureCAAuto = false; refreshPreview(); markDirty(); });
+    on(".p-slot-on", "change", function (e) {
+      p.slotOn = e.target.checked;
+      var angleEl = div.querySelector(".p-slot-angle");
+      if (angleEl) angleEl.disabled = !p.slotOn;
+      refreshPreview(); markDirty();
+    });
+    on(".p-slot-angle", "input", function (e) { p.slotAngle = parseFloat(e.target.value); refreshPreview(); markDirty(); });
     on(".p-w", "input", function (e) { p.w = parseFloat(e.target.value); refreshPreview(); markDirty(); });
     on(".p-h", "input", function (e) { p.h = parseFloat(e.target.value); refreshPreview(); markDirty(); });
     on(".p-ch", "input", function (e) { p.chamfer = parseFloat(e.target.value); refreshPreview(); markDirty(); });

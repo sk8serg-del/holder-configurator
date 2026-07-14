@@ -90,6 +90,23 @@ check("CA больше максимума — раскладка отклоне�
   $("statusMsg").textContent.indexOf("зона напыления") !== -1 && $("statusMsg").className.indexOf("error") !== -1,
   $("statusMsg").textContent);
 
+// --- паз под пинцет: L = D+5, W = min(9, 0.75×D), угол задаётся вручную ---
+seatInput.value = "20";
+seatInput.dispatchEvent(new w.Event("input"));
+const slotOnEl = d.querySelector("#partsList .p-slot-on");
+const slotAngleEl = d.querySelector("#partsList .p-slot-angle");
+check("поле угла паза изначально отключено", slotAngleEl.disabled === true);
+slotOnEl.click();
+check("после включения паза поле угла активно", slotAngleEl.disabled === false);
+slotAngleEl.value = "45";
+slotAngleEl.dispatchEvent(new w.Event("input"));
+check("схема показывает паз W9×L25 при D20, угол 45°",
+  d.querySelector(".part-preview").innerHTML.indexOf("паз 9×25, 45°") !== -1,
+  d.querySelector(".part-preview").innerHTML);
+slotOnEl.click();
+check("после выключения паза угол снова недоступен и схема без паза",
+  slotAngleEl.disabled === true && d.querySelector(".part-preview").innerHTML.indexOf("паз") === -1);
+
 // возвращаем деталь в валидное состояние для дальнейших тестов
 caInput.value = "";
 caInput.dispatchEvent(new w.Event("input"));
