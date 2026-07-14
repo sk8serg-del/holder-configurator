@@ -38,26 +38,40 @@ const $ = (id) => d.getElementById(id);
 check("список дисков заполнен", $("discSelect").options.length >= 3, String($("discSelect").options.length));
 check("диск по умолчанию — Ø298", $("discSelect").value === "disc-298", $("discSelect").value);
 check("контрольные отверстия: 3 строки", d.querySelectorAll("#controlList .ctrl-row").length === 3);
-check("дефолтный Ø контрольного = 24.7",
-  d.querySelectorAll("#controlList .c-d")[1].value === "24.7",
-  d.querySelectorAll("#controlList .c-d")[1].value);
+check("у Центр/7° поле детали d = 25.4 (авто D=25,6/CA=23,9)",
+  d.querySelectorAll("#controlList .c-d").length === 2 &&
+  d.querySelectorAll("#controlList .c-d")[0].value === "25.4" &&
+  d.querySelectorAll("#controlList .c-d")[1].value === "25.4");
+check("у Центр/7° есть чекбокс паза (slotAvailable)",
+  d.querySelectorAll("#controlList .c-slot-on").length === 2);
+const seatDs = Array.from(d.querySelectorAll("#controlList .c-seat-d")).map(function (el) { return el.value; });
+check("Ø222/67°: посадка D=30.1, CA=24.1, без паза, без поля d",
+  seatDs.indexOf("30.1") !== -1 &&
+  Array.from(d.querySelectorAll("#controlList .c-ca")).some(function (el) { return el.value === "24.1"; }),
+  seatDs.join(","));
+check("схема Центр/7° показывает d25,4 (D25,6/CA23,9)",
+  d.querySelectorAll("#controlList .part-preview")[0].innerHTML.indexOf("d25,4 (D25,6/CA23,9)") !== -1,
+  d.querySelectorAll("#controlList .part-preview")[0].innerHTML);
+check("схема Ø222/67° показывает (D30,1/CA24,1) · глуб. 3 без d",
+  d.querySelectorAll("#controlList .part-preview")[2].innerHTML.indexOf("(D30,1/CA24,1) · глуб. 3") !== -1,
+  d.querySelectorAll("#controlList .part-preview")[2].innerHTML);
 check("зазоры предзаполнены (6/3/6)", $("clPP").value === "6" && $("clPE").value === "3" && $("clPC").value === "6",
   $("clPP").value + "/" + $("clPE").value + "/" + $("clPC").value);
 check("есть строка детали", d.querySelectorAll("#partsList .part-row").length === 1);
 
 // --- предпросмотр детали (для круга — крупная схема d/D/CA, авторасчёт) ---
 check("схема отверстия отрисована с авто D/CA для d=10 (D10,2/CA8,5)",
-  d.querySelector(".part-preview.hole-diagram svg") !== null &&
-  d.querySelector(".part-preview").innerHTML.indexOf("d10 (D10,2/CA8,5)") !== -1,
-  d.querySelector(".part-preview").innerHTML);
+  d.querySelector("#partsList .part-preview.hole-diagram svg") !== null &&
+  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d10 (D10,2/CA8,5)") !== -1,
+  d.querySelector("#partsList .part-preview").innerHTML);
 const dInput = d.querySelector("#partsList .p-d");
 const seatInput = d.querySelector("#partsList .p-seat-d");
 const caInput = d.querySelector("#partsList .p-ca");
 dInput.value = "12";
 dInput.dispatchEvent(new w.Event("input"));
 check("при смене d авто D/CA пересчитались (D12,2/CA10,5)",
-  d.querySelector(".part-preview").innerHTML.indexOf("d12 (D12,2/CA10,5)") !== -1,
-  d.querySelector(".part-preview").innerHTML);
+  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d12 (D12,2/CA10,5)") !== -1,
+  d.querySelector("#partsList .part-preview").innerHTML);
 check("max у поля CA обновился до авто-максимума", caInput.getAttribute("max") === "10.5", caInput.getAttribute("max"));
 
 // ручная правка D — дальше не должна затираться при новом изменении d
@@ -66,8 +80,8 @@ seatInput.dispatchEvent(new w.Event("input"));
 dInput.value = "20";
 dInput.dispatchEvent(new w.Event("input"));
 check("ручной D сохранился при смене d, CA пересчитался (D13/CA18,5)",
-  d.querySelector(".part-preview").innerHTML.indexOf("d20 (D13/CA18,5)") !== -1,
-  d.querySelector(".part-preview").innerHTML);
+  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d20 (D13/CA18,5)") !== -1,
+  d.querySelector("#partsList .part-preview").innerHTML);
 
 // ручная правка CA в меньшую сторону — тоже должна сохраняться при смене d
 caInput.value = "15";
@@ -75,8 +89,8 @@ caInput.dispatchEvent(new w.Event("input"));
 dInput.value = "22";
 dInput.dispatchEvent(new w.Event("input"));
 check("ручной CA сохранился при смене d (D13/CA15 — D пересчитался бы, но он тоже уже ручной)",
-  d.querySelector(".part-preview").innerHTML.indexOf("CA15") !== -1,
-  d.querySelector(".part-preview").innerHTML);
+  d.querySelector("#partsList .part-preview").innerHTML.indexOf("CA15") !== -1,
+  d.querySelector("#partsList .part-preview").innerHTML);
 
 // CA больше технологического максимума — ошибка валидации при раскладке
 dInput.value = "10";
@@ -101,15 +115,15 @@ check("после включения паза поле угла активно",
 slotAngleEl.value = "45";
 slotAngleEl.dispatchEvent(new w.Event("input"));
 check("подпись не упоминает паз (только d/D/CA)",
-  d.querySelector(".part-preview").innerHTML.indexOf("паз") === -1);
+  d.querySelector("#partsList .part-preview").innerHTML.indexOf("паз") === -1);
 check("на схеме есть контур паза (path) при включённом чекбоксе",
-  d.querySelector(".part-preview svg path") !== null);
+  d.querySelector("#partsList .part-preview svg path") !== null);
 check("паз повёрнут на заданный угол (rotate(45))",
-  d.querySelector(".part-preview").innerHTML.indexOf("rotate(45)") !== -1,
-  d.querySelector(".part-preview").innerHTML);
+  d.querySelector("#partsList .part-preview").innerHTML.indexOf("rotate(45)") !== -1,
+  d.querySelector("#partsList .part-preview").innerHTML);
 slotOnEl.click();
 check("после выключения паза угол недоступен и контур паза исчез",
-  slotAngleEl.disabled === true && d.querySelector(".part-preview svg path") === null);
+  slotAngleEl.disabled === true && d.querySelector("#partsList .part-preview svg path") === null);
 
 // --- D не может быть меньше d ---
 dInput.value = "10";
@@ -175,7 +189,7 @@ typeSel.value = "oct";
 typeSel.dispatchEvent(new w.Event("change"));
 check("для восьмиугольника есть поле фаски", d.querySelector("#partsList .p-ch") !== null);
 check("для восьмиугольника есть селект ориентации", d.querySelector("#partsList .p-orient") !== null);
-check("предпросмотр восьмиугольника — полигон", d.querySelector(".part-preview polygon") !== null);
+check("предпросмотр восьмиугольника — полигон", d.querySelector("#partsList .part-preview polygon") !== null);
 $("packBtn").click();
 check("раскладка восьмиугольников прошла", $("summary").textContent.indexOf("размещено") !== -1, $("summary").textContent);
 

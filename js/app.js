@@ -52,12 +52,24 @@
   }
 
   // ---------- контрольные отверстия ----------
+  // У каждого те же поля, что у круглой детали (d/D/CA/depth/паз) — позиции
+  // фиксированы каталогом, но размеры и наличие паза можно поправить на странице.
 
   function rebuildControlHoles() {
     ctrlHoles = currentControl().holes.map(function (h) {
+      var hasD = h.d != null;
       return {
-        x: h.x, y: h.y, d: h.d, on: true,
-        name: h.name || ("X " + h.x + ", Y " + h.y)
+        x: h.x, y: h.y,
+        name: h.name || ("X " + h.x + ", Y " + h.y),
+        d: hasD ? h.d : null,
+        seatD: h.seatD != null ? h.seatD : (hasD ? autoSeatD(h.d) : null),
+        seatDAuto: h.seatD == null && hasD,
+        apertureCA: h.apertureCA != null ? h.apertureCA : (hasD ? autoCA(h.d) : null),
+        apertureCAAuto: h.apertureCA == null && hasD,
+        depth: h.depth != null ? h.depth : null,
+        slotAvailable: !!h.slotAvailable,
+        slotOn: false, slotAngle: 0,
+        on: true
       };
     });
     renderControlHoles();
@@ -67,35 +79,87 @@
     var host = $("controlList");
     host.innerHTML = "";
     ctrlHoles.forEach(function (h) {
-      var div = document.createElement("div");
-      div.className = "ctrl-row";
-      div.innerHTML =
-        '<label><input type="checkbox" class="c-on"' + (h.on ? " checked" : "") + ">" + h.name + "</label>" +
-        '<span class="hint">Ø, мм</span>' +
-        '<input type="number" class="c-d" min="0.1" step="0.1" value="' + h.d + '"' + (h.on ? "" : " disabled") + ">";
-      div.querySelector(".c-on").addEventListener("change", function (e) {
-        h.on = e.target.checked;
-        div.querySelector(".c-d").disabled = !h.on;
-        markDirty();
-      });
-      div.querySelector(".c-d").addEventListener("input", function (e) {
-        h.d = parseFloat(e.target.value);
-        markDirty();
-      });
-      host.appendChild(div);
+      host.appendChild(ctrlHoleRow(h));
     });
+  }
+
+  function ctrlHoleRow(h) {
+    var div = document.createElement("div");
+    div.className = "ctrl-row";
+    var caMax = h.d != null ? autoCA(h.d) : null;
+    div.innerHTML =
+      '<div class="ctrl-head"><label><input type="checkbox" class="c-on"' + (h.on ? " checked" : "") + ">" + h.name + "</label></div>" +
+      '<div class="dims">' +
+      (h.d != null ? '<label>Деталь d, мм<input type="number" class="c-d" min="0.1" step="0.1" value="' + h.d + '"' + (h.on ? "" : " disabled") + "></label>" : "") +
+      '<label>Ø посадки D, мм<input type="number" class="c-seat-d" min="' + (h.d != null ? h.d : 0.1) + '" step="0.1" value="' + (h.seatD == null ? "" : h.seatD) + '"' + (h.on ? "" : " disabled") + "></label>" +
+      '<label>Зона CA, мм<input type="number" class="c-ca" min="0.1" step="0.1" max="' + (caMax == null ? "" : caMax) + '" value="' + (h.apertureCA == null ? "" : h.apertureCA) + '"' + (h.on ? "" : " disabled") + "></label>" +
+      "</div>" +
+      (h.slotAvailable
+        ? '<div class="slot-line">' +
+          '<label><input type="checkbox" class="c-slot-on"' + (h.slotOn ? " checked" : "") + (h.on ? "" : " disabled") + "> паз под пинцет</label>" +
+          '<label>Угол, °<input type="number" class="c-slot-angle" min="0" max="359" step="1" value="' + h.slotAngle + '"' + (h.slotOn && h.on ? "" : " disabled") + "></label>" +
+          "</div>"
+        : "") +
+      '<div class="part-preview hole-diagram"></div>';
+
+    function refreshPreview() {
+      div.querySelector(".part-preview").innerHTML = HC.renderHoleDiagram(h);
+    }
+    function on(sel, ev, fn) {
+      var el = div.querySelector(sel);
+      if (el) el.addEventListener(ev, fn);
+    }
+    function syncAutoFields() {
+      if (h.d == null) return;
+      var maxCA = autoCA(h.d);
+      var caEl = div.querySelector(".c-ca");
+      if (caEl) { if (maxCA != null) caEl.setAttribute("max", maxCA); else caEl.removeAttribute("max"); }
+      var seatEl = div.querySelector(".c-seat-d");
+      if (seatEl) seatEl.setAttribute("min", h.d);
+      if (h.seatDAuto) {
+        h.seatD = autoSeatD(h.d);
+        if (seatEl) seatEl.value = h.seatD == null ? "" : h.seatD;
+      }
+      if (h.apertureCAAuto) {
+        h.apertureCA = maxCA;
+        if (caEl) caEl.value = h.apertureCA == null ? "" : h.apertureCA;
+      }
+    }
+
+    on(".c-on", "change", function (e) {
+      h.on = e.target.checked;
+      var dEl = div.querySelector(".c-d"); if (dEl) dEl.disabled = !h.on;
+      var seatEl = div.querySelector(".c-seat-d"); if (seatEl) seatEl.disabled = !h.on;
+      var caEl = div.querySelector(".c-ca"); if (caEl) caEl.disabled = !h.on;
+      var slotOnEl = div.querySelector(".c-slot-on"); if (slotOnEl) slotOnEl.disabled = !h.on;
+      var slotAngleEl = div.querySelector(".c-slot-angle"); if (slotAngleEl) slotAngleEl.disabled = !h.on || !h.slotOn;
+      markDirty();
+    });
+    on(".c-d", "input", function (e) { h.d = parseFloat(e.target.value); syncAutoFields(); refreshPreview(); markDirty(); });
+    on(".c-seat-d", "input", function (e) { h.seatD = e.target.value === "" ? null : parseFloat(e.target.value); h.seatDAuto = false; refreshPreview(); markDirty(); });
+    on(".c-ca", "input", function (e) { h.apertureCA = e.target.value === "" ? null : parseFloat(e.target.value); h.apertureCAAuto = false; refreshPreview(); markDirty(); });
+    on(".c-slot-on", "change", function (e) {
+      h.slotOn = e.target.checked;
+      var angleEl = div.querySelector(".c-slot-angle");
+      if (angleEl) angleEl.disabled = !h.slotOn;
+      refreshPreview(); markDirty();
+    });
+    on(".c-slot-angle", "input", function (e) { h.slotAngle = parseFloat(e.target.value); refreshPreview(); markDirty(); });
+
+    refreshPreview();
+    return div;
   }
 
   function activeControlHoles() {
     return ctrlHoles.filter(function (h) { return h.on; }).map(function (h) {
-      return { x: h.x, y: h.y, d: h.d };
+      return { x: h.x, y: h.y, d: h.seatD };
     });
   }
 
   function controlSummary() {
     var act = ctrlHoles.filter(function (h) { return h.on; });
     if (!act.length) return "нет";
-    return act.map(function (h) { return h.name + " Ø" + h.d; }).join("; ");
+    return act.map(function (h) { return h.name + " Ø" + h.seatD; }).join("; ");
   }
 
   // ---------- детали ----------
@@ -322,7 +386,18 @@
       }
     });
     ctrlHoles.forEach(function (h) {
-      if (h.on && !(h.d > 0)) errs.push("Контрольное отверстие «" + h.name + "»: укажите диаметр.");
+      if (!h.on) return;
+      var hn = "Контрольное отверстие «" + h.name + "»: ";
+      if (!(h.seatD > 0)) { errs.push(hn + "укажите Ø посадки."); return; }
+      if (h.d != null) {
+        if (h.seatD < h.d - 1e-6) errs.push(hn + "Ø посадки D не может быть меньше диаметра детали d (" + h.d + ").");
+        if (h.apertureCA != null) {
+          var maxCAh = autoCA(h.d);
+          if (maxCAh == null || h.apertureCA > maxCAh + 1e-6) {
+            errs.push(hn + "зона напыления CA не может быть больше d−1.5 мм" + (maxCAh != null ? " (максимум " + maxCAh + ")" : "") + ".");
+          }
+        }
+      }
     });
     ["clPP", "clPE", "clPC"].forEach(function (id) {
       var v = parseFloat($(id).value);

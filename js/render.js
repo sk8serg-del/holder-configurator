@@ -86,9 +86,11 @@
   // координатах (центр — 0,0): посадка (D) и паз — чёрной линией без заливки,
   // деталь (d) — сплошная синяя заливка, зона напыления (CA) — пунктирная
   // линия внутри. Используется и в карточке детали, и в общей раскладке.
-  // spec = {d, seatD, apertureCA, slotOn, slotAngle} — необязательные поля не рисуются.
+  // spec = {d, seatD, apertureCA, slotOn, slotAngle} — d и все поля кроме
+  // seatD необязательны (например, у контрольного отверстия без «детали»
+  // рисуются только D/CA).
   function circleFeatureSVG(spec, sw) {
-    var d = spec.d;
+    var d = spec.d > 0 ? spec.d : null;
     var D = spec.seatD > 0 ? spec.seatD : null;
     var CA = spec.apertureCA > 0 ? spec.apertureCA : null;
     var showSlot = !!spec.slotOn && D != null;
@@ -106,7 +108,9 @@
     if (D != null) {
       out.push('<circle cx="0" cy="0" r="' + fmt(D / 2) + '" fill="none" stroke="#000" stroke-width="' + fmt(sw) + '"/>');
     }
-    out.push('<circle cx="0" cy="0" r="' + fmt(d / 2) + '" fill="#2b6cb0" stroke="#1a4971" stroke-width="' + fmt(sw * 0.6) + '"/>');
+    if (d != null) {
+      out.push('<circle cx="0" cy="0" r="' + fmt(d / 2) + '" fill="#2b6cb0" stroke="#1a4971" stroke-width="' + fmt(sw * 0.6) + '"/>');
+    }
     if (CA != null) {
       out.push(
         '<circle cx="0" cy="0" r="' + fmt(CA / 2) + '" fill="none" stroke="#000" stroke-width="' + fmt(sw) +
@@ -116,16 +120,17 @@
     return out.join("");
   }
 
-  // Крупная схема отверстия под круглую деталь для карточки в форме заказа.
-  // spec = {d, seatD, apertureCA, slotOn, slotAngle} — необязательные поля не рисуются.
+  // Крупная схема отверстия под круглую деталь (или контрольного отверстия)
+  // для карточки в форме заказа. spec = {d, seatD, apertureCA, depth, slotOn,
+  // slotAngle} — d и depth необязательны (для отверстия без «детали» — только D/CA).
   HC.renderHoleDiagram = function (spec) {
-    var d = spec.d;
-    if (!(d > 0)) return "";
+    var d = spec.d > 0 ? spec.d : null;
     var D = spec.seatD > 0 ? spec.seatD : null;
     var CA = spec.apertureCA > 0 ? spec.apertureCA : null;
+    if (d == null && D == null) return "";
     var showSlot = !!spec.slotOn && D != null;
     var slotL = showSlot ? D + 2 * 2.5 : 0;
-    var outer = Math.max(d, D || 0, slotL);
+    var outer = Math.max(d || 0, D || 0, slotL);
     var R = outer / 2;
     var sidePad = R * 0.18;
     var textH = R * 0.62;
@@ -139,7 +144,8 @@
     var labelParts = [];
     if (D != null) labelParts.push("D" + fmtRu(D));
     if (CA != null) labelParts.push("CA" + fmtRu(CA));
-    var label = "d" + fmtRu(d) + (labelParts.length ? " (" + labelParts.join("/") + ")" : "");
+    var label = (d != null ? "d" + fmtRu(d) : "") + (labelParts.length ? (d != null ? " (" : "(") + labelParts.join("/") + ")" : "");
+    if (spec.depth > 0) label += " · глуб. " + fmtRu(spec.depth);
     var fs = Math.min(textH * 0.5, (2 * half * 0.92) / (label.length * 0.56));
     out.push(
       '<text x="0" y="' + fmt(half + textH * 0.58) + '" font-size="' + fmt(fs) +
