@@ -100,10 +100,27 @@
 
   // ---------- детали ----------
 
+  // Ø посадки по умолчанию: зазор растёт со размером детали (технологический запас)
+  function autoSeatD(d) {
+    if (!(d > 0)) return null;
+    var add = d <= 50 ? 0.2 : (d <= 100 ? 0.3 : 0.4);
+    return Math.round((d + add) * 100) / 100;
+  }
+
+  // Максимально возможная технологически зона напыления — деталь минус 1.5 мм на кольцо посадки
+  function autoCA(d) {
+    if (!(d > 0)) return null;
+    var ca = d - 1.5;
+    return ca > 0 ? Math.round(ca * 100) / 100 : null;
+  }
+
   function defaultPart() {
+    var d = 10;
     return {
-      type: "circle", d: 10, w: 20, h: 10, chamfer: 2,
-      seatD: null, apertureCA: null, // посадка (D) и зона напыления (CA) — только для круглых, необязательно
+      type: "circle", d: d, w: 20, h: 10, chamfer: 2,
+      // посадка (D) и зона напыления (CA) — только для круглых; авто, пока пользователь не поправит вручную
+      seatD: autoSeatD(d), seatDAuto: true,
+      apertureCA: autoCA(d), apertureCAAuto: true,
       qtyMode: "max", qty: 10,
       orientation: "grid",           // fixed | grid | radial-w | radial-h
       anchor: "center", anchorD: 150 // расположение при неполном заполнении
@@ -119,10 +136,11 @@
   function partRow(p, i) {
     var div = document.createElement("div");
     div.className = "part-row";
+    var caMax = autoCA(p.d);
     var dims = p.type === "circle"
       ? '<label>Диаметр детали d, мм<input type="number" class="p-d" min="0.1" step="0.1" value="' + p.d + '"></label>' +
-        '<label>Ø посадки D, мм <span class="hint">(необяз.)</span><input type="number" class="p-seat-d" min="0.1" step="0.1" value="' + (p.seatD == null ? "" : p.seatD) + '"></label>' +
-        '<label>Зона напыления CA, мм <span class="hint">(необяз.)</span><input type="number" class="p-ca" min="0.1" step="0.1" value="' + (p.apertureCA == null ? "" : p.apertureCA) + '"></label>'
+        '<label>Ø посадки D, мм <span class="hint">(авто, можно поправить)</span><input type="number" class="p-seat-d" min="0.1" step="0.1" value="' + (p.seatD == null ? "" : p.seatD) + '"></label>' +
+        '<label>Зона напыления CA, мм <span class="hint">(авто-максимум, можно только уменьшить)</span><input type="number" class="p-ca" min="0.1" step="0.1" max="' + (caMax == null ? "" : caMax) + '" value="' + (p.apertureCA == null ? "" : p.apertureCA) + '"></label>'
       : '<label>Ширина, мм<input type="number" class="p-w" min="0.1" step="0.1" value="' + p.w + '"></label>' +
         '<label>Высота, мм<input type="number" class="p-h" min="0.1" step="0.1" value="' + p.h + '"></label>' +
         (p.type === "oct" ? '<label>Фаска, мм<input type="number" class="p-ch" min="0" step="0.1" value="' + p.chamfer + '"></label>' : "");
@@ -174,10 +192,29 @@
       host.className = "part-preview" + (p.type === "circle" ? " hole-diagram" : "");
       host.innerHTML = p.type === "circle" ? HC.renderHoleDiagram(p) : HC.renderPartPreview(p);
     }
+    // При изменении d пересчитывает D/CA, пока пользователь их не тронул руками
+    // (обновляет поля напрямую через DOM, без renderParts(), чтобы не сбивать фокус при вводе)
+    function syncAutoFields() {
+      if (p.type !== "circle") return;
+      var maxCA = autoCA(p.d);
+      var caEl = div.querySelector(".p-ca");
+      if (caEl) {
+        if (maxCA != null) caEl.setAttribute("max", maxCA); else caEl.removeAttribute("max");
+      }
+      if (p.seatDAuto) {
+        p.seatD = autoSeatD(p.d);
+        var seatEl = div.querySelector(".p-seat-d");
+        if (seatEl) seatEl.value = p.seatD == null ? "" : p.seatD;
+      }
+      if (p.apertureCAAuto) {
+        p.apertureCA = maxCA;
+        if (caEl) caEl.value = p.apertureCA == null ? "" : p.apertureCA;
+      }
+    }
     on(".p-type", "change", function (e) { p.type = e.target.value; renderParts(); markDirty(); });
-    on(".p-d", "input", function (e) { p.d = parseFloat(e.target.value); refreshPreview(); markDirty(); });
-    on(".p-seat-d", "input", function (e) { p.seatD = e.target.value === "" ? null : parseFloat(e.target.value); refreshPreview(); markDirty(); });
-    on(".p-ca", "input", function (e) { p.apertureCA = e.target.value === "" ? null : parseFloat(e.target.value); refreshPreview(); markDirty(); });
+    on(".p-d", "input", function (e) { p.d = parseFloat(e.target.value); syncAutoFields(); refreshPreview(); markDirty(); });
+    on(".p-seat-d", "input", function (e) { p.seatD = e.target.value === "" ? null : parseFloat(e.target.value); p.seatDAuto = false; refreshPreview(); markDirty(); });
+    on(".p-ca", "input", function (e) { p.apertureCA = e.target.value === "" ? null : parseFloat(e.target.value); p.apertureCAAuto = false; refreshPreview(); markDirty(); });
     on(".p-w", "input", function (e) { p.w = parseFloat(e.target.value); refreshPreview(); markDirty(); });
     on(".p-h", "input", function (e) { p.h = parseFloat(e.target.value); refreshPreview(); markDirty(); });
     on(".p-ch", "input", function (e) { p.chamfer = parseFloat(e.target.value); refreshPreview(); markDirty(); });
@@ -244,6 +281,12 @@
       if (p.type === "circle") {
         if (!(p.d > 0)) errs.push(n + "укажите диаметр.");
         else if (p.d >= disc.diameter) errs.push(n + "деталь больше диска.");
+        else if (p.apertureCA != null) {
+          var maxCA = autoCA(p.d);
+          if (maxCA == null || p.apertureCA > maxCA + 1e-6) {
+            errs.push(n + "зона напыления CA не может быть больше d−1.5 мм" + (maxCA != null ? " (максимум " + maxCA + ")" : "") + ".");
+          }
+        }
       } else {
         if (!(p.w > 0) || !(p.h > 0)) errs.push(n + "укажите ширину и высоту.");
         else if (p.type === "oct") {

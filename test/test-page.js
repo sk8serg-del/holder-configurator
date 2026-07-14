@@ -45,27 +45,54 @@ check("зазоры предзаполнены (6/3/6)", $("clPP").value === "6"
   $("clPP").value + "/" + $("clPE").value + "/" + $("clPC").value);
 check("есть строка детали", d.querySelectorAll("#partsList .part-row").length === 1);
 
-// --- предпросмотр детали (для круга — крупная схема d/D/CA) ---
-check("схема отверстия отрисована", d.querySelector(".part-preview.hole-diagram svg") !== null &&
-  d.querySelector(".part-preview").innerHTML.indexOf("d10") !== -1);
+// --- предпросмотр детали (для круга — крупная схема d/D/CA, авторасчёт) ---
+check("схема отверстия отрисована с авто D/CA для d=10 (D10,2/CA8,5)",
+  d.querySelector(".part-preview.hole-diagram svg") !== null &&
+  d.querySelector(".part-preview").innerHTML.indexOf("d10 (D10,2/CA8,5)") !== -1,
+  d.querySelector(".part-preview").innerHTML);
 const dInput = d.querySelector("#partsList .p-d");
-dInput.value = "12";
-dInput.dispatchEvent(new w.Event("input"));
-check("схема обновилась при вводе d", d.querySelector(".part-preview").innerHTML.indexOf("d12") !== -1);
 const seatInput = d.querySelector("#partsList .p-seat-d");
 const caInput = d.querySelector("#partsList .p-ca");
-seatInput.value = "12.2";
-seatInput.dispatchEvent(new w.Event("input"));
-caInput.value = "11.5";
-caInput.dispatchEvent(new w.Event("input"));
-check("подпись содержит D и CA", d.querySelector(".part-preview").innerHTML.indexOf("d12 (D12,2/CA11,5)") !== -1,
+dInput.value = "12";
+dInput.dispatchEvent(new w.Event("input"));
+check("при смене d авто D/CA пересчитались (D12,2/CA10,5)",
+  d.querySelector(".part-preview").innerHTML.indexOf("d12 (D12,2/CA10,5)") !== -1,
   d.querySelector(".part-preview").innerHTML);
-seatInput.value = "";
+check("max у поля CA обновился до авто-максимума", caInput.getAttribute("max") === "10.5", caInput.getAttribute("max"));
+
+// ручная правка D — дальше не должна затираться при новом изменении d
+seatInput.value = "13";
 seatInput.dispatchEvent(new w.Event("input"));
-caInput.value = "";
+dInput.value = "20";
+dInput.dispatchEvent(new w.Event("input"));
+check("ручной D сохранился при смене d, CA пересчитался (D13/CA18,5)",
+  d.querySelector(".part-preview").innerHTML.indexOf("d20 (D13/CA18,5)") !== -1,
+  d.querySelector(".part-preview").innerHTML);
+
+// ручная правка CA в меньшую сторону — тоже должна сохраняться при смене d
+caInput.value = "15";
 caInput.dispatchEvent(new w.Event("input"));
+dInput.value = "22";
+dInput.dispatchEvent(new w.Event("input"));
+check("ручной CA сохранился при смене d (D13/CA15 — D пересчитался бы, но он тоже уже ручной)",
+  d.querySelector(".part-preview").innerHTML.indexOf("CA15") !== -1,
+  d.querySelector(".part-preview").innerHTML);
+
+// CA больше технологического максимума — ошибка валидации при раскладке
 dInput.value = "10";
 dInput.dispatchEvent(new w.Event("input"));
+seatInput.value = "";
+seatInput.dispatchEvent(new w.Event("input"));
+caInput.value = "50";
+caInput.dispatchEvent(new w.Event("input"));
+$("packBtn").click();
+check("CA больше максимума — раскладка отклонена с понятной ошибкой",
+  $("statusMsg").textContent.indexOf("зона напыления") !== -1 && $("statusMsg").className.indexOf("error") !== -1,
+  $("statusMsg").textContent);
+
+// возвращаем деталь в валидное состояние для дальнейших тестов
+caInput.value = "";
+caInput.dispatchEvent(new w.Event("input"));
 
 // --- раскладка ---
 $("custName").value = "Тестов Т.Т.";
