@@ -45,13 +45,25 @@ check("зазоры предзаполнены (6/3/6)", $("clPP").value === "6"
   $("clPP").value + "/" + $("clPE").value + "/" + $("clPC").value);
 check("есть строка детали", d.querySelectorAll("#partsList .part-row").length === 1);
 
-// --- предпросмотр детали ---
-check("предпросмотр круга отрисован", d.querySelector(".part-preview svg") !== null &&
-  d.querySelector(".part-preview").innerHTML.indexOf("Ø10") !== -1);
+// --- предпросмотр детали (для круга — крупная схема d/D/CA) ---
+check("схема отверстия отрисована", d.querySelector(".part-preview.hole-diagram svg") !== null &&
+  d.querySelector(".part-preview").innerHTML.indexOf("d10") !== -1);
 const dInput = d.querySelector("#partsList .p-d");
 dInput.value = "12";
 dInput.dispatchEvent(new w.Event("input"));
-check("предпросмотр обновился при вводе", d.querySelector(".part-preview").innerHTML.indexOf("Ø12") !== -1);
+check("схема обновилась при вводе d", d.querySelector(".part-preview").innerHTML.indexOf("d12") !== -1);
+const seatInput = d.querySelector("#partsList .p-seat-d");
+const caInput = d.querySelector("#partsList .p-ca");
+seatInput.value = "12.2";
+seatInput.dispatchEvent(new w.Event("input"));
+caInput.value = "11.5";
+caInput.dispatchEvent(new w.Event("input"));
+check("подпись содержит D и CA", d.querySelector(".part-preview").innerHTML.indexOf("d12 (D12,2/CA11,5)") !== -1,
+  d.querySelector(".part-preview").innerHTML);
+seatInput.value = "";
+seatInput.dispatchEvent(new w.Event("input"));
+caInput.value = "";
+caInput.dispatchEvent(new w.Event("input"));
 dInput.value = "10";
 dInput.dispatchEvent(new w.Event("input"));
 

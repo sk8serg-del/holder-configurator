@@ -149,6 +149,7 @@ input[type="checkbox"], input[type="radio"] {
 }
 .part-preview:empty { display: none; }
 .part-preview svg { height: 100%; max-width: 100%; }
+.part-preview.hole-diagram { height: 320px; margin-bottom: 10px; }
 
 .qty-line {
   display: flex;

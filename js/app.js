@@ -103,6 +103,7 @@
   function defaultPart() {
     return {
       type: "circle", d: 10, w: 20, h: 10, chamfer: 2,
+      seatD: null, apertureCA: null, // посадка (D) и зона напыления (CA) — только для круглых, необязательно
       qtyMode: "max", qty: 10,
       orientation: "grid",           // fixed | grid | radial-w | radial-h
       anchor: "center", anchorD: 150 // расположение при неполном заполнении
@@ -119,7 +120,9 @@
     var div = document.createElement("div");
     div.className = "part-row";
     var dims = p.type === "circle"
-      ? '<label>Диаметр, мм<input type="number" class="p-d" min="0.1" step="0.1" value="' + p.d + '"></label>'
+      ? '<label>Диаметр детали d, мм<input type="number" class="p-d" min="0.1" step="0.1" value="' + p.d + '"></label>' +
+        '<label>Ø посадки D, мм <span class="hint">(необяз.)</span><input type="number" class="p-seat-d" min="0.1" step="0.1" value="' + (p.seatD == null ? "" : p.seatD) + '"></label>' +
+        '<label>Зона напыления CA, мм <span class="hint">(необяз.)</span><input type="number" class="p-ca" min="0.1" step="0.1" value="' + (p.apertureCA == null ? "" : p.apertureCA) + '"></label>'
       : '<label>Ширина, мм<input type="number" class="p-w" min="0.1" step="0.1" value="' + p.w + '"></label>' +
         '<label>Высота, мм<input type="number" class="p-h" min="0.1" step="0.1" value="' + p.h + '"></label>' +
         (p.type === "oct" ? '<label>Фаска, мм<input type="number" class="p-ch" min="0" step="0.1" value="' + p.chamfer + '"></label>' : "");
@@ -134,7 +137,8 @@
       '<option value="oct"' + (p.type === "oct" ? " selected" : "") + ">Прямоугольная с фаской</option>" +
       "</select></label>" +
       '<div class="dims">' + dims + "</div>" +
-      '<div class="part-preview">' + HC.renderPartPreview(p) + "</div>" +
+      '<div class="part-preview' + (p.type === "circle" ? " hole-diagram" : "") + '">' +
+      (p.type === "circle" ? HC.renderHoleDiagram(p) : HC.renderPartPreview(p)) + "</div>" +
       (p.type !== "circle"
         ? '<label>Ориентация<select class="p-orient">' +
           '<option value="fixed"' + (p.orientation === "fixed" ? " selected" : "") + ">фиксированная (без поворота)</option>" +
@@ -166,10 +170,14 @@
       if (el) el.addEventListener(ev, fn);
     }
     function refreshPreview() {
-      div.querySelector(".part-preview").innerHTML = HC.renderPartPreview(p);
+      var host = div.querySelector(".part-preview");
+      host.className = "part-preview" + (p.type === "circle" ? " hole-diagram" : "");
+      host.innerHTML = p.type === "circle" ? HC.renderHoleDiagram(p) : HC.renderPartPreview(p);
     }
     on(".p-type", "change", function (e) { p.type = e.target.value; renderParts(); markDirty(); });
     on(".p-d", "input", function (e) { p.d = parseFloat(e.target.value); refreshPreview(); markDirty(); });
+    on(".p-seat-d", "input", function (e) { p.seatD = e.target.value === "" ? null : parseFloat(e.target.value); refreshPreview(); markDirty(); });
+    on(".p-ca", "input", function (e) { p.apertureCA = e.target.value === "" ? null : parseFloat(e.target.value); refreshPreview(); markDirty(); });
     on(".p-w", "input", function (e) { p.w = parseFloat(e.target.value); refreshPreview(); markDirty(); });
     on(".p-h", "input", function (e) { p.h = parseFloat(e.target.value); refreshPreview(); markDirty(); });
     on(".p-ch", "input", function (e) { p.chamfer = parseFloat(e.target.value); refreshPreview(); markDirty(); });

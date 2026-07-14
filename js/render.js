@@ -30,6 +30,11 @@
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
+  // Число с запятой вместо точки (десятичный разделитель по месту, как в чертежах)
+  function fmtRu(v) {
+    return (Math.round(v * 100) / 100).toString().replace(".", ",");
+  }
+
   // Мини-предпросмотр формы детали для карточки в форме заказа.
   // spec = {type:'circle'|'rect'|'oct', d, w, h, chamfer}
   HC.renderPartPreview = function (spec) {
@@ -53,6 +58,49 @@
     var label = spec.type === "circle" ? "Ø" + fmt(spec.d) : fmt(spec.w) + "×" + fmt(spec.h);
     var fs = Math.min(h * 0.45, (w * 1.5) / label.length);
     out.push('<text x="0" y="0" font-size="' + fmt(fs) + '" text-anchor="middle" dominant-baseline="central" fill="#1a3550">' + esc(label) + "</text>");
+    out.push("</svg>");
+    return out.join("");
+  };
+
+  // Крупная схема отверстия под круглую деталь: посадка (D, зенковка,
+  // пунктир) + деталь (d, сплошная) + зона напыления (CA, сквозное отверстие).
+  // spec = {d, seatD, apertureCA} — seatD/apertureCA необязательны (null/NaN — не рисуются).
+  HC.renderHoleDiagram = function (spec) {
+    var d = spec.d;
+    if (!(d > 0)) return "";
+    var D = spec.seatD > 0 ? spec.seatD : null;
+    var CA = spec.apertureCA > 0 ? spec.apertureCA : null;
+    var outer = Math.max(d, D || 0);
+    var R = outer / 2;
+    var sidePad = R * 0.18;
+    var textH = R * 0.62;
+    var half = R + sidePad;
+    var vb = fmt(-half) + " " + fmt(-half) + " " + fmt(2 * half) + " " + fmt(2 * half + textH);
+    var sw = outer / 70;
+    var col = PART_COLORS[0];
+    var out = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + vb + '" font-family="system-ui, Segoe UI, sans-serif">'];
+
+    if (D != null) {
+      out.push(
+        '<circle cx="0" cy="0" r="' + fmt(D / 2) + '" fill="none" stroke="' + col.stroke +
+        '" stroke-width="' + fmt(sw) + '" stroke-dasharray="' + fmt(sw * 3) + " " + fmt(sw * 2) + '"/>'
+      );
+    }
+    out.push('<circle cx="0" cy="0" r="' + fmt(d / 2) + '" fill="' + col.fill + '" stroke="' + col.stroke + '" stroke-width="' + fmt(sw) + '"/>');
+    if (CA != null) {
+      // сквозное отверстие — «пробивает» деталь насквозь, поэтому светлее заливки
+      out.push('<circle cx="0" cy="0" r="' + fmt(CA / 2) + '" fill="#fdfdfc" stroke="' + col.stroke + '" stroke-width="' + fmt(sw) + '"/>');
+    }
+
+    var labelParts = [];
+    if (D != null) labelParts.push("D" + fmtRu(D));
+    if (CA != null) labelParts.push("CA" + fmtRu(CA));
+    var label = "d" + fmtRu(d) + (labelParts.length ? " (" + labelParts.join("/") + ")" : "");
+    var fs = Math.min(textH * 0.5, (2 * half * 0.92) / (label.length * 0.56));
+    out.push(
+      '<text x="0" y="' + fmt(half + textH * 0.58) + '" font-size="' + fmt(fs) +
+      '" text-anchor="middle" fill="#1a3550">' + esc(label) + "</text>"
+    );
     out.push("</svg>");
     return out.join("");
   };
