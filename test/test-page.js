@@ -100,12 +100,29 @@ slotOnEl.click();
 check("после включения паза поле угла активно", slotAngleEl.disabled === false);
 slotAngleEl.value = "45";
 slotAngleEl.dispatchEvent(new w.Event("input"));
-check("схема показывает паз W9×L25 при D20, угол 45°",
-  d.querySelector(".part-preview").innerHTML.indexOf("паз 9×25, 45°") !== -1,
+check("подпись не упоминает паз (только d/D/CA)",
+  d.querySelector(".part-preview").innerHTML.indexOf("паз") === -1);
+check("на схеме есть контур паза (path) при включённом чекбоксе",
+  d.querySelector(".part-preview svg path") !== null);
+check("паз повёрнут на заданный угол (rotate(45))",
+  d.querySelector(".part-preview").innerHTML.indexOf("rotate(45)") !== -1,
   d.querySelector(".part-preview").innerHTML);
 slotOnEl.click();
-check("после выключения паза угол снова недоступен и схема без паза",
-  slotAngleEl.disabled === true && d.querySelector(".part-preview").innerHTML.indexOf("паз") === -1);
+check("после выключения паза угол недоступен и контур паза исчез",
+  slotAngleEl.disabled === true && d.querySelector(".part-preview svg path") === null);
+
+// --- D не может быть меньше d ---
+dInput.value = "10";
+dInput.dispatchEvent(new w.Event("input"));
+seatInput.value = "5";
+seatInput.dispatchEvent(new w.Event("input"));
+check("min у поля D равен текущему d", seatInput.getAttribute("min") === "10", seatInput.getAttribute("min"));
+$("packBtn").click();
+check("D меньше d — раскладка отклонена с понятной ошибкой",
+  $("statusMsg").textContent.indexOf("Ø посадки D") !== -1 && $("statusMsg").className.indexOf("error") !== -1,
+  $("statusMsg").textContent);
+seatInput.value = "";
+seatInput.dispatchEvent(new w.Event("input"));
 
 // возвращаем деталь в валидное состояние для дальнейших тестов
 caInput.value = "";
@@ -119,6 +136,15 @@ check("SVG отрисован", $("svgHost").innerHTML.indexOf("<svg") !== -1);
 const circles = $("svgHost").querySelectorAll("circle").length;
 check("кругов в SVG много (>100)", circles > 100, String(circles));
 check("кнопки активны", !$("csvBtn").disabled && !$("reportBtn").disabled && !$("sendBtn").disabled);
+
+// --- паз под пинцет должен быть виден и в общей раскладке, не только в карточке ---
+seatInput.value = "12";
+seatInput.dispatchEvent(new w.Event("input"));
+slotOnEl.click(); // включаем обратно
+$("packBtn").click();
+check("на раскладке нарисован хотя бы один паз (path в svgHost)",
+  $("svgHost").querySelectorAll("path").length > 0);
+slotOnEl.click(); // выключаем, чтобы не мешать дальнейшим тестам
 
 // --- выключаем контрольное отверстие, раскладываем снова ---
 const firstOn = d.querySelector("#controlList .c-on");

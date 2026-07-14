@@ -39,7 +39,12 @@
 
   function makePlacement(spec, cx, cy, rot, partIndex) {
     if (spec.type === "circle") {
-      return { type: "circle", cx: cx, cy: cy, d: spec.d, partIndex: partIndex };
+      return {
+        type: "circle", cx: cx, cy: cy, d: spec.d, partIndex: partIndex,
+        // посадка/зона напыления/паз — для схемы отображения, на раскладку не влияют;
+        // угол паза у каждого экземпляра свой (см. render.js), не общий из формы
+        seatD: spec.seatD, apertureCA: spec.apertureCA, slotOn: spec.slotOn
+      };
     }
     var p = { type: spec.type, cx: cx, cy: cy, w: spec.w, h: spec.h, rot: rot || 0, partIndex: partIndex };
     if (spec.type === "oct") p.chamfer = spec.chamfer || 0;
@@ -296,7 +301,10 @@
       var phase = (o / RADIAL_STEPS) * step;
       var rings = ringCandidates(phase, rMax, step, step, 0);
       attempts.push(fillRings(rings, spec, ctx, function (cand) {
-        return { type: "circle", cx: cand.cx, cy: cand.cy, d: spec.d, partIndex: spec.partIndex };
+        return {
+          type: "circle", cx: cand.cx, cy: cand.cy, d: spec.d, partIndex: spec.partIndex,
+          seatD: spec.seatD, apertureCA: spec.apertureCA, slotOn: spec.slotOn
+        };
       }));
     }
     return pickBestAttempt(attempts, spec);

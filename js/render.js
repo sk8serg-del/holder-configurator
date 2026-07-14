@@ -82,10 +82,41 @@
     );
   }
 
-  // Крупная схема отверстия под круглую деталь: посадка (D, зенковка,
-  // пунктир) + деталь (d, сплошная) + зона напыления (CA, сквозное отверстие)
-  // + паз под пинцет (slotOn/slotAngle) — длина D+2×2.5, ширина min(9, 0.75×D),
-  // проходит через центр симметрично, торчит на 2.5 мм за посадку с двух сторон.
+  // Отрисовка круглой детали с посадкой/зоной напыления/пазом в локальных
+  // координатах (центр — 0,0): посадка (D) и паз — чёрной линией без заливки,
+  // деталь (d) — сплошная синяя заливка, зона напыления (CA) — пунктирная
+  // линия внутри. Используется и в карточке детали, и в общей раскладке.
+  // spec = {d, seatD, apertureCA, slotOn, slotAngle} — необязательные поля не рисуются.
+  function circleFeatureSVG(spec, sw) {
+    var d = spec.d;
+    var D = spec.seatD > 0 ? spec.seatD : null;
+    var CA = spec.apertureCA > 0 ? spec.apertureCA : null;
+    var showSlot = !!spec.slotOn && D != null;
+    var out = [];
+
+    if (showSlot) {
+      var slotL = D + 2 * 2.5;
+      var slotW = slotWidth(D);
+      out.push(
+        '<g transform="rotate(' + fmt(spec.slotAngle || 0) + ')">' +
+        '<path d="' + stadiumPath(slotL, slotW) + '" fill="none" stroke="#000" stroke-width="' + fmt(sw) + '"/>' +
+        "</g>"
+      );
+    }
+    if (D != null) {
+      out.push('<circle cx="0" cy="0" r="' + fmt(D / 2) + '" fill="none" stroke="#000" stroke-width="' + fmt(sw) + '"/>');
+    }
+    out.push('<circle cx="0" cy="0" r="' + fmt(d / 2) + '" fill="#2b6cb0" stroke="#1a4971" stroke-width="' + fmt(sw * 0.6) + '"/>');
+    if (CA != null) {
+      out.push(
+        '<circle cx="0" cy="0" r="' + fmt(CA / 2) + '" fill="none" stroke="#000" stroke-width="' + fmt(sw) +
+        '" stroke-dasharray="' + fmt(sw * 2.5) + " " + fmt(sw * 1.8) + '"/>'
+      );
+    }
+    return out.join("");
+  }
+
+  // Крупная схема отверстия под круглую деталь для карточки в форме заказа.
   // spec = {d, seatD, apertureCA, slotOn, slotAngle} — необязательные поля не рисуются.
   HC.renderHoleDiagram = function (spec) {
     var d = spec.d;
@@ -94,7 +125,6 @@
     var CA = spec.apertureCA > 0 ? spec.apertureCA : null;
     var showSlot = !!spec.slotOn && D != null;
     var slotL = showSlot ? D + 2 * 2.5 : 0;
-    var slotW = showSlot ? slotWidth(D) : 0;
     var outer = Math.max(d, D || 0, slotL);
     var R = outer / 2;
     var sidePad = R * 0.18;
@@ -102,33 +132,14 @@
     var half = R + sidePad;
     var vb = fmt(-half) + " " + fmt(-half) + " " + fmt(2 * half) + " " + fmt(2 * half + textH);
     var sw = outer / 70;
-    var col = PART_COLORS[0];
     var out = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + vb + '" font-family="system-ui, Segoe UI, sans-serif">'];
 
-    if (showSlot) {
-      out.push(
-        '<g transform="rotate(' + fmt(spec.slotAngle || 0) + ')">' +
-        '<path d="' + stadiumPath(slotL, slotW) + '" fill="#fdfdfc" stroke="#c05621" stroke-width="' + fmt(sw) + '"/>' +
-        "</g>"
-      );
-    }
-    if (D != null) {
-      out.push(
-        '<circle cx="0" cy="0" r="' + fmt(D / 2) + '" fill="none" stroke="' + col.stroke +
-        '" stroke-width="' + fmt(sw) + '" stroke-dasharray="' + fmt(sw * 3) + " " + fmt(sw * 2) + '"/>'
-      );
-    }
-    out.push('<circle cx="0" cy="0" r="' + fmt(d / 2) + '" fill="' + col.fill + '" stroke="' + col.stroke + '" stroke-width="' + fmt(sw) + '"/>');
-    if (CA != null) {
-      // сквозное отверстие — «пробивает» деталь насквозь, поэтому светлее заливки
-      out.push('<circle cx="0" cy="0" r="' + fmt(CA / 2) + '" fill="#fdfdfc" stroke="' + col.stroke + '" stroke-width="' + fmt(sw) + '"/>');
-    }
+    out.push(circleFeatureSVG(spec, sw));
 
     var labelParts = [];
     if (D != null) labelParts.push("D" + fmtRu(D));
     if (CA != null) labelParts.push("CA" + fmtRu(CA));
     var label = "d" + fmtRu(d) + (labelParts.length ? " (" + labelParts.join("/") + ")" : "");
-    if (showSlot) label += " · паз " + fmtRu(slotW) + "×" + fmtRu(slotL) + ", " + fmtRu(spec.slotAngle || 0) + "°";
     var fs = Math.min(textH * 0.5, (2 * half * 0.92) / (label.length * 0.56));
     out.push(
       '<text x="0" y="' + fmt(half + textH * 0.58) + '" font-size="' + fmt(fs) +
@@ -172,7 +183,15 @@
     (model.placed || []).forEach(function (p, idx) {
       var col = PART_COLORS[(p.partIndex || 0) % PART_COLORS.length];
       if (p.type === "circle") {
-        out.push('<circle cx="' + fmt(p.cx) + '" cy="' + fmt(p.cy) + '" r="' + fmt(p.d / 2) + '" fill="' + col.fill + '" stroke="' + col.stroke + '" stroke-width="' + fmt(sw * 1.5) + '"/>');
+        // ориентация паза свободная и у каждого экземпляра своя — направляем
+        // от центра диска (радиально), а не общим углом из формы
+        var slotAngle = (Math.atan2(p.cy, p.cx) * 180) / Math.PI;
+        var swC = Math.max(sw * 1.5, (p.seatD || p.d) / 70);
+        out.push(
+          '<g transform="translate(' + fmt(p.cx) + "," + fmt(p.cy) + ')">' +
+          circleFeatureSVG({ d: p.d, seatD: p.seatD, apertureCA: p.apertureCA, slotOn: p.slotOn, slotAngle: slotAngle }, swC) +
+          "</g>"
+        );
       } else {
         var poly = HC.geom.placementPoly(p);
         var pts = poly.map(function (q) { return fmt(q.x) + "," + fmt(q.y); }).join(" ");

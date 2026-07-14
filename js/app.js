@@ -140,7 +140,7 @@
     var caMax = autoCA(p.d);
     var dims = p.type === "circle"
       ? '<label>Диаметр детали d, мм<input type="number" class="p-d" min="0.1" step="0.1" value="' + p.d + '"></label>' +
-        '<label>Ø посадки D, мм <span class="hint">(авто, можно поправить)</span><input type="number" class="p-seat-d" min="0.1" step="0.1" value="' + (p.seatD == null ? "" : p.seatD) + '"></label>' +
+        '<label>Ø посадки D, мм <span class="hint">(авто, можно поправить, не меньше d)</span><input type="number" class="p-seat-d" min="' + p.d + '" step="0.1" value="' + (p.seatD == null ? "" : p.seatD) + '"></label>' +
         '<label>Зона напыления CA, мм <span class="hint">(авто-максимум, можно только уменьшить)</span><input type="number" class="p-ca" min="0.1" step="0.1" max="' + (caMax == null ? "" : caMax) + '" value="' + (p.apertureCA == null ? "" : p.apertureCA) + '"></label>'
       : '<label>Ширина, мм<input type="number" class="p-w" min="0.1" step="0.1" value="' + p.w + '"></label>' +
         '<label>Высота, мм<input type="number" class="p-h" min="0.1" step="0.1" value="' + p.h + '"></label>' +
@@ -208,9 +208,10 @@
       if (caEl) {
         if (maxCA != null) caEl.setAttribute("max", maxCA); else caEl.removeAttribute("max");
       }
+      var seatEl = div.querySelector(".p-seat-d");
+      if (seatEl) seatEl.setAttribute("min", p.d);
       if (p.seatDAuto) {
         p.seatD = autoSeatD(p.d);
-        var seatEl = div.querySelector(".p-seat-d");
         if (seatEl) seatEl.value = p.seatD == null ? "" : p.seatD;
       }
       if (p.apertureCAAuto) {
@@ -293,12 +294,19 @@
     parts.forEach(function (p, i) {
       var n = "Деталь " + (i + 1) + ": ";
       if (p.type === "circle") {
-        if (!(p.d > 0)) errs.push(n + "укажите диаметр.");
-        else if (p.d >= disc.diameter) errs.push(n + "деталь больше диска.");
-        else if (p.apertureCA != null) {
-          var maxCA = autoCA(p.d);
-          if (maxCA == null || p.apertureCA > maxCA + 1e-6) {
-            errs.push(n + "зона напыления CA не может быть больше d−1.5 мм" + (maxCA != null ? " (максимум " + maxCA + ")" : "") + ".");
+        if (!(p.d > 0)) {
+          errs.push(n + "укажите диаметр.");
+        } else if (p.d >= disc.diameter) {
+          errs.push(n + "деталь больше диска.");
+        } else {
+          if (p.seatD != null && p.seatD < p.d - 1e-6) {
+            errs.push(n + "Ø посадки D не может быть меньше диаметра детали d (" + p.d + ").");
+          }
+          if (p.apertureCA != null) {
+            var maxCA = autoCA(p.d);
+            if (maxCA == null || p.apertureCA > maxCA + 1e-6) {
+              errs.push(n + "зона напыления CA не может быть больше d−1.5 мм" + (maxCA != null ? " (максимум " + maxCA + ")" : "") + ".");
+            }
           }
         }
       } else {
@@ -344,7 +352,11 @@
           orientation: p.type === "circle" ? "fixed" : p.orientation,
           anchor: p.qtyMode === "qty"
             ? { mode: p.anchor, d: p.anchorD }
-            : { mode: "center" }
+            : { mode: "center" },
+          // только для отображения на раскладке — угол паза считается на месте, не общий
+          seatD: p.type === "circle" ? p.seatD : null,
+          apertureCA: p.type === "circle" ? p.apertureCA : null,
+          slotOn: p.type === "circle" ? p.slotOn : false
         };
       })
     };
