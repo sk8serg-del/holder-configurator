@@ -38,23 +38,32 @@ const $ = (id) => d.getElementById(id);
 check("список дисков заполнен", $("discSelect").options.length >= 3, String($("discSelect").options.length));
 check("диск по умолчанию — Ø298", $("discSelect").value === "disc-298", $("discSelect").value);
 check("контрольные отверстия: 3 строки", d.querySelectorAll("#controlList .ctrl-row").length === 3);
-check("у Центр/7° поле детали d = 25.4 (авто D=25,6/CA=23,9)",
+const ctrlNames = Array.from(d.querySelectorAll("#controlList .ctrl-head label")).map(function (el) { return el.textContent.trim(); });
+check("имена: Свидетель Центр / Свидетель / Контроль",
+  ctrlNames[0] === "Свидетель Центр" && ctrlNames[1] === "Свидетель" && ctrlNames[2] === "Контроль",
+  ctrlNames.join(" | "));
+check("у свидетелей поле детали d = 25.4 (авто D=25,6/CA=23,9)",
   d.querySelectorAll("#controlList .c-d").length === 2 &&
   d.querySelectorAll("#controlList .c-d")[0].value === "25.4" &&
   d.querySelectorAll("#controlList .c-d")[1].value === "25.4");
-check("у Центр/7° есть чекбокс паза (slotAvailable)",
-  d.querySelectorAll("#controlList .c-slot-on").length === 2);
+check("у свидетелей есть чекбокс паза и он включён по умолчанию",
+  d.querySelectorAll("#controlList .c-slot-on").length === 2 &&
+  Array.from(d.querySelectorAll("#controlList .c-slot-on")).every(function (el) { return el.checked; }));
+check("настройки контрольных отверстий свёрнуты по умолчанию (details закрыты)",
+  Array.from(d.querySelectorAll("#controlList details")).every(function (el) { return !el.open; }));
+const summaries = Array.from(d.querySelectorAll("#controlList .c-summary")).map(function (el) { return el.textContent; });
+check("свёрнутая строка свидетеля: d25,4 (D25,6/CA23,9) · паз",
+  summaries[0] === "d25,4 (D25,6/CA23,9) · паз", summaries[0]);
+check("свёрнутая строка Контроля: (D30,1/CA24,1) · глуб. 3 без паза",
+  summaries[2] === "(D30,1/CA24,1) · глуб. 3", summaries[2]);
 const seatDs = Array.from(d.querySelectorAll("#controlList .c-seat-d")).map(function (el) { return el.value; });
-check("Ø222/67°: посадка D=30.1, CA=24.1, без паза, без поля d",
+check("Контроль: посадка D=30.1, CA=24.1, без поля d",
   seatDs.indexOf("30.1") !== -1 &&
   Array.from(d.querySelectorAll("#controlList .c-ca")).some(function (el) { return el.value === "24.1"; }),
   seatDs.join(","));
-check("схема Центр/7° показывает d25,4 (D25,6/CA23,9)",
+check("схема свидетеля показывает d25,4 (D25,6/CA23,9)",
   d.querySelectorAll("#controlList .part-preview")[0].innerHTML.indexOf("d25,4 (D25,6/CA23,9)") !== -1,
   d.querySelectorAll("#controlList .part-preview")[0].innerHTML);
-check("схема Ø222/67° показывает (D30,1/CA24,1) · глуб. 3 без d",
-  d.querySelectorAll("#controlList .part-preview")[2].innerHTML.indexOf("(D30,1/CA24,1) · глуб. 3") !== -1,
-  d.querySelectorAll("#controlList .part-preview")[2].innerHTML);
 check("зазоры предзаполнены (6/3/6)", $("clPP").value === "6" && $("clPE").value === "3" && $("clPC").value === "6",
   $("clPP").value + "/" + $("clPE").value + "/" + $("clPC").value);
 check("есть строка детали", d.querySelectorAll("#partsList .part-row").length === 1);
@@ -177,7 +186,8 @@ check("print() вызван", printed === 1);
 const rep = $("report").innerHTML;
 check("в отчёте есть таблица координат", rep.indexOf("Координаты отверстий") !== -1);
 check("в отчёте есть имя технолога", rep.indexOf("Тестов") !== -1);
-check("в отчёте контрольные без выключенного центра", rep.indexOf("Ø222 / 7°") !== -1 && rep.indexOf("Центр Ø") === -1);
+check("в отчёте контрольные без выключенного Свидетеля Центр",
+  rep.indexOf("Контроль Ø") !== -1 && rep.indexOf("Свидетель Центр Ø") === -1);
 
 // --- смена диска и типа детали ---
 $("clPE").value = "9"; // испортим, чтобы проверить сброс к дефолту

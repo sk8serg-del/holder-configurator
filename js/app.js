@@ -68,7 +68,7 @@
         apertureCAAuto: h.apertureCA == null && hasD,
         depth: h.depth != null ? h.depth : null,
         slotAvailable: !!h.slotAvailable,
-        slotOn: false, slotAngle: 0,
+        slotOn: !!h.slotAvailable, slotAngle: 0, // паз по умолчанию включён там, где доступен
         on: true
       };
     });
@@ -87,8 +87,12 @@
     var div = document.createElement("div");
     div.className = "ctrl-row";
     var caMax = h.d != null ? autoCA(h.d) : null;
+    // все настройки спрятаны в сворачиваемый блок; наружу — только галочка
+    // наличия отверстия и краткая строка с текущими размерами
     div.innerHTML =
       '<div class="ctrl-head"><label><input type="checkbox" class="c-on"' + (h.on ? " checked" : "") + ">" + h.name + "</label></div>" +
+      '<details class="ctrl-details">' +
+      '<summary><span class="c-summary"></span></summary>' +
       '<div class="dims">' +
       (h.d != null ? '<label>Деталь d, мм<input type="number" class="c-d" min="0.1" step="0.1" value="' + h.d + '"' + (h.on ? "" : " disabled") + "></label>" : "") +
       '<label>Ø посадки D, мм<input type="number" class="c-seat-d" min="' + (h.d != null ? h.d : 0.1) + '" step="0.1" value="' + (h.seatD == null ? "" : h.seatD) + '"' + (h.on ? "" : " disabled") + "></label>" +
@@ -100,10 +104,23 @@
           '<label>Угол, °<input type="number" class="c-slot-angle" min="0" max="359" step="1" value="' + h.slotAngle + '"' + (h.slotOn && h.on ? "" : " disabled") + "></label>" +
           "</div>"
         : "") +
-      '<div class="part-preview hole-diagram"></div>';
+      '<div class="part-preview hole-diagram"></div>' +
+      "</details>";
+
+    function summaryText() {
+      function ru(v) { return (Math.round(v * 100) / 100).toString().replace(".", ","); }
+      var partsT = [];
+      if (h.seatD > 0) partsT.push("D" + ru(h.seatD));
+      if (h.apertureCA > 0) partsT.push("CA" + ru(h.apertureCA));
+      var t = (h.d > 0 ? "d" + ru(h.d) + " " : "") + (partsT.length ? "(" + partsT.join("/") + ")" : "");
+      if (h.depth > 0) t += " · глуб. " + ru(h.depth);
+      if (h.slotOn) t += " · паз";
+      return t || "параметры";
+    }
 
     function refreshPreview() {
       div.querySelector(".part-preview").innerHTML = HC.renderHoleDiagram(h);
+      div.querySelector(".c-summary").textContent = summaryText();
     }
     function on(sel, ev, fn) {
       var el = div.querySelector(sel);

@@ -45,9 +45,9 @@
             id: "std",
             name: "Центр + 2 × на Ø222 (7° и 67°)",
             holes: [
-              { x: 0, y: 0, name: "Центр", d: 25.4, slotAvailable: true },
-              { x: -110.173, y: -13.527, name: "Ø222 / 7°", d: 25.4, slotAvailable: true },
-              { x: -43.371, y: -102.176, name: "Ø222 / 67°", seatD: 30.1, depth: 3, apertureCA: 24.1, slotAvailable: false }
+              { x: 0, y: 0, name: "Свидетель Центр", d: 25.4, slotAvailable: true },
+              { x: -110.173, y: -13.527, name: "Свидетель", d: 25.4, slotAvailable: true },
+              { x: -43.371, y: -102.176, name: "Контроль", seatD: 30.1, depth: 3, apertureCA: 24.1, slotAvailable: false }
               // TODO: 3 малых отверстия у центра — добавить {x, y, name, ...} по факту
             ]
           },
