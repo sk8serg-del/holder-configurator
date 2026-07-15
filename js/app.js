@@ -489,7 +489,7 @@
     lines.push("Всего отверстий под детали: " + res.placed.length);
     $("summary").textContent = lines.join("\n");
 
-    refreshSVG();
+    refreshView();
     setActions(res.placed.length > 0);
     if (!res.placed.length) {
       setStatus("Ни одна деталь не поместилась: проверьте размеры и зазоры.", "error");
@@ -507,6 +507,43 @@
       placed: lastResult.placed,
       showNumbers: $("showNumbers").checked
     });
+  }
+
+  // ---------- 3D-вид ----------
+
+  var mode3d = false;
+
+  function refresh3D() {
+    if (!mode3d || !lastResult) return;
+    var ok = HC.viewer3d && HC.viewer3d.available() && HC.viewer3d.update($("view3dHost"), {
+      discDiameter: lastResult.disc.diameter,
+      thickness: lastResult.disc.thickness || 6,
+      controlHoles: lastResult.opts.controlHoles,
+      placed: lastResult.placed,
+      showNumbers: $("showNumbers").checked
+    });
+    if (!ok) {
+      setViewMode(false);
+      setSendMsg("3D-вид недоступен в этом браузере (нет WebGL).", "error");
+    }
+  }
+
+  function refreshView() {
+    refreshSVG();
+    refresh3D();
+  }
+
+  function setViewMode(is3d) {
+    if (is3d && !(HC.viewer3d && HC.viewer3d.available())) {
+      setSendMsg("3D-вид недоступен: библиотека Three.js не загрузилась.", "error");
+      return;
+    }
+    mode3d = is3d;
+    $("view2dBtn").classList.toggle("active", !is3d);
+    $("view3dBtn").classList.toggle("active", is3d);
+    $("svgHost").hidden = is3d;
+    $("view3dHost").hidden = !is3d;
+    if (is3d) refresh3D(); // контейнер уже показан — размеры известны
   }
 
   // ---------- заказ ----------
@@ -589,7 +626,9 @@
   $("clReset").addEventListener("click", function () { applyDefaultClearances(); markDirty(); });
   $("addPart").addEventListener("click", function () { parts.push(defaultPart()); renderParts(); markDirty(); });
   $("packBtn").addEventListener("click", doPack);
-  $("showNumbers").addEventListener("change", refreshSVG);
+  $("showNumbers").addEventListener("change", refreshView);
+  $("view2dBtn").addEventListener("click", function () { setViewMode(false); });
+  $("view3dBtn").addEventListener("click", function () { setViewMode(true); });
   ["custName", "custOrg", "custContact"].forEach(function (id) { $(id).addEventListener("change", saveCustomer); });
 
   $("csvBtn").addEventListener("click", function () {

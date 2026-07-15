@@ -138,6 +138,8 @@ js/catalog.js                    — ← каталог подложек (пра
 js/geometry.js                   — расстояния/коллизии (круг, прямоугольник, восьмиугольник)
 js/packer.js                     — раскладка: гекс-сетка, рядная сетка, жадный микс
 js/render.js                     — SVG-превью
+js/viewer3d.js                   — 3D-вид раскладки (слои без CSG)
+js/vendor/three.min.js           — Three.js r147 (вендорено, без CDN)
 js/export-csv.js                 — CSV для Inventor
 js/report.js                     — печатный отчёт
 js/sheets.js                     — ← адаптер отправки (URL Apps Script)
@@ -146,5 +148,6 @@ inventor/HolderFromCSV.iLogicVb  — правило iLogic
 apps-script/Code.gs              — приёмник заказов для Google Таблицы
 test/test-packer.js              — численные тесты раскладки
 test/test-page.js                — сквозной smoke-тест страницы (jsdom)
+test/test-viewer3d.js            — тест 3D-построителя (node, без WebGL)
 tools/build-single-file.js       — сборка index.html в один файл (dist/)
 ```

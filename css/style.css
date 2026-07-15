@@ -250,6 +250,25 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .summary { font-size: 13px; white-space: pre-line; }
 .numbers-toggle { font-size: 12px; color: var(--muted); white-space: nowrap; }
 
+.view-opts { display: flex; gap: 12px; align-items: center; }
+.view-toggle { display: inline-flex; }
+.view-toggle button { padding: 3px 12px; font-size: 12px; border-radius: 6px 0 0 6px; }
+.view-toggle button + button { border-radius: 0 6px 6px 0; border-left: none; }
+.view-toggle button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.view3d {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-height: 78vh;
+  cursor: grab;
+}
+.view3d:active { cursor: grabbing; }
+.view3d canvas { display: block; }
+
 .svg-host svg {
   width: 100%;
   height: auto;

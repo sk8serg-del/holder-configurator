@@ -62,9 +62,16 @@
     <div class="panel preview-panel">
       <div class="preview-head">
         <div id="summary" class="summary">Выберите параметры и нажмите «Разложить»</div>
-        <label class="numbers-toggle"><input type="checkbox" id="showNumbers"> номера позиций</label>
+        <div class="view-opts">
+          <div class="view-toggle">
+            <button type="button" id="view2dBtn" class="active">2D</button>
+            <button type="button" id="view3dBtn">3D</button>
+          </div>
+          <label class="numbers-toggle"><input type="checkbox" id="showNumbers"> номера позиций</label>
+        </div>
       </div>
       <div id="svgHost" class="svg-host"></div>
+      <div id="view3dHost" class="view3d" hidden></div>
       <div class="actions">
         <button type="button" id="csvBtn" disabled>Скачать CSV для Inventor</button>
         <button type="button" id="reportBtn" disabled>Отчёт / PDF</button>
@@ -85,6 +92,8 @@
 <script src="js/export-csv.js"></script>
 <script src="js/report.js"></script>
 <script src="js/sheets.js"></script>
+<script src="js/vendor/three.min.js"></script>
+<script src="js/viewer3d.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

@@ -16,7 +16,7 @@ const root = path.join(__dirname, "..");
 const outDir = path.join(root, "dist");
 const outFile = path.join(outDir, "holder-configurator.html");
 
-const SCRIPTS = ["catalog", "geometry", "packer", "render", "export-csv", "report", "sheets", "app"];
+const SCRIPTS = ["catalog", "geometry", "packer", "render", "export-csv", "report", "sheets", "vendor/three.min", "viewer3d", "app"];
 
 function readIndex() {
   return fs.readFileSync(path.join(root, "index.html"), "utf8");
@@ -37,9 +37,9 @@ function build() {
   // каждый <script src="js/NAME.js"></script> → <script>...</script>,
   // строго в исходном порядке подключения (важно — модули зависят друг от друга)
   SCRIPTS.forEach(function (name) {
-    var re = new RegExp('<script src="js\\/' + name + '\\.js"></script>');
+    var re = new RegExp('<script src="js\\/' + name.replace(/[/.]/g, "\\$&") + '\\.js"></script>');
     var js = fs.readFileSync(path.join(root, "js", name + ".js"), "utf8");
-    html = html.replace(re, "<script>\n" + js + "\n</script>");
+    html = html.replace(re, function () { return "<script>\n" + js + "\n</script>"; });
   });
 
   if (/<script src="js\//.test(html)) {

@@ -26,7 +26,8 @@ function check(name, cond, detail) {
 }
 
 // подключаем модули в том же порядке, что и на странице
-for (const n of ["catalog", "geometry", "packer", "render", "export-csv", "report", "sheets", "app"]) {
+// three.min.js в jsdom не грузим (нет WebGL) — viewer3d обязан жить без него
+for (const n of ["catalog", "geometry", "packer", "render", "export-csv", "report", "sheets", "viewer3d", "app"]) {
   const src = fs.readFileSync(path.join(root, "js", n + ".js"), "utf8");
   w.eval(src);
 }
@@ -173,6 +174,13 @@ $("packBtn").click();
 check("на раскладке нарисован хотя бы один паз (path в svgHost)",
   $("svgHost").querySelectorAll("path").length > 0);
 slotOnEl.click(); // выключаем, чтобы не мешать дальнейшим тестам
+
+// --- переключатель 2D/3D: без Three.js (jsdom) 3D вежливо отказывает ---
+check("кнопки 2D/3D есть, активна 2D", $("view2dBtn").classList.contains("active") && !$("view3dBtn").classList.contains("active"));
+$("view3dBtn").click();
+check("3D без Three.js — понятное сообщение, остаёмся в 2D",
+  $("sendMsg").textContent.indexOf("3D") !== -1 && !$("svgHost").hidden && $("view3dHost").hidden,
+  $("sendMsg").textContent);
 
 // --- выключаем контрольное отверстие, раскладываем снова ---
 const firstOn = d.querySelector("#controlList .c-on");

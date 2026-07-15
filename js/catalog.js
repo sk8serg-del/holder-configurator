@@ -8,6 +8,7 @@
  *   id              — уникальный код (латиницей, без пробелов)
  *   name            — название, которое видит заказчик
  *   diameter        — диаметр диска, мм
+ *   thickness       — толщина болванки, мм (используется в 3D-виде)
  *   controlVariants — варианты контрольных отверстий (позиции жёстко заданы,
  *                     заказчик только выбирает вариант):
  *       id, name, holes: [{x, y, d}]
@@ -40,6 +41,7 @@
         id: "disc-298",
         name: "Диск, полезная зона Ø298",
         diameter: 298,
+        thickness: 6,
         controlVariants: [
           {
             id: "std",
@@ -59,6 +61,7 @@
         id: "disc-100",
         name: "Диск Ø100 (пример)",
         diameter: 100,
+        thickness: 6,
         controlVariants: [
           { id: "none", name: "Без контрольных отверстий", holes: [] },
           {
@@ -77,6 +80,7 @@
         id: "disc-150",
         name: "Диск Ø150 (пример)",
         diameter: 150,
+        thickness: 6,
         controlVariants: [
           { id: "none", name: "Без контрольных отверстий", holes: [] },
           {
