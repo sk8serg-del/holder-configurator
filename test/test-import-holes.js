@@ -42,8 +42,10 @@ const csv = [
   "ReferenceClearAperture-2;-102.176;43.371;24.2;through;drilled;;;no",
   "WitnesCenterCounterbore-2;0;0;25.6;4.5;drilled;;;no",
   "WitnesCenterClearAperture-2;0;0;22.6;through;drilled;;;no",
-  // фигурный вырез (контур) на фланце
-  "contour;Mountings;through;-140;60;-120;70;-125;90;-145;82"
+  // фигурный вырез (контур) на фланце — реальный вырез, оставляем
+  "contour;Mountings;through;-140;60;-120;70;-125;90;-145;82",
+  // контур внутри полезной зоны — обводка посадки свидетеля (паз), отбрасываем
+  "contour;WitnesCounterbore;4.5;-16.6;98.9;-3.3;115.9;-10.4;121.5;-23.7;104.4"
 ].join("\n");
 
 const tmp = path.join(os.tmpdir(), "hc-test-holes-" + process.pid + ".csv");
@@ -78,8 +80,8 @@ try {
     res.fixtures.holes.every(function (g) { return g.points.every(function (p) { return Math.sqrt(p[0] * p[0] + p[1] * p[1]) > 149; }); }));
 
   // --- fixtures: фигурный вырез ---
-  check("фигурный контур Mountings → fixtures.cutouts (4 точки)",
-    res.fixtures.cutouts.length === 1 && res.fixtures.cutouts[0].points.length === 4,
+  check("фланцевый контур Mountings → fixtures.cutouts; внутризонная обводка свидетеля отброшена",
+    res.fixtures.cutouts.length === 1 && res.fixtures.cutouts[0].label === "Mountings" && res.fixtures.cutouts[0].points.length === 4,
     JSON.stringify(res.fixtures.cutouts));
 
   // --- резьбовые без Ø ---

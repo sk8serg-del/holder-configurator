@@ -151,12 +151,24 @@ function build(file, discDia) {
     }
   });
 
+  // контуры: внутри полезной зоны — это обводки посадок свидетелей/reference
+  // (у них паз делает профиль некруглым), они уже описаны контрольными
+  // отверстиями → отбрасываем; снаружи — настоящие фигурные вырезы (Mountings).
+  const cutouts = contours.filter(function (c) {
+    if (c.points.length < 3) return false;
+    if (!discDia) return true;
+    let sx = 0, sy = 0;
+    c.points.forEach(function (p) { sx += p[0]; sy += p[1]; });
+    const cr = Math.sqrt(Math.pow(sx / c.points.length, 2) + Math.pow(sy / c.points.length, 2));
+    return cr > maxR;
+  }).map(function (c) { return { label: c.label, depth: c.depth, points: c.points }; });
+
   const fixtures = {
     holes: Object.keys(fixtureKey).map(function (k) {
       const g = fixtureKey[k];
       return { d: g.d, label: (g.tapped ? "Резьба" : "Крепёж") + " Ø" + g.d, points: g.points };
     }),
-    cutouts: contours.map(function (c) { return { label: c.label, depth: c.depth, points: c.points }; })
+    cutouts: cutouts
   };
 
   return { blankDiameter: blankD || null, fixtures: fixtures, holes: holes, threadPoints: threadPoints };
