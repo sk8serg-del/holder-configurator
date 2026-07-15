@@ -45,12 +45,19 @@
         controlVariants: [
           {
             id: "std",
-            name: "Центр + 2 × на Ø222 (7° и 67°)",
+            // Реальная геометрия из модели Blank_320NEW.ipt (выгрузка DumpHoles,
+            // 2026-07-15): 2 свидетеля + Reference на R111 + 3 тех. отверстия
+            // у центра. Фланцевые отверстия (Mounting/MaskThread/Pins на R>149)
+            // и кольца-границы полезной зоны отброшены — они вне зоны раскладки.
+            name: "Свидетели + Reference + тех. отверстия",
             holes: [
-              { x: 0, y: 0, name: "Свидетель Центр", d: 25.4, slotAvailable: true },
-              { x: -110.173, y: -13.527, name: "Свидетель", d: 25.4, slotAvailable: true },
-              { x: -43.371, y: -102.176, name: "Reference", seatD: 30.1, depth: 3, apertureCA: 24.1, slotAvailable: false }
-              // TODO: 3 малых отверстия у центра — добавить {x, y, name, ...} по факту
+              { x: 0, y: 0, name: "Свидетель Центр", d: 25.4, seatD: 25.6, apertureCA: 22.6, depth: 4.5, slotAvailable: true },
+              { x: -13.527, y: 110.173, name: "Свидетель", d: 25.4, seatD: 25.6, apertureCA: 22.6, depth: 4.5, slotAvailable: true },
+              { x: -102.176, y: 43.371, name: "Reference", seatD: 30.1, apertureCA: 24.2, depth: 4, slotAvailable: false },
+              // 3 технологических отверстия Ø3.3 сквозные у центра (R≈19)
+              { x: -19, y: 0, name: "Тех. отверстие 1", d: 3.3, slotAvailable: false },
+              { x: 9.5, y: -16.454, name: "Тех. отверстие 2", d: 3.3, slotAvailable: false },
+              { x: 9.5, y: 16.454, name: "Тех. отверстие 3", d: 3.3, slotAvailable: false }
             ]
           },
           { id: "none", name: "Без контрольных отверстий", holes: [] }

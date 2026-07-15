@@ -2,9 +2,14 @@
  * import-holes-csv.js — конвертирует выгрузку DumpHoles.iLogicVb в готовый
  * фрагмент js/catalog.js (массив holes для controlVariants).
  *
- * Запуск: node tools/import-holes-csv.js путь/к/имя-holes.csv
+ * Запуск: node tools/import-holes-csv.js путь/к/имя-holes.csv [--disc 298]
  * Результат печатается в консоль — вставить вручную в нужный disc/variant
  * в js/catalog.js и поправить slotAvailable/название/d по месту.
+ *
+ * --disc <Ø мм> (необязательно) — отсеять «шум» вне полезной зоны: крупные
+ * окружности-границы (Ø ≥ 0.9·диска: контур болванки, кольца канавки маски)
+ * и отверстия с центром за радиусом полезной зоны (фланцевый крепёж). Без
+ * этого флага выводятся все круглые элементы.
  *
  * Свидетели/Reference выходят из Inventor несколькими строками на один центр
  * (посадка-counterbore + сквозная зона напыления, иногда + сверление). Скрипт
@@ -41,17 +46,17 @@ function num(s) {
   return isNaN(v) ? null : Math.round(v * 1000) / 1000;
 }
 
-// строка выгрузки → набор «колец» {dia, depth|null(сквозное), source}
+// строка выгрузки → набор «колец» {dia, depth|null(сквозное), name}
 function ringsOf(r) {
   const rings = [];
   const dia = num(r.diameter);
   const depth = r.depth === "through" ? null : num(r.depth);
   if (r.type === "counterbore") {
     const cbD = num(r.extra1), cbDepth = num(r.extra2);
-    if (cbD) rings.push({ dia: cbD, depth: cbDepth, seat: true }); // цековка = посадка
-    if (dia) rings.push({ dia: dia, depth: depth });               // сверление под ней
+    if (cbD) rings.push({ dia: cbD, depth: cbDepth, name: r.name }); // цековка = посадка
+    if (dia) rings.push({ dia: dia, depth: depth, name: r.name });   // сверление под ней
   } else {
-    if (dia) rings.push({ dia: dia, depth: depth, tapped: r.tapped === "yes", countersink: r.type === "countersink" });
+    if (dia) rings.push({ dia: dia, depth: depth, name: r.name });
   }
   return rings;
 }
@@ -64,20 +69,26 @@ function baseName(name) {
     .trim() || String(name);
 }
 
-function build(file) {
+function build(file, discDia) {
   const rows = parseCSV(fs.readFileSync(file, "utf8"));
   if (!rows.length) {
     console.error("Отверстия не найдены — это файл из DumpHoles.iLogicVb?");
     process.exit(1);
   }
 
+  const maxDia = discDia ? discDia * 0.9 : Infinity; // граница-«шум»
+  const maxR = discDia ? discDia / 2 : Infinity;     // за полезной зоной — фланец
+
   // группировка по центру
   const groups = [];
   rows.forEach(function (r) {
     const x = num(r.x), y = num(r.y);
+    if (discDia && Math.sqrt(x * x + y * y) > maxR + TOL) return; // вне полезной зоны
     let gr = groups.find(function (g) { return Math.abs(g.x - x) < TOL && Math.abs(g.y - y) < TOL; });
     if (!gr) { gr = { x: x, y: y, rings: [], names: [], notes: [] }; groups.push(gr); }
-    ringsOf(r).forEach(function (ring) { gr.rings.push(ring); });
+    ringsOf(r).forEach(function (ring) {
+      if (ring.dia <= maxDia) gr.rings.push(ring); // крупные окружности-границы отбрасываем
+    });
     gr.names.push(r.name);
     if (r.tapped === "yes") gr.notes.push("резьбовое (Ø резьбы Inventor не отдал) — задать вручную");
     if (r.type === "countersink") gr.notes.push("зенковка Ø" + r.extra1 + " угол " + r.extra2 + "° — при необходимости учесть вручную");
@@ -86,24 +97,34 @@ function build(file) {
   // сборка записи каталога из колец группы
   const holes = groups.map(function (g) {
     const rings = g.rings.slice().sort(function (a, b) { return b.dia - a.dia; });
+    // посадка — самое большое кольцо с конечной глубиной
     const seat = rings.filter(function (r) { return r.depth != null; }).sort(function (a, b) { return b.dia - a.dia; })[0];
-    const through = rings.filter(function (r) { return r.depth == null; }).sort(function (a, b) { return a.dia - b.dia; })[0];
+    // зона напыления — самое большое СКВОЗНОЕ кольцо меньше посадки (мелкие
+    // сквозные, «съедаемые» апертурой, — напр. концентричное тех. отверстие —
+    // при этом отбрасываются). Без посадки — просто самое большое сквозное.
+    let through;
+    if (seat) through = rings.filter(function (r) { return r.depth == null && r.dia < seat.dia - 1e-6; }).sort(function (a, b) { return b.dia - a.dia; })[0];
+    else through = rings.filter(function (r) { return r.depth == null; }).sort(function (a, b) { return b.dia - a.dia; })[0];
 
-    const o = { x: g.x, y: g.y, name: baseName(g.names[0]) };
+    const src = seat || through || rings[0];
+    const o = { x: g.x, y: g.y, name: baseName(src ? src.name : g.names[0]) };
     if (seat) {
       o.seatD = seat.dia;
       if (seat.depth) o.depth = seat.depth;
-      if (through && through.dia < seat.dia) o.apertureCA = through.dia; // сквозная = зона напыления
+      if (through) o.apertureCA = through.dia;
     } else if (through) {
       o.d = through.dia; // обычное сквозное отверстие без посадки
     } else if (rings[0]) {
       o.d = rings[0].dia;
     }
     o._notes = Array.from(new Set(g.notes));
+    o._empty = !seat && !through && !rings[0];
     return o;
   });
 
-  return holes;
+  // группы, где после фильтра шума не осталось ни одного кольца и нет заметок,
+  // выкидываем целиком (были чистой границей/контуром)
+  return holes.filter(function (h) { return !h._empty || (h._notes && h._notes.length); });
 }
 
 function field(k, v) {
@@ -111,22 +132,33 @@ function field(k, v) {
   return k + ": " + (typeof v === "string" ? JSON.stringify(v) : v);
 }
 
-const file = process.argv[2];
-if (!file) {
-  console.error("Использование: node tools/import-holes-csv.js файл-holes.csv");
-  process.exit(1);
+function render(holes) {
+  const body = holes.map(function (h, i) {
+    const parts = [field("x", h.x), field("y", h.y), field("name", h.name),
+      field("d", h.d), field("seatD", h.seatD), field("apertureCA", h.apertureCA),
+      field("depth", h.depth)].filter(Boolean);
+    const comma = i < holes.length - 1 ? "," : "";
+    const note = h._notes && h._notes.length ? " // " + h._notes.join("; ") : "";
+    return "  { " + parts.join(", ") + " }" + comma + note;
+  }).join("\n");
+  return "holes: [\n" + body + "\n]";
 }
 
-const holes = build(file);
-const body = holes.map(function (h, i) {
-  const parts = [field("x", h.x), field("y", h.y), field("name", h.name),
-    field("d", h.d), field("seatD", h.seatD), field("apertureCA", h.apertureCA),
-    field("depth", h.depth)].filter(Boolean);
-  const comma = i < holes.length - 1 ? "," : "";
-  const note = h._notes && h._notes.length ? " // " + h._notes.join("; ") : "";
-  return "  { " + parts.join(", ") + " }" + comma + note;
-}).join("\n");
+module.exports = { build: build, parseCSV: parseCSV };
 
-console.log("holes: [\n" + body + "\n]");
-console.log("\n// групп-отверстий: " + holes.length + " (после слияния строк по общему центру).");
-console.log("// Проверьте slotAvailable (где нужен паз под пинцет) и названия/стандартный d для свидетелей.");
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  let file = null, discDia = null;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--disc") discDia = parseFloat(args[++i]);
+    else file = args[i];
+  }
+  if (!file) {
+    console.error("Использование: node tools/import-holes-csv.js файл-holes.csv [--disc 298]");
+    process.exit(1);
+  }
+  const holes = build(file, discDia);
+  console.log(render(holes));
+  console.log("\n// групп-отверстий: " + holes.length + " (после слияния строк по общему центру).");
+  console.log("// Проверьте slotAvailable (где нужен паз под пинцет) и названия/стандартный d для свидетелей.");
+}

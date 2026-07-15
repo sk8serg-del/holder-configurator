@@ -38,13 +38,12 @@ const $ = (id) => d.getElementById(id);
 // --- инициализация ---
 check("список дисков заполнен", $("discSelect").options.length >= 3, String($("discSelect").options.length));
 check("диск по умолчанию — Ø298", $("discSelect").value === "disc-298", $("discSelect").value);
-check("контрольные отверстия: 3 строки", d.querySelectorAll("#controlList .ctrl-row").length === 3);
+check("контрольные отверстия: 6 строк (свидетели + Reference + 3 тех.)", d.querySelectorAll("#controlList .ctrl-row").length === 6);
 const ctrlNames = Array.from(d.querySelectorAll("#controlList .ctrl-head label")).map(function (el) { return el.textContent.trim(); });
 check("имена: Свидетель Центр / Свидетель / Reference",
   ctrlNames[0] === "Свидетель Центр" && ctrlNames[1] === "Свидетель" && ctrlNames[2] === "Reference",
   ctrlNames.join(" | "));
-check("у свидетелей поле детали d = 25.4 (авто D=25,6/CA=23,9)",
-  d.querySelectorAll("#controlList .c-d").length === 2 &&
+check("у свидетелей поле детали d = 25.4 (первые два из c-d)",
   d.querySelectorAll("#controlList .c-d")[0].value === "25.4" &&
   d.querySelectorAll("#controlList .c-d")[1].value === "25.4");
 check("у свидетелей есть чекбокс паза и он включён по умолчанию",
@@ -53,17 +52,17 @@ check("у свидетелей есть чекбокс паза и он вклю
 check("настройки контрольных отверстий свёрнуты по умолчанию (details закрыты)",
   Array.from(d.querySelectorAll("#controlList details")).every(function (el) { return !el.open; }));
 const summaries = Array.from(d.querySelectorAll("#controlList .c-summary")).map(function (el) { return el.textContent; });
-check("свёрнутая строка свидетеля: d25,4 (D25,6/CA23,9) · паз",
-  summaries[0] === "d25,4 (D25,6/CA23,9) · паз", summaries[0]);
-check("свёрнутая строка Reference: (D30,1/CA24,1) · глуб. 3 без паза",
-  summaries[2] === "(D30,1/CA24,1) · глуб. 3", summaries[2]);
+check("свёрнутая строка свидетеля: d25,4 (D25,6/CA22,6) · глуб. 4,5 · паз",
+  summaries[0] === "d25,4 (D25,6/CA22,6) · глуб. 4,5 · паз", summaries[0]);
+check("свёрнутая строка Reference: (D30,1/CA24,2) · глуб. 4 без паза",
+  summaries[2] === "(D30,1/CA24,2) · глуб. 4", summaries[2]);
 const seatDs = Array.from(d.querySelectorAll("#controlList .c-seat-d")).map(function (el) { return el.value; });
-check("Reference: посадка D=30.1, CA=24.1, без поля d",
+check("Reference: посадка D=30.1, CA=24.2, без поля d",
   seatDs.indexOf("30.1") !== -1 &&
-  Array.from(d.querySelectorAll("#controlList .c-ca")).some(function (el) { return el.value === "24.1"; }),
+  Array.from(d.querySelectorAll("#controlList .c-ca")).some(function (el) { return el.value === "24.2"; }),
   seatDs.join(","));
-check("схема свидетеля показывает d25,4 (D25,6/CA23,9)",
-  d.querySelectorAll("#controlList .part-preview")[0].innerHTML.indexOf("d25,4 (D25,6/CA23,9)") !== -1,
+check("схема свидетеля показывает d25,4 (D25,6/CA22,6)",
+  d.querySelectorAll("#controlList .part-preview")[0].innerHTML.indexOf("d25,4 (D25,6/CA22,6)") !== -1,
   d.querySelectorAll("#controlList .part-preview")[0].innerHTML);
 check("зазоры предзаполнены (6/3/6)", $("clPP").value === "6" && $("clPE").value === "3" && $("clPC").value === "6",
   $("clPP").value + "/" + $("clPE").value + "/" + $("clPC").value);
