@@ -89,6 +89,20 @@ try {
     res.threadPoints.length === 2, String(res.threadPoints.length));
   check("резьбовых НЕТ среди крепежа с Ø (Инвентор не дал их диаметр)",
     !res.fixtures.holes.some(function (g) { return g.d === 0; }));
+
+  // --- buildDiscEntry: готовая запись диска для каталога ---
+  const HI = globalThis.HC.holderImport;
+  const entry = HI.buildDiscEntry(csv, { id: "user-test", name: "Тест Ø298", discDiameter: 298, thickness: 6 });
+  check("buildDiscEntry: id/название/диаметры/толщина заполнены",
+    entry && entry.id === "user-test" && entry.name === "Тест Ø298" && entry.diameter === 298 &&
+    entry.blankDiameter === 324.5 && entry.thickness === 6, entry && JSON.stringify({ id: entry.id, d: entry.diameter, b: entry.blankDiameter }));
+  check("buildDiscEntry: два варианта КО (std + none), в std есть отверстия",
+    entry.controlVariants.length === 2 && entry.controlVariants[0].id === "std" &&
+    entry.controlVariants[0].holes.length === res.holes.length && entry.controlVariants[1].id === "none");
+  check("buildDiscEntry: fixtures и defaults на месте",
+    entry.fixtures && entry.fixtures.holes.length === res.fixtures.holes.length && entry.defaults.partPart === 6);
+  check("buildDiscEntry: у контрольных отверстий проставлен slotAvailable:false",
+    entry.controlVariants[0].holes.every(function (h) { return h.slotAvailable === false; }));
 } finally {
   fs.unlinkSync(tmp);
 }

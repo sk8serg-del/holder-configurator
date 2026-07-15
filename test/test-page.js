@@ -27,7 +27,7 @@ function check(name, cond, detail) {
 
 // подключаем модули в том же порядке, что и на странице
 // three.min.js в jsdom не грузим (нет WebGL) — viewer3d обязан жить без него
-for (const n of ["catalog", "geometry", "packer", "render", "export-csv", "report", "sheets", "viewer3d", "app"]) {
+for (const n of ["catalog", "geometry", "packer", "render", "export-csv", "report", "sheets", "viewer3d", "holder-import", "app"]) {
   const src = fs.readFileSync(path.join(root, "js", n + ".js"), "utf8");
   w.eval(src);
 }
@@ -268,6 +268,26 @@ $("packBtn").click(); // после правок формы раскладыва
 $("sendBtn").click();
 setTimeout(() => {
   check("отправка без URL — понятное сообщение", $("sendMsg").textContent.indexOf("не настроена") !== -1, $("sendMsg").textContent);
-  console.log(failures ? "\nПРОВАЛЕНО: " + failures : "\nSmoke-тест страницы пройден.");
-  process.exit(failures ? 1 : 0);
+
+  // --- загрузка своей подложки из CSV (FileReader → buildDiscEntry → каталог) ---
+  const uploadCsv = [
+    "holes-dump;1", "part;Up", "columns;name;x;y;diameter;depth;type;extra1;extra2;tapped",
+    "Bound;0;0;324.5;through;drilled;;;no",
+    "Wit;0;0;25.6;4.5;drilled;;;no", "WitCA;0;0;22.6;through;drilled;;;no",
+    "Flange;160;0;6;through;drilled;;;no"
+  ].join("\n");
+  const discCountBefore = $("discSelect").options.length;
+  $("discZone").value = "298"; $("discThk").value = "6"; $("discName").value = "Загруженный Ø298";
+  const upFile = new w.File([uploadCsv], "up-holes.csv", { type: "text/csv" });
+  Object.defineProperty($("discFile"), "files", { value: [upFile], configurable: true });
+  $("discLoadBtn").click(); // FileReader асинхронный
+  setTimeout(() => {
+    check("загрузка своей подложки: диск добавлен в список",
+      $("discSelect").options.length === discCountBefore + 1, $("discSelect").options.length + " vs " + discCountBefore);
+    check("загруженная подложка выбрана и есть по имени",
+      Array.from($("discSelect").options).some((o) => o.textContent === "Загруженный Ø298"));
+    check("для загруженной подложки видна кнопка удаления", !$("discDelBtn").hidden);
+    console.log(failures ? "\nПРОВАЛЕНО: " + failures : "\nSmoke-тест страницы пройден.");
+    process.exit(failures ? 1 : 0);
+  }, 60);
 }, 50);

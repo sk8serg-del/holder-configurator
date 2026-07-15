@@ -42,6 +42,78 @@
       return '<option value="' + v.id + '">' + v.name + "</option>";
     }).join("");
     $("discInfo").textContent = "Диаметр диска: " + d.diameter + " мм";
+    // кнопка удаления — только для загруженных пользователем подложек
+    $("discDelBtn").hidden = String(d.id).indexOf("user-") !== 0;
+  }
+
+  // ---------- пользовательские подложки (загрузка из CSV, localStorage) ----------
+
+  function isUserDisc(d) { return String(d.id).indexOf("user-") === 0; }
+
+  function saveCustomDiscs() {
+    try {
+      var custom = HC.CATALOG.discs.filter(isUserDisc);
+      localStorage.setItem("hc-custom-discs", JSON.stringify(custom));
+    } catch (e) { /* localStorage недоступен — не критично */ }
+  }
+
+  function loadCustomDiscs() {
+    try {
+      var arr = JSON.parse(localStorage.getItem("hc-custom-discs") || "[]");
+      if (Array.isArray(arr)) {
+        arr.forEach(function (d) {
+          if (d && d.id && !HC.CATALOG.discs.some(function (x) { return x.id === d.id; })) HC.CATALOG.discs.push(d);
+        });
+      }
+    } catch (e) { /* игнорируем битый кэш */ }
+  }
+
+  function loadDiscFromFile() {
+    var input = $("discFile");
+    var msgEl = $("discLoadMsg");
+    function msg(t, cls) { msgEl.textContent = t || ""; msgEl.className = "status" + (cls ? " " + cls : ""); }
+    var file = input.files && input.files[0];
+    if (!file) { msg("Выберите CSV-файл выгрузки.", "error"); return; }
+    var zone = parseFloat($("discZone").value), thk = parseFloat($("discThk").value);
+    if (!(zone > 0)) { msg("Укажите Ø полезной зоны.", "error"); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var name = $("discName").value.trim() || file.name.replace(/-holes\.csv$/i, "").replace(/\.csv$/i, "") || "Подложка";
+        var entry = HC.holderImport.buildDiscEntry(reader.result, {
+          id: "user-" + Date.now(), name: name, discDiameter: zone, thickness: thk > 0 ? thk : 6
+        });
+        if (!entry) { msg("В файле не найдено геометрии — это выгрузка DumpHoles?", "error"); return; }
+        HC.CATALOG.discs.push(entry);
+        saveCustomDiscs();
+        fillDiscSelect();
+        $("discSelect").value = entry.id;
+        onDiscChange();
+        var extra = entry._threadPoints && entry._threadPoints.length ? " Резьбовых отверстий без Ø: " + entry._threadPoints.length + " (уточните в модели)." : "";
+        msg("Подложка «" + entry.name + "» добавлена и сохранена." + extra, "ok");
+      } catch (e) {
+        msg("Ошибка разбора: " + e.message, "error");
+      }
+    };
+    reader.onerror = function () { msg("Не удалось прочитать файл.", "error"); };
+    reader.readAsText(file);
+  }
+
+  function deleteCurrentDisc() {
+    var d = currentDisc();
+    if (!isUserDisc(d)) return;
+    HC.CATALOG.discs = HC.CATALOG.discs.filter(function (x) { return x.id !== d.id; });
+    saveCustomDiscs();
+    fillDiscSelect();
+    $("discSelect").value = HC.CATALOG.discs[0].id;
+    onDiscChange();
+  }
+
+  function onDiscChange() {
+    fillControlSelect();
+    rebuildControlHoles();
+    applyDefaultClearances();
+    markDirty();
   }
 
   function applyDefaultClearances() {
@@ -632,6 +704,7 @@
 
   // ---------- инициализация ----------
 
+  loadCustomDiscs(); // ранее загруженные пользователем подложки из localStorage
   fillDiscSelect();
   fillControlSelect();
   rebuildControlHoles();
@@ -641,12 +714,9 @@
   loadCustomer();
   doPack(); // первая раскладка сразу при открытии, дальше — автоматически при правках
 
-  $("discSelect").addEventListener("change", function () {
-    fillControlSelect();
-    rebuildControlHoles();
-    applyDefaultClearances();
-    markDirty();
-  });
+  $("discSelect").addEventListener("change", onDiscChange);
+  $("discLoadBtn").addEventListener("click", loadDiscFromFile);
+  $("discDelBtn").addEventListener("click", deleteCurrentDisc);
   $("controlSelect").addEventListener("change", function () {
     rebuildControlHoles();
     markDirty();
