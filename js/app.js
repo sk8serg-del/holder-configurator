@@ -70,8 +70,10 @@
         depth: h.depth != null ? h.depth : null,
         slotAvailable: !!h.slotAvailable,
         slotOn: !!h.slotAvailable, slotAngle: 0, // паз по умолчанию включён там, где доступен
-        // отверстие, которое показывается только когда другое (по имени) выключено
+        // отверстие, привязанное к другому (по имени): показывается только когда
+        // опорное выключено (shownWhenOff) или включено (shownWhenOn)
         shownWhenOff: h.shownWhenOff || null,
+        shownWhenOn: h.shownWhenOn || null,
         on: true
       };
     });
@@ -82,18 +84,23 @@
     var host = $("controlList");
     host.innerHTML = "";
     ctrlHoles.forEach(function (h) {
-      // авто-отверстия (зависящие от другого) не показываем отдельной строкой
-      if (h.shownWhenOff) return;
+      // авто-отверстия (привязанные к другому) не показываем отдельной строкой
+      if (h.shownWhenOff || h.shownWhenOn) return;
       host.appendChild(ctrlHoleRow(h));
     });
   }
 
-  // активно ли отверстие в геометрии: обычное — по своей галочке; зависимое
-  // (shownWhenOff) — только когда опорное отверстие выключено
+  // активно ли отверстие в геометрии: обычное — по своей галочке; привязанное —
+  // по состоянию опорного отверстия (shownWhenOff — когда выключено,
+  // shownWhenOn — когда включено)
   function isControlActive(h) {
     if (h.shownWhenOff) {
-      var ref = ctrlHoles.filter(function (r) { return r.name === h.shownWhenOff; })[0];
-      return ref ? !ref.on : true;
+      var refOff = ctrlHoles.filter(function (r) { return r.name === h.shownWhenOff; })[0];
+      return refOff ? !refOff.on : true;
+    }
+    if (h.shownWhenOn) {
+      var refOn = ctrlHoles.filter(function (r) { return r.name === h.shownWhenOn; })[0];
+      return refOn ? refOn.on : false;
     }
     return h.on;
   }

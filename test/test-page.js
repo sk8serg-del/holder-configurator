@@ -38,7 +38,10 @@ const $ = (id) => d.getElementById(id);
 // --- инициализация ---
 check("список дисков заполнен", $("discSelect").options.length >= 3, String($("discSelect").options.length));
 check("диск по умолчанию — Ø298", $("discSelect").value === "disc-298", $("discSelect").value);
-check("контрольные отверстия: 6 строк (свидетели + Reference + 3 тех.)", d.querySelectorAll("#controlList .ctrl-row").length === 6);
+check("контрольные отверстия: 3 строки (свидетели + Reference; тех. привязаны, без строк)",
+  d.querySelectorAll("#controlList .ctrl-row").length === 3, String(d.querySelectorAll("#controlList .ctrl-row").length));
+check("для тех. отверстий отдельных строк/галочек нет",
+  Array.from(d.querySelectorAll("#controlList .ctrl-head label")).every(function (el) { return el.textContent.indexOf("Тех.") === -1; }));
 const ctrlNames = Array.from(d.querySelectorAll("#controlList .ctrl-head label")).map(function (el) { return el.textContent.trim(); });
 check("имена: Свидетель Центр / Свидетель / Reference",
   ctrlNames[0] === "Свидетель Центр" && ctrlNames[1] === "Свидетель" && ctrlNames[2] === "Reference",
@@ -174,6 +177,7 @@ check("нарисован фланцевый крепёж вне полезно�
     const cx = parseFloat(c.getAttribute("cx")) || 0, cy = parseFloat(c.getAttribute("cy")) || 0;
     return Math.sqrt(cx * cx + cy * cy) > 149;
   }));
+check("тех. отверстия 1-3 активны при включённом «Свидетель Центр»", svgHtml0.indexOf("translate(-19") !== -1);
 
 // --- паз под пинцет должен быть виден и в общей раскладке, не только в карточке ---
 seatInput.value = "12";
@@ -197,6 +201,8 @@ firstOn.click();
 check("после изменения кнопки заблокированы", $("csvBtn").disabled);
 $("packBtn").click();
 check("повторная раскладка прошла", $("summary").textContent.indexOf("размещено") !== -1);
+check("выкл. «Свидетель Центр» → тех. отверстия 1-3 исчезают из раскладки",
+  $("svgHost").innerHTML.indexOf("translate(-19") === -1);
 
 // --- CSV ---
 $("csvBtn").click(); // не должно упасть
