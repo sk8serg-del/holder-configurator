@@ -153,10 +153,12 @@
     var eps = 1e-6;
     var group = new THREE.Group();
 
-    // крепёж/штифты/резьба болванки — сквозные отверстия (декор, серые стенки)
+    // крепёж/штифты/резьба болванки — сквозные отверстия (декор, серые стенки).
+    // Группы с countersink рисуются отдельно конусом (см. ниже), не насквозь.
     var fixtureCircles = [];
     if (model.fixtures && model.fixtures.holes) {
       model.fixtures.holes.forEach(function (grp) {
+        if (grp.countersink) return;
         (grp.points || []).forEach(function (p) {
           fixtureCircles.push({ cx: p[0], cy: p[1], r: grp.d / 2 });
         });
@@ -278,6 +280,26 @@
       var zm = new THREE.Mesh(new THREE.ShapeGeometry(zone), new THREE.MeshStandardMaterial({ color: 0x6f9e6f, metalness: 0.1, roughness: 0.8 }));
       zm.position.z = 0.04;
       group.add(zm);
+    }
+
+    // зенковки крепежа с обратной стороны (напр. Mounting2 Ø6 × 2.5 × 90°) —
+    // конус-раструб отдельным мешем: широкий у задней грани (z=-T), сужается
+    // внутрь. Отдельный меш не участвует в триангуляции диска (не ломает вырезы).
+    if (model.fixtures && model.fixtures.holes) {
+      model.fixtures.holes.forEach(function (grp) {
+        if (!grp.countersink) return;
+        var cs = grp.countersink;
+        var rTop = grp.d / 2;
+        var half = ((cs.angle || 90) / 2) * Math.PI / 180;
+        var rBot = Math.max(0.2, rTop - cs.depth * Math.tan(half)); // 90° → tan45=1
+        (grp.points || []).forEach(function (p) {
+          var cone = new THREE.CylinderGeometry(rBot, rTop, cs.depth, 28, 1, true);
+          cone.rotateX(Math.PI / 2); // ось Y → Z: узкий конец к +Z (вглубь), широкий к задней грани
+          var m = new THREE.Mesh(cone, discMat);
+          m.position.set(p[0], p[1], -T + cs.depth / 2);
+          group.add(m);
+        });
+      });
     }
 
     // номера позиций — спрайты над деталями (повёрнуты к камере всегда)
