@@ -367,19 +367,30 @@
     var s = {
       renderer: renderer, scene: scene, camera: camera, host: host,
       group: null, pending: false,
-      // сферические координаты камеры вокруг центра диска
+      // сферические координаты камеры вокруг точки-цели target
       sph: { r: 500, theta: -Math.PI / 2, phi: Math.PI / 4 },
+      target: new THREE.Vector3(0, 0, 0),
       rMin: 50, rMax: 2000
     };
 
     function applyCamera() {
-      var q = s.sph;
+      var q = s.sph, t = s.target;
       camera.position.set(
-        q.r * Math.sin(q.phi) * Math.cos(q.theta),
-        q.r * Math.sin(q.phi) * Math.sin(q.theta),
-        q.r * Math.cos(q.phi)
+        t.x + q.r * Math.sin(q.phi) * Math.cos(q.theta),
+        t.y + q.r * Math.sin(q.phi) * Math.sin(q.theta),
+        t.z + q.r * Math.cos(q.phi)
       );
-      camera.lookAt(0, 0, 0);
+      camera.lookAt(t.x, t.y, t.z);
+    }
+
+    // сдвиг цели в плоскости экрана (панорамирование), dx/dy — в пикселях
+    var _r = new THREE.Vector3(), _u = new THREE.Vector3(), _d = new THREE.Vector3();
+    function pan(dx, dy) {
+      camera.updateMatrixWorld();
+      camera.matrixWorld.extractBasis(_r, _u, _d);
+      var wpp = 2 * s.sph.r * Math.tan((camera.fov * Math.PI / 180) / 2) / Math.max(1, host.clientHeight);
+      s.target.addScaledVector(_r, -dx * wpp);
+      s.target.addScaledVector(_u, dy * wpp);
     }
     function requestRender() {
       if (s.pending) return;
@@ -405,18 +416,32 @@
     s.resize = resize;
     g.addEventListener("resize", resize);
 
-    // управление: перетаскивание — вращение, колесо/пинч — масштаб
+    // управление: левая кнопка — вращение; правая / средняя / Shift+левая —
+    // панорамирование; колесо — масштаб; на тач: 1 палец — вращение,
+    // 2 пальца — масштаб (пинч) + панорамирование (сдвиг центра пары).
     var el = renderer.domElement;
     el.style.touchAction = "none";
-    var drag = null, pinch = null, pointers = {};
+    var drag = null, dragMode = "rotate", pinch = null, panCenter = null, pointers = {};
+
+    function centroid(ids) {
+      var sx = 0, sy = 0;
+      ids.forEach(function (id) { sx += pointers[id].x; sy += pointers[id].y; });
+      return { x: sx / ids.length, y: sy / ids.length };
+    }
+
+    el.addEventListener("contextmenu", function (e) { e.preventDefault(); });
     el.addEventListener("pointerdown", function (e) {
       pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
       var ids = Object.keys(pointers);
-      if (ids.length === 1) drag = { x: e.clientX, y: e.clientY };
-      else if (ids.length === 2) {
+      if (ids.length === 1) {
+        drag = { x: e.clientX, y: e.clientY };
+        // правая (2) / средняя (1) кнопка или Shift — панорамирование
+        dragMode = (e.button === 2 || e.button === 1 || e.shiftKey) ? "pan" : "rotate";
+      } else if (ids.length === 2) {
         drag = null;
         var a = pointers[ids[0]], b = pointers[ids[1]];
         pinch = Math.hypot(a.x - b.x, a.y - b.y);
+        panCenter = centroid(ids);
       }
       el.setPointerCapture(e.pointerId);
     });
@@ -430,11 +455,19 @@
         if (d2 > 0) {
           s.sph.r = Math.min(s.rMax, Math.max(s.rMin, s.sph.r * (pinch / d2)));
           pinch = d2;
-          requestRender();
         }
+        var ctr = centroid(ids);
+        if (panCenter) pan(ctr.x - panCenter.x, ctr.y - panCenter.y);
+        panCenter = ctr;
+        requestRender();
       } else if (drag) {
-        s.sph.theta -= (e.clientX - drag.x) * 0.008;
-        s.sph.phi = Math.min(Math.PI - 0.08, Math.max(0.08, s.sph.phi - (e.clientY - drag.y) * 0.008));
+        var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+        if (dragMode === "pan") {
+          pan(dx, dy);
+        } else {
+          s.sph.theta -= dx * 0.008;
+          s.sph.phi = Math.min(Math.PI - 0.08, Math.max(0.08, s.sph.phi - dy * 0.008));
+        }
         drag = { x: e.clientX, y: e.clientY };
         requestRender();
       }
@@ -443,6 +476,7 @@
       delete pointers[e.pointerId];
       var ids = Object.keys(pointers);
       pinch = null;
+      panCenter = ids.length === 2 ? centroid(ids) : null;
       drag = ids.length === 1 ? { x: pointers[ids[0]].x, y: pointers[ids[0]].y } : null;
     }
     el.addEventListener("pointerup", up);
@@ -452,6 +486,11 @@
       s.sph.r = Math.min(s.rMax, Math.max(s.rMin, s.sph.r * Math.exp(e.deltaY * 0.001)));
       requestRender();
     }, { passive: false });
+    // двойной клик — вернуть центр (сбросить панорамирование)
+    el.addEventListener("dblclick", function () {
+      s.target.set(0, 0, 0);
+      requestRender();
+    });
 
     return s;
   }

@@ -268,6 +268,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .view3d:active { cursor: grabbing; }
 .view3d canvas { display: block; }
+.view3d-hint { margin-top: 6px; line-height: 1.4; }
 
 .svg-host svg {
   width: 100%;

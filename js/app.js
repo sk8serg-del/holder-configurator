@@ -571,6 +571,7 @@
     $("view3dBtn").classList.toggle("active", is3d);
     $("svgHost").hidden = is3d;
     $("view3dHost").hidden = !is3d;
+    $("view3dHint").hidden = !is3d;
     if (is3d) refresh3D(); // контейнер уже показан — размеры известны
   }
 
