@@ -77,6 +77,34 @@
     return p;
   }
 
+  // Дальность выхода луча из точки (cx,cy) по направлению (ux,uy) до границы
+  // полигона (наибольшее t пересечения с рёбрами).
+  function rayExitDist(cx, cy, ux, uy, poly) {
+    var maxT = 0;
+    for (var i = 0; i < poly.length; i++) {
+      var a = poly[i], b = poly[(i + 1) % poly.length];
+      var dx = b.x - a.x, dy = b.y - a.y;
+      var den = ux * dy - uy * dx;
+      if (Math.abs(den) < 1e-12) continue;
+      var t = ((a.x - cx) * dy - (a.y - cy) * dx) / den;
+      var s = ((a.x - cx) * uy - (a.y - cy) * ux) / den;
+      if (t >= 0 && s >= -1e-9 && s <= 1 + 1e-9 && t > maxT) maxT = t;
+    }
+    return maxT;
+  }
+
+  // Объединение круга (cx,cy,r) с полигоном, звёздным относительно центра круга
+  // (центр внутри полигона): по каждому лучу r = max(радиус круга, до границы).
+  function unionCirclePoly(cx, cy, r, poly) {
+    var n = 120, out = [];
+    for (var i = 0; i < n; i++) {
+      var th = (i / n) * Math.PI * 2, ux = Math.cos(th), uy = Math.sin(th);
+      var ru = Math.max(r, rayExitDist(cx, cy, ux, uy, poly));
+      out.push({ x: cx + ru * ux, y: cy + ru * uy });
+    }
+    return out;
+  }
+
   // ---------- элементы (детали + контрольные отверстия) → карманы ----------
 
   // Каждый элемент: {outline, depth, ca: {cx,cy,r}|null, color}
@@ -189,6 +217,21 @@
         return !fixturePolys.some(function (poly) { return HC.geom.pointInPoly(fc.cx, fc.cy, poly); });
       });
     }
+
+    // зенковочные отверстия крепежа (Mounting2 Ø6 с обратной стороны): чтобы тело
+    // реально прорезалось, ВРЕЗАЕМ круг в перекрывающий вырез (union) — один
+    // контур вместо двух налегающих. Отдельностоящую зенковку режем как отверстие.
+    (model.fixtures && model.fixtures.holes || []).forEach(function (grp) {
+      if (!grp.countersink) return;
+      (grp.points || []).forEach(function (p) {
+        var r = grp.d / 2, idx = -1;
+        for (var i = 0; i < fixturePolys.length; i++) {
+          if (HC.geom.pointInPoly(p[0], p[1], fixturePolys[i])) { idx = i; break; }
+        }
+        if (idx >= 0) fixturePolys[idx] = unionCirclePoly(p[0], p[1], r, fixturePolys[idx]);
+        else fixtureCircles.push({ cx: p[0], cy: p[1], r: r });
+      });
+    });
 
     var features = collectFeatures(model).map(function (f) {
       f.depth = Math.min(Math.max(f.depth, 0.3), T);
