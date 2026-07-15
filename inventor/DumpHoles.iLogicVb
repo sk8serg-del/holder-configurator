@@ -101,11 +101,33 @@ Sub Main()
 		Dim idx As Integer = 0
 		For Each pt As Object In centers
 			idx += 1
+			' HoleCenterPoints — это SketchPoint'ы: у них нет прямых X/Y,
+			' координата лежит в 2D-геометрии эскиза. Переводим её в модельное
+			' пространство через родительский эскиз (SketchToModelSpace).
+			' Запасной путь — рабочая точка/вершина с 3D-свойством .Point.
+			Dim mx As Double = 0, my As Double = 0
+			Dim got As Boolean = False
+			Try
+				Dim g2 As Object = pt.Geometry                 ' Point2d в эскизе
+				Dim par As Object = pt.Parent                  ' PlanarSketch
+				Dim g3 As Object = par.SketchToModelSpace(g2)  ' Point в модели
+				mx = CDbl(g3.X) * mm : my = CDbl(g3.Y) * mm
+				got = True
+			Catch
+			End Try
+			If Not got Then
+				Try
+					Dim g3 As Object = pt.Point                ' WorkPoint/вершина (3D)
+					mx = CDbl(g3.X) * mm : my = CDbl(g3.Y) * mm
+					got = True
+				Catch
+				End Try
+			End If
+			If Not got Then Continue For ' не смогли прочитать центр — пропускаем
+
 			Dim nm As String = CStr(hf.Name).Replace(";", ",")
 			If centers.Count > 1 Then nm &= "-" & idx.ToString()
-			Dim x As Double = CDbl(pt.X) * mm
-			Dim y As Double = CDbl(pt.Y) * mm
-			rows.Add(nm & ";" & x.ToString("0.###", inv) & ";" & y.ToString("0.###", inv) & ";" & _
+			rows.Add(nm & ";" & mx.ToString("0.###", inv) & ";" & my.ToString("0.###", inv) & ";" & _
 				dia.ToString("0.###", inv) & ";" & depthStr & ";" & typeName & ";" & extra1 & ";" & extra2 & ";" & tapped)
 			built += 1
 		Next
