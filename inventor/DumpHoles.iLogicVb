@@ -134,38 +134,61 @@ Sub Main()
 	Next
 
 	' --- второй проход: круглые вырезы Extrude (не через команду «Отверстие») ---
+	' Ловим посадки/зоны напыления свидетелей и прочие круглые карманы,
+	' сделанные эскизом-окружностью + Extrude/Cut. Вспомогательную
+	' (construction) геометрию в эскизе игнорируем; несколько рабочих
+	' окружностей в одном эскизе дают несколько строк с индексом.
 	Dim extrudeFeats As Object = compDef.Features.ExtrudeFeatures
 	For Each ef As Object In extrudeFeats
+		' только вырезы (Cut) — чтобы не принять тело диска или бобышки за отверстия
+		Dim isCut As Boolean = False
 		Try
-			' интересуют только вырезы (Cut); эскиз-профиль должен быть
-			' ровно одной окружностью — иначе это не «простое круглое
-			' отверстие», а что-то сложнее (пропускаем без ошибки)
-			If CType(ef.Definition.Operation, Integer) <> PartFeatureOperationEnum.kCutOperation Then Continue For
-			Dim sk As Object = ef.Definition.Profile.Parent
-			If sk.SketchCircles.Count <> 1 Then Continue For
-			If sk.SketchLines.Count > 0 OrElse sk.SketchArcs.Count > 0 OrElse sk.SketchSplines.Count > 0 Then Continue For
-
-			Dim circ As Object = sk.SketchCircles.Item(1)
-			Dim cx As Double = CDbl(circ.CenterSketchPoint.Geometry.X) * mm
-			Dim cy As Double = CDbl(circ.CenterSketchPoint.Geometry.Y) * mm
-			Dim dia As Double = CDbl(circ.Radius) * 2.0 * mm
-
-			Dim depthStr As String = "through"
-			Try
-				If CType(ef.Definition.ExtentType, Integer) <> PartFeatureExtentEnum.kThroughAllExtent Then
-					depthStr = (CDbl(ef.Definition.Extent.Distance.Value) * mm).ToString("0.###", inv)
-				End If
-			Catch
-			End Try
-
-			Dim nm As String = CStr(ef.Name).Replace(";", ",")
-			rows.Add(nm & ";" & cx.ToString("0.###", inv) & ";" & cy.ToString("0.###", inv) & ";" & _
-				dia.ToString("0.###", inv) & ";" & depthStr & ";drilled;;;no")
-			built += 1
+			isCut = (CType(ef.Definition.Operation, Integer) = PartFeatureOperationEnum.kCutOperation)
 		Catch
-			' эскиз/операция не подошли под ожидаемую структуру — пропускаем
-			' этот Extrude, остальные строки уже собранного CSV не теряются
 		End Try
+		If Not isCut Then Continue For
+
+		Dim sk As Object = Nothing
+		Try : sk = ef.Profile.Parent : Catch : End Try
+		If sk Is Nothing Then
+			Try : sk = ef.Definition.Profile.Parent : Catch : End Try
+		End If
+		If sk Is Nothing Then Continue For
+
+		Dim depthStr As String = "through"
+		Try
+			If CType(ef.Definition.ExtentType, Integer) <> PartFeatureExtentEnum.kThroughAllExtent Then
+				depthStr = (CDbl(ef.Definition.Extent.Distance.Value) * mm).ToString("0.###", inv)
+			End If
+		Catch
+		End Try
+
+		' собираем только рабочие (не construction) окружности эскиза
+		Dim cxs As New List(Of Double)
+		Dim cys As New List(Of Double)
+		Dim dias As New List(Of Double)
+		Try
+			For Each circ As Object In sk.SketchCircles
+				Dim isConstr As Boolean = False
+				Try : isConstr = CBool(circ.Construction) : Catch : End Try
+				If isConstr Then Continue For
+				Dim c2 As Object = circ.CenterSketchPoint.Geometry
+				Dim g3 As Object = sk.SketchToModelSpace(c2)
+				cxs.Add(CDbl(g3.X) * mm)
+				cys.Add(CDbl(g3.Y) * mm)
+				dias.Add(CDbl(circ.Radius) * 2.0 * mm)
+			Next
+		Catch
+		End Try
+
+		Dim baseName As String = CStr(ef.Name).Replace(";", ",")
+		For k As Integer = 0 To cxs.Count - 1
+			Dim nm As String = baseName
+			If cxs.Count > 1 Then nm &= "-" & (k + 1).ToString()
+			rows.Add(nm & ";" & cxs(k).ToString("0.###", inv) & ";" & cys(k).ToString("0.###", inv) & ";" & _
+				dias(k).ToString("0.###", inv) & ";" & depthStr & ";drilled;;;no")
+			built += 1
+		Next
 	Next
 
 	If built = 0 Then
