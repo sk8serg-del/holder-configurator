@@ -18,7 +18,7 @@
   var HC = (g.HC = g.HC || {});
 
   var PART_COLORS = [0x2b6cb0, 0x2f855a, 0xc05621, 0x6b46c1, 0xc53030];
-  var CTRL_COLOR = 0xf06292; // контрольные отверстия — розовые стенки counterbore
+  var CTRL_COLOR = 0x9b111e; // контрольные отверстия — рубиновые стенки counterbore
 
   var st = null; // единственный экземпляр: {renderer, scene, camera, group, host, sph, ...}
 
