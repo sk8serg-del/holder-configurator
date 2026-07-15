@@ -1,0 +1,124 @@
+' DumpHoles.iLogicVb — правило iLogic для Autodesk Inventor.
+'
+' Выгружает координаты, диаметры и глубины всех Hole-элементов (Отверстие,
+' Hole feature) открытой детали в CSV — чтобы перенести реальную геометрию
+' болванки (крепёжные/контрольные отверстия) в веб-конфигуратор.
+'
+' Требования к детали: та же система координат, что и у HolderFromCSV —
+' центр диска в начале координат, ось диска — Z (эскиз на плоскости XY).
+'
+' ВАЖНО: видит только отверстия, сделанные командой «Отверстие» (Hole
+' feature). Отверстия, вырезанные просто эскизом круга и Extrude/Cut, эта
+' выгрузка не находит — их придётся добавить в CSV руками или переделать
+' в Hole feature.
+'
+' Формат CSV (";" разделитель, "." десятичная точка, единицы — мм):
+'   holes-dump;1
+'   part;{имя детали}
+'   columns;name;x;y;diameter;depth;type;extra1;extra2;tapped
+'   {имя};{x};{y};{d};{depth или "through"};{drilled|counterbore|countersink|spotface};{extra1};{extra2};{yes|no}
+' extra1/extra2: для counterbore — Ø зенковки; глубина зенковки;
+'                для countersink — Ø зенковки; угол, °.
+' Одна строка Hole-элемента с несколькими центрами (массив/несколько точек
+' эскиза) даёт несколько строк CSV — имя дополняется индексом (-1, -2, …).
+'
+' Диаметр и координаты читаются надёжно (стандартные свойства Inventor).
+' Тип/зенковка/резьба — «по возможности»: у разных версий Inventor эти
+' свойства называются немного по-разному, поэтому каждое читается отдельно
+' через Try/Catch и просто остаётся пустым, если не подошло — остальная
+' строка при этом не теряется.
+
+Sub Main()
+	If ThisApplication.ActiveDocument Is Nothing OrElse _
+	   ThisApplication.ActiveDocument.DocumentType <> DocumentTypeEnum.kPartDocumentObject Then
+		MessageBox.Show("Откройте деталь с отверстиями.", "DumpHoles", _
+			MessageBoxButtons.OK, MessageBoxIcon.Warning)
+		Return
+	End If
+	Dim doc As PartDocument = ThisApplication.ActiveDocument
+	Dim compDef As PartComponentDefinition = doc.ComponentDefinition
+
+	' Object (позднее связывание) — чтобы расхождения в именах свойств между
+	' версиями Inventor ловились через Try/Catch, а не валили весь рулесет.
+	Dim holeFeats As Object = compDef.Features.HoleFeatures
+	If holeFeats.Count = 0 Then
+		MessageBox.Show("В детали нет Hole-элементов (Отверстие). " & _
+			"Отверстия простым вырезом круга эта выгрузка не видит.", _
+			"DumpHoles", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+		Return
+	End If
+
+	Dim inv As System.Globalization.CultureInfo = System.Globalization.CultureInfo.InvariantCulture
+	Dim mm As Double = 10.0 ' внутренние единицы Inventor — см → мм
+	Dim rows As New List(Of String)
+	rows.Add("holes-dump;1")
+	rows.Add("part;" & doc.DisplayName.Replace(";", ","))
+	rows.Add("columns;name;x;y;diameter;depth;type;extra1;extra2;tapped")
+
+	Dim built As Integer = 0
+	For Each hf As Object In holeFeats
+		Dim typeName As String = "drilled"
+		Try
+			Select Case CType(hf.HoleType, Integer)
+				Case HoleTypeEnum.kDrilledHoleType : typeName = "drilled"
+				Case HoleTypeEnum.kCounterboreHoleType : typeName = "counterbore"
+				Case HoleTypeEnum.kCountersinkHoleType : typeName = "countersink"
+				Case HoleTypeEnum.kSpotFaceHoleType : typeName = "spotface"
+			End Select
+		Catch
+		End Try
+
+		Dim dia As Double = 0
+		Try : dia = CDbl(hf.HoleDiameter.Value) * mm : Catch : End Try
+
+		Dim depthStr As String = "through"
+		Try
+			If CType(hf.ExtentType, Integer) <> PartFeatureExtentEnum.kThroughAllExtent Then
+				depthStr = (CDbl(hf.Depth.Value) * mm).ToString("0.###", inv)
+			End If
+		Catch
+		End Try
+
+		Dim extra1 As String = "", extra2 As String = ""
+		Try
+			If typeName = "counterbore" Then
+				extra1 = (CDbl(hf.CounterboreDiameter.Value) * mm).ToString("0.###", inv)
+				extra2 = (CDbl(hf.CounterboreDepth.Value) * mm).ToString("0.###", inv)
+			ElseIf typeName = "countersink" Then
+				extra1 = (CDbl(hf.CountersinkDiameter.Value) * mm).ToString("0.###", inv)
+				extra2 = (CDbl(hf.CountersinkAngle.Value) * 180.0 / Math.PI).ToString("0.#", inv)
+			End If
+		Catch
+		End Try
+
+		Dim tapped As String = "no"
+		Try : If CBool(hf.Tapped) Then tapped = "yes" : Catch : End Try
+
+		Dim centers As Object = hf.HoleCenterPoints
+		Dim idx As Integer = 0
+		For Each pt As Object In centers
+			idx += 1
+			Dim nm As String = CStr(hf.Name).Replace(";", ",")
+			If centers.Count > 1 Then nm &= "-" & idx.ToString()
+			Dim x As Double = CDbl(pt.X) * mm
+			Dim y As Double = CDbl(pt.Y) * mm
+			rows.Add(nm & ";" & x.ToString("0.###", inv) & ";" & y.ToString("0.###", inv) & ";" & _
+				dia.ToString("0.###", inv) & ";" & depthStr & ";" & typeName & ";" & extra1 & ";" & extra2 & ";" & tapped)
+			built += 1
+		Next
+	Next
+
+	If built = 0 Then
+		MessageBox.Show("Не удалось прочитать ни одного отверстия.", "DumpHoles")
+		Return
+	End If
+
+	Dim dlg As New System.Windows.Forms.SaveFileDialog()
+	dlg.Title = "Сохранить выгрузку отверстий"
+	dlg.Filter = "CSV (*.csv)|*.csv"
+	dlg.FileName = System.IO.Path.GetFileNameWithoutExtension(doc.DisplayName) & "-holes.csv"
+	If dlg.ShowDialog() <> System.Windows.Forms.DialogResult.OK Then Return
+
+	System.IO.File.WriteAllText(dlg.FileName, String.Join(vbCrLf, rows) & vbCrLf, New System.Text.UTF8Encoding(True))
+	MessageBox.Show("Готово: выгружено отверстий — " & built.ToString() & "." & vbCrLf & dlg.FileName, "DumpHoles")
+End Sub
