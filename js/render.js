@@ -157,7 +157,8 @@
   };
 
   HC.renderSVG = function (model) {
-    var R = model.discDiameter / 2;
+    var Ruse = model.discDiameter / 2;                 // полезная зона — граница раскладки
+    var R = (model.blankDiameter || model.discDiameter) / 2; // полный диск (для отображения)
     var pad = Math.max(4, R * 0.08);
     var vb = fmt(-R - pad) + " " + fmt(-R - pad) + " " + fmt(2 * (R + pad)) + " " + fmt(2 * (R + pad));
     var sw = Math.max(0.2, R / 200); // толщина линий в мм-координатах
@@ -169,14 +170,34 @@
     );
     out.push('<g transform="scale(1,-1)">');
 
-    // диск
-    out.push('<circle cx="0" cy="0" r="' + fmt(R) + '" fill="#fdfdfc" stroke="#444" stroke-width="' + fmt(sw * 2) + '"/>');
-    // зона отступа от края
-    if (model.edgeClearance > 0) {
-      out.push('<circle cx="0" cy="0" r="' + fmt(R - model.edgeClearance) + '" fill="none" stroke="#b8b8b8" stroke-width="' + fmt(sw) + '" stroke-dasharray="' + fmt(sw * 8) + ' ' + fmt(sw * 5) + '"/>');
+    // болванка (полный физический диск)
+    out.push('<circle cx="0" cy="0" r="' + fmt(R) + '" fill="#f1f0ec" stroke="#444" stroke-width="' + fmt(sw * 2) + '"/>');
+
+    // кольцевые канавки маски (декор, вне полезной зоны)
+    ((model.fixtures && model.fixtures.grooves) || []).forEach(function (gr) {
+      [gr.outer, gr.inner].forEach(function (dia) {
+        out.push('<circle cx="0" cy="0" r="' + fmt(dia / 2) + '" fill="none" stroke="#c0beb8" stroke-width="' + fmt(sw) + '" stroke-dasharray="' + fmt(sw * 6) + " " + fmt(sw * 4) + '"/>');
+      });
+    });
+
+    // полезная зона (граница раскладки деталей) — только если болванка крупнее
+    if (model.blankDiameter && model.blankDiameter > model.discDiameter + 0.1) {
+      out.push('<circle cx="0" cy="0" r="' + fmt(Ruse) + '" fill="#fdfdfc" stroke="#6f9e6f" stroke-width="' + fmt(sw * 1.5) + '"/>');
     }
+    // зона отступа от края полезной зоны
+    if (model.edgeClearance > 0) {
+      out.push('<circle cx="0" cy="0" r="' + fmt(Ruse - model.edgeClearance) + '" fill="none" stroke="#b8b8b8" stroke-width="' + fmt(sw) + '" stroke-dasharray="' + fmt(sw * 8) + ' ' + fmt(sw * 5) + '"/>');
+    }
+
+    // крепёж/штифты/резьба болванки (декор, вне полезной зоны)
+    ((model.fixtures && model.fixtures.holes) || []).forEach(function (grp) {
+      (grp.points || []).forEach(function (p) {
+        out.push('<circle cx="' + fmt(p[0]) + '" cy="' + fmt(p[1]) + '" r="' + fmt(grp.d / 2) + '" fill="#dededa" stroke="#8a8a84" stroke-width="' + fmt(sw) + '"/>');
+      });
+    });
+
     // центр диска
-    var cm = R * 0.03;
+    var cm = Ruse * 0.03;
     out.push('<path d="M ' + fmt(-cm) + ' 0 H ' + fmt(cm) + ' M 0 ' + fmt(-cm) + ' V ' + fmt(cm) + '" stroke="#999" stroke-width="' + fmt(sw) + '"/>');
 
     // контрольные отверстия — полная схема (посадка/деталь/CA/паз), как у

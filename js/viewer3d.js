@@ -149,9 +149,19 @@
   function buildGroup(model) {
     var THREE = g.THREE;
     var T = model.thickness > 0 ? model.thickness : 6;
-    var R = model.discDiameter / 2;
+    var R = (model.blankDiameter || model.discDiameter) / 2; // полный диск
     var eps = 1e-6;
     var group = new THREE.Group();
+
+    // крепёж/штифты/резьба болванки — сквозные отверстия (декор, серые стенки)
+    var fixtureCircles = [];
+    if (model.fixtures && model.fixtures.holes) {
+      model.fixtures.holes.forEach(function (grp) {
+        (grp.points || []).forEach(function (p) {
+          fixtureCircles.push({ cx: p[0], cy: p[1], r: grp.d / 2 });
+        });
+      });
+    }
 
     var features = collectFeatures(model).map(function (f) {
       f.depth = Math.min(Math.max(f.depth, 0.3), T);
@@ -176,6 +186,9 @@
         } else if (f.ca) {
           shape.holes.push(toPath(circlePoly(f.ca.cx, f.ca.cy, f.ca.r, 64))); // сквозная CA
         }
+      });
+      fixtureCircles.forEach(function (fc) {
+        shape.holes.push(toPath(circlePoly(fc.cx, fc.cy, fc.r, 28))); // крепёж — насквозь
       });
       var geo = new THREE.ExtrudeGeometry(shape, { depth: t1 - t0, bevelEnabled: false, curveSegments: 4 });
       var mesh = new THREE.Mesh(geo, discMat);
@@ -214,6 +227,29 @@
         group.add(mesh);
       }
     });
+
+    // кольцевые канавки маски — плоская тёмная полоса на поверхности (декор)
+    if (model.fixtures && model.fixtures.grooves) {
+      var grMat = new THREE.MeshStandardMaterial({ color: 0x9a988f, metalness: 0.3, roughness: 0.75, side: THREE.DoubleSide });
+      model.fixtures.grooves.forEach(function (gr) {
+        var ring = toShape(circlePoly(0, 0, gr.outer / 2, 96));
+        ring.holes.push(toPath(circlePoly(0, 0, gr.inner / 2, 96)));
+        var m = new THREE.Mesh(new THREE.ShapeGeometry(ring), grMat);
+        m.position.z = 0.03;
+        group.add(m);
+      });
+    }
+
+    // граница полезной зоны — тонкое зелёное кольцо на поверхности
+    if (model.blankDiameter && model.blankDiameter > model.discDiameter + 0.1) {
+      var zw = Math.max(0.5, R * 0.004);
+      var rz = model.discDiameter / 2;
+      var zone = toShape(circlePoly(0, 0, rz + zw, 160));
+      zone.holes.push(toPath(circlePoly(0, 0, rz - zw, 160)));
+      var zm = new THREE.Mesh(new THREE.ShapeGeometry(zone), new THREE.MeshStandardMaterial({ color: 0x6f9e6f, metalness: 0.1, roughness: 0.8 }));
+      zm.position.z = 0.04;
+      group.add(zm);
+    }
 
     // номера позиций — спрайты над деталями (повёрнуты к камере всегда)
     if (model.showNumbers) {
@@ -389,10 +425,11 @@
       if (!st) {
         st = initOnce(host);
         if (!st) return false;
-        // стартовая дистанция — по диаметру диска
-        st.sph.r = model.discDiameter * 1.5;
-        st.rMin = model.discDiameter * 0.25;
-        st.rMax = model.discDiameter * 5;
+        // стартовая дистанция — по полному диаметру болванки
+        var dia = model.blankDiameter || model.discDiameter;
+        st.sph.r = dia * 1.5;
+        st.rMin = dia * 0.25;
+        st.rMax = dia * 5;
       }
       if (st.group) {
         st.scene.remove(st.group);

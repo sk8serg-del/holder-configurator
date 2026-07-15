@@ -75,5 +75,25 @@ let sprites = 0;
 group.traverse((o) => { if (o.isSprite) sprites++; });
 check("без номеров спрайтов нет", sprites === 0);
 
+// --- полный диск: болванка крупнее полезной зоны + крепёж сквозной ---
+const fullModel = Object.assign({}, model, {
+  blankDiameter: 324.5,
+  fixtures: {
+    holes: [{ d: 6, points: [[4.1, 156.446], [133.436, -81.774], [-137.536, -74.672]] }],
+    grooves: [{ inner: 297.5, outer: 303.5, depth: 2 }]
+  }
+});
+const g2 = HC.viewer3d._buildGroup(fullModel);
+const box2 = new THREE.Box3().setFromObject(g2);
+check("габарит по X ≈ 324.5 (полная болванка, не полезная зона)",
+  Math.abs(box2.max.x - box2.min.x - 324.5) < 1, String(box2.max.x - box2.min.x));
+let finite2 = true;
+g2.traverse((o) => {
+  if (!o.isMesh) return;
+  const a = o.geometry.attributes.position.array;
+  for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) { finite2 = false; break; }
+});
+check("полный диск: все вершины конечны (крепёж + канавка не дали NaN)", finite2);
+
 console.log(failures ? "\nПРОВАЛЕНО: " + failures : "\nТест 3D-построителя пройден.");
 process.exit(failures ? 1 : 0);

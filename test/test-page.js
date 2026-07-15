@@ -74,27 +74,27 @@ check("автораскладка при загрузке: сводка и SVG �
   $("summary").textContent);
 
 // --- предпросмотр детали (для круга — крупная схема d/D/CA, авторасчёт) ---
-check("стандартная деталь d=25.4, авто D/CA (D25,6/CA23,9)",
+check("стандартная деталь d=25.4, авто D/CA (D25,6/CA24,1 = D−1.5)",
   d.querySelector("#partsList .part-preview.hole-diagram svg") !== null &&
-  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d25,4 (D25,6/CA23,9)") !== -1,
+  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d25,4 (D25,6/CA24,1)") !== -1,
   d.querySelector("#partsList .part-preview").innerHTML);
 const dInput = d.querySelector("#partsList .p-d");
 const seatInput = d.querySelector("#partsList .p-seat-d");
 const caInput = d.querySelector("#partsList .p-ca");
 dInput.value = "12";
 dInput.dispatchEvent(new w.Event("input"));
-check("при смене d авто D/CA пересчитались (D12,2/CA10,5)",
-  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d12 (D12,2/CA10,5)") !== -1,
+check("при смене d авто D/CA пересчитались (D12,2/CA10,7 = D−1.5)",
+  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d12 (D12,2/CA10,7)") !== -1,
   d.querySelector("#partsList .part-preview").innerHTML);
-check("max у поля CA обновился до авто-максимума", caInput.getAttribute("max") === "10.5", caInput.getAttribute("max"));
+check("max у поля CA обновился до авто-максимума (D−1.5)", caInput.getAttribute("max") === "10.7", caInput.getAttribute("max"));
 
 // ручная правка D — дальше не должна затираться при новом изменении d
 seatInput.value = "13";
 seatInput.dispatchEvent(new w.Event("input"));
 dInput.value = "20";
 dInput.dispatchEvent(new w.Event("input"));
-check("ручной D сохранился при смене d, CA пересчитался (D13/CA18,5)",
-  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d20 (D13/CA18,5)") !== -1,
+check("ручной D сохранился при смене d, CA от D (D13/CA11,5 = D−1.5)",
+  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d20 (D13/CA11,5)") !== -1,
   d.querySelector("#partsList .part-preview").innerHTML);
 
 // ручная правка CA в меньшую сторону — тоже должна сохраняться при смене d
@@ -165,6 +165,16 @@ const circles = $("svgHost").querySelectorAll("circle").length;
 check("кругов в SVG много (>100)", circles > 100, String(circles));
 check("кнопки активны", !$("csvBtn").disabled && !$("reportBtn").disabled && !$("sendBtn").disabled);
 
+// --- полный диск: болванка крупнее полезной зоны + граница зоны + крепёж ---
+const svgHtml0 = $("svgHost").innerHTML;
+check("нарисована болванка Ø324.5 (r≈162.25)", svgHtml0.indexOf('r="162.25"') !== -1);
+check("нарисована граница полезной зоны (зелёный штрих #6f9e6f)", svgHtml0.indexOf("#6f9e6f") !== -1);
+check("нарисован фланцевый крепёж вне полезной зоны (центр за R149)",
+  Array.from($("svgHost").querySelectorAll("circle")).some(function (c) {
+    const cx = parseFloat(c.getAttribute("cx")) || 0, cy = parseFloat(c.getAttribute("cy")) || 0;
+    return Math.sqrt(cx * cx + cy * cy) > 149;
+  }));
+
 // --- паз под пинцет должен быть виден и в общей раскладке, не только в карточке ---
 seatInput.value = "12";
 seatInput.dispatchEvent(new w.Event("input"));
@@ -200,6 +210,9 @@ check("в отчёте есть таблица координат", rep.indexOf(
 check("в отчёте есть имя технолога", rep.indexOf("Тестов") !== -1);
 check("в отчёте контрольные без выключенного Свидетеля Центр",
   rep.indexOf("Reference Ø") !== -1 && rep.indexOf("Свидетель Центр Ø") === -1);
+// при выключенном «Свидетель Центр» проявляется центральное тех. отверстие
+check("выкл. Свидетель Центр → центральное тех. отверстие активно (в отчёте)",
+  rep.indexOf("Тех. отверстие центр Ø") !== -1);
 
 // --- смена диска и типа детали ---
 $("clPE").value = "9"; // испортим, чтобы проверить сброс к дефолту

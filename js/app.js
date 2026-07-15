@@ -58,17 +58,20 @@
   function rebuildControlHoles() {
     ctrlHoles = currentControl().holes.map(function (h) {
       var hasD = h.d != null;
+      var seatD = h.seatD != null ? h.seatD : (hasD ? autoSeatD(h.d) : null);
       return {
         x: h.x, y: h.y,
         name: h.name || ("X " + h.x + ", Y " + h.y),
         d: hasD ? h.d : null,
-        seatD: h.seatD != null ? h.seatD : (hasD ? autoSeatD(h.d) : null),
+        seatD: seatD,
         seatDAuto: h.seatD == null && hasD,
-        apertureCA: h.apertureCA != null ? h.apertureCA : (hasD ? autoCA(h.d) : null),
-        apertureCAAuto: h.apertureCA == null && hasD,
+        apertureCA: h.apertureCA != null ? h.apertureCA : (seatD != null ? autoCA(seatD) : null),
+        apertureCAAuto: h.apertureCA == null && seatD != null,
         depth: h.depth != null ? h.depth : null,
         slotAvailable: !!h.slotAvailable,
         slotOn: !!h.slotAvailable, slotAngle: 0, // паз по умолчанию включён там, где доступен
+        // отверстие, которое показывается только когда другое (по имени) выключено
+        shownWhenOff: h.shownWhenOff || null,
         on: true
       };
     });
@@ -79,14 +82,26 @@
     var host = $("controlList");
     host.innerHTML = "";
     ctrlHoles.forEach(function (h) {
+      // авто-отверстия (зависящие от другого) не показываем отдельной строкой
+      if (h.shownWhenOff) return;
       host.appendChild(ctrlHoleRow(h));
     });
+  }
+
+  // активно ли отверстие в геометрии: обычное — по своей галочке; зависимое
+  // (shownWhenOff) — только когда опорное отверстие выключено
+  function isControlActive(h) {
+    if (h.shownWhenOff) {
+      var ref = ctrlHoles.filter(function (r) { return r.name === h.shownWhenOff; })[0];
+      return ref ? !ref.on : true;
+    }
+    return h.on;
   }
 
   function ctrlHoleRow(h) {
     var div = document.createElement("div");
     div.className = "ctrl-row";
-    var caMax = h.d != null ? autoCA(h.d) : null;
+    var caMax = autoCA(h.seatD); // максимум CA — от Ø посадки D
     // все настройки спрятаны в сворачиваемый блок; наружу — только галочка
     // наличия отверстия и краткая строка с текущими размерами
     div.innerHTML =
@@ -127,16 +142,17 @@
       if (el) el.addEventListener(ev, fn);
     }
     function syncAutoFields() {
-      if (h.d == null) return;
-      var maxCA = autoCA(h.d);
+      var seatEl = div.querySelector(".c-seat-d");
+      if (h.d != null) {
+        if (seatEl) seatEl.setAttribute("min", h.d);
+        if (h.seatDAuto) {
+          h.seatD = autoSeatD(h.d);
+          if (seatEl) seatEl.value = h.seatD == null ? "" : h.seatD;
+        }
+      }
+      var maxCA = autoCA(h.seatD); // CA — от Ø посадки D
       var caEl = div.querySelector(".c-ca");
       if (caEl) { if (maxCA != null) caEl.setAttribute("max", maxCA); else caEl.removeAttribute("max"); }
-      var seatEl = div.querySelector(".c-seat-d");
-      if (seatEl) seatEl.setAttribute("min", h.d);
-      if (h.seatDAuto) {
-        h.seatD = autoSeatD(h.d);
-        if (seatEl) seatEl.value = h.seatD == null ? "" : h.seatD;
-      }
       if (h.apertureCAAuto) {
         h.apertureCA = maxCA;
         if (caEl) caEl.value = h.apertureCA == null ? "" : h.apertureCA;
@@ -153,7 +169,7 @@
       markDirty();
     });
     on(".c-d", "input", function (e) { h.d = parseFloat(e.target.value); syncAutoFields(); refreshPreview(); markDirty(); });
-    on(".c-seat-d", "input", function (e) { h.seatD = e.target.value === "" ? null : parseFloat(e.target.value); h.seatDAuto = false; refreshPreview(); markDirty(); });
+    on(".c-seat-d", "input", function (e) { h.seatD = e.target.value === "" ? null : parseFloat(e.target.value); h.seatDAuto = false; syncAutoFields(); refreshPreview(); markDirty(); });
     on(".c-ca", "input", function (e) { h.apertureCA = e.target.value === "" ? null : parseFloat(e.target.value); h.apertureCAAuto = false; refreshPreview(); markDirty(); });
     on(".c-slot-on", "change", function (e) {
       h.slotOn = e.target.checked;
@@ -168,7 +184,7 @@
   }
 
   function activeControlHoles() {
-    return ctrlHoles.filter(function (h) { return h.on; }).map(function (h) {
+    return ctrlHoles.filter(isControlActive).map(function (h) {
       return {
         x: h.x, y: h.y,
         d: h.d, seatD: h.seatD, apertureCA: h.apertureCA,
@@ -178,9 +194,9 @@
   }
 
   function controlSummary() {
-    var act = ctrlHoles.filter(function (h) { return h.on; });
+    var act = ctrlHoles.filter(isControlActive);
     if (!act.length) return "нет";
-    return act.map(function (h) { return h.name + " Ø" + h.seatD; }).join("; ");
+    return act.map(function (h) { return h.name + " Ø" + (h.seatD != null ? h.seatD : h.d); }).join("; ");
   }
 
   // ---------- детали ----------
@@ -192,20 +208,21 @@
     return Math.round((d + add) * 100) / 100;
   }
 
-  // Максимально возможная технологически зона напыления — деталь минус 1.5 мм на кольцо посадки
-  function autoCA(d) {
-    if (!(d > 0)) return null;
-    var ca = d - 1.5;
+  // Максимально возможная технологически зона напыления — Ø посадки D минус 1.5 мм
+  function autoCA(seatD) {
+    if (!(seatD > 0)) return null;
+    var ca = seatD - 1.5;
     return ca > 0 ? Math.round(ca * 100) / 100 : null;
   }
 
   function defaultPart() {
     var d = 25.4; // стандартная деталь
+    var seatD = autoSeatD(d);
     return {
       type: "circle", d: d, w: 20, h: 10, chamfer: 2,
       // посадка (D) и зона напыления (CA) — только для круглых; авто, пока пользователь не поправит вручную
-      seatD: autoSeatD(d), seatDAuto: true,
-      apertureCA: autoCA(d), apertureCAAuto: true,
+      seatD: seatD, seatDAuto: true,
+      apertureCA: autoCA(seatD), apertureCAAuto: true,
       slotOn: false, slotAngle: 0, // паз под пинцет — только для круглых, требует заданного D
       qtyMode: "max", qty: 10,
       orientation: "grid",           // fixed | grid | radial-w | radial-h
@@ -222,7 +239,7 @@
   function partRow(p, i) {
     var div = document.createElement("div");
     div.className = "part-row";
-    var caMax = autoCA(p.d);
+    var caMax = autoCA(p.seatD); // максимум CA — от Ø посадки D
     var dims = p.type === "circle"
       ? '<label>Диаметр детали d, мм<input type="number" class="p-d" min="0.1" step="0.1" value="' + p.d + '"></label>' +
         '<label>Ø посадки D, мм <span class="hint">(авто, можно поправить, не меньше d)</span><input type="number" class="p-seat-d" min="' + p.d + '" step="0.1" value="' + (p.seatD == null ? "" : p.seatD) + '"></label>' +
@@ -288,16 +305,16 @@
     // (обновляет поля напрямую через DOM, без renderParts(), чтобы не сбивать фокус при вводе)
     function syncAutoFields() {
       if (p.type !== "circle") return;
-      var maxCA = autoCA(p.d);
-      var caEl = div.querySelector(".p-ca");
-      if (caEl) {
-        if (maxCA != null) caEl.setAttribute("max", maxCA); else caEl.removeAttribute("max");
-      }
       var seatEl = div.querySelector(".p-seat-d");
       if (seatEl) seatEl.setAttribute("min", p.d);
       if (p.seatDAuto) {
         p.seatD = autoSeatD(p.d);
         if (seatEl) seatEl.value = p.seatD == null ? "" : p.seatD;
+      }
+      var maxCA = autoCA(p.seatD); // CA — от Ø посадки D
+      var caEl = div.querySelector(".p-ca");
+      if (caEl) {
+        if (maxCA != null) caEl.setAttribute("max", maxCA); else caEl.removeAttribute("max");
       }
       if (p.apertureCAAuto) {
         p.apertureCA = maxCA;
@@ -306,7 +323,7 @@
     }
     on(".p-type", "change", function (e) { p.type = e.target.value; renderParts(); markDirty(); });
     on(".p-d", "input", function (e) { p.d = parseFloat(e.target.value); syncAutoFields(); refreshPreview(); markDirty(); });
-    on(".p-seat-d", "input", function (e) { p.seatD = e.target.value === "" ? null : parseFloat(e.target.value); p.seatDAuto = false; refreshPreview(); markDirty(); });
+    on(".p-seat-d", "input", function (e) { p.seatD = e.target.value === "" ? null : parseFloat(e.target.value); p.seatDAuto = false; syncAutoFields(); refreshPreview(); markDirty(); });
     on(".p-ca", "input", function (e) { p.apertureCA = e.target.value === "" ? null : parseFloat(e.target.value); p.apertureCAAuto = false; refreshPreview(); markDirty(); });
     on(".p-slot-on", "change", function (e) {
       p.slotOn = e.target.checked;
@@ -393,9 +410,9 @@
             errs.push(n + "Ø посадки D не может быть меньше диаметра детали d (" + p.d + ").");
           }
           if (p.apertureCA != null) {
-            var maxCA = autoCA(p.d);
+            var maxCA = autoCA(p.seatD);
             if (maxCA == null || p.apertureCA > maxCA + 1e-6) {
-              errs.push(n + "зона напыления CA не может быть больше d−1.5 мм" + (maxCA != null ? " (максимум " + maxCA + ")" : "") + ".");
+              errs.push(n + "зона напыления CA не может быть больше D−1.5 мм" + (maxCA != null ? " (максимум " + maxCA + ")" : "") + ".");
             }
           }
         }
@@ -412,16 +429,16 @@
       }
     });
     ctrlHoles.forEach(function (h) {
-      if (!h.on) return;
+      if (!isControlActive(h)) return;
       var hn = "Контрольное отверстие «" + h.name + "»: ";
       if (!(h.seatD > 0)) { errs.push(hn + "укажите Ø посадки."); return; }
-      if (h.d != null) {
-        if (h.seatD < h.d - 1e-6) errs.push(hn + "Ø посадки D не может быть меньше диаметра детали d (" + h.d + ").");
-        if (h.apertureCA != null) {
-          var maxCAh = autoCA(h.d);
-          if (maxCAh == null || h.apertureCA > maxCAh + 1e-6) {
-            errs.push(hn + "зона напыления CA не может быть больше d−1.5 мм" + (maxCAh != null ? " (максимум " + maxCAh + ")" : "") + ".");
-          }
+      if (h.d != null && h.seatD < h.d - 1e-6) {
+        errs.push(hn + "Ø посадки D не может быть меньше диаметра детали d (" + h.d + ").");
+      }
+      if (h.apertureCA != null) {
+        var maxCAh = autoCA(h.seatD);
+        if (maxCAh == null || h.apertureCA > maxCAh + 1e-6) {
+          errs.push(hn + "зона напыления CA не может быть больше D−1.5 мм" + (maxCAh != null ? " (максимум " + maxCAh + ")" : "") + ".");
         }
       }
     });
@@ -502,6 +519,8 @@
     if (!lastResult) return;
     $("svgHost").innerHTML = HC.renderSVG({
       discDiameter: lastResult.disc.diameter,
+      blankDiameter: lastResult.disc.blankDiameter,
+      fixtures: lastResult.disc.fixtures,
       edgeClearance: lastResult.opts.clearances.pe,
       controlHoles: lastResult.opts.controlHoles,
       placed: lastResult.placed,
@@ -517,6 +536,8 @@
     if (!mode3d || !lastResult) return;
     var ok = HC.viewer3d && HC.viewer3d.available() && HC.viewer3d.update($("view3dHost"), {
       discDiameter: lastResult.disc.diameter,
+      blankDiameter: lastResult.disc.blankDiameter,
+      fixtures: lastResult.disc.fixtures,
       thickness: lastResult.disc.thickness || 6,
       controlHoles: lastResult.opts.controlHoles,
       placed: lastResult.placed,
