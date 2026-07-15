@@ -49,14 +49,15 @@ group.traverse((o) => { if (o.isMesh) meshes.push(o); });
 const layers = meshes.filter((m) => m.geometry.type === "ExtrudeGeometry" && m.position.x === 0 && m.position.y === 0 && m.position.z < 0 && m.material.color.getHex() === 0xc9cdd1);
 check("диск собран из 3 слоёв (глубины 3 и 4.5 при толщине 6)", layers.length === 3, String(layers.length));
 
-// пластины: 8 кругов + 5 прямоугольников + 2 свидетеля (Контроль — без детали)
-const plates = meshes.length - layers.length;
-check("пластин деталей 15 (13 деталей + 2 свидетеля)", plates === 15, String(plates));
+// цветные стенки counterbore: посадка у всех 16 элементов (3 КО + 13 деталей),
+// стенка CA у 11 (3 КО + 8 кругов; прямоугольники без CA) → 27
+const walls = meshes.length - layers.length;
+check("стенок counterbore 27 (16 посадок + 11 CA)", walls === 27, String(walls));
 
-// габариты: диаметр ~298, толщина 6 + пластины не выше верха диска
+// габариты: диаметр ~298, толщина 6, стенки не выше верха диска
 const box = new THREE.Box3().setFromObject(group);
 check("габарит по X ≈ 298", Math.abs(box.max.x - box.min.x - 298) < 1, String(box.max.x - box.min.x));
-check("низ на -6, верх не выше 0 (пластины утоплены)", Math.abs(box.min.z + 6) < 1e-6 && box.max.z <= 0 + 1e-6,
+check("низ на -6, верх не выше 0", Math.abs(box.min.z + 6) < 1e-6 && box.max.z <= 0 + 1e-6,
   box.min.z + " … " + box.max.z);
 
 // все вершины конечны (нет NaN из объединения паза с посадкой)

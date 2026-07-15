@@ -9,9 +9,9 @@
  * Диск строится «слоями» без CSG: толщина делится по всем встречающимся
  * глубинам посадок; в каждом слое отверстия — контуры (посадка + паз) тех
  * элементов, что прорезают слой, либо их сквозные зоны CA. Сложенные слои
- * выглядят как настоящие ступенчатые отверстия. Детали показаны цветными
- * пластинами на дне посадок (цвет — как номер детали в форме), контрольные
- * свидетели — серыми.
+ * выглядят как настоящие ступенчатые отверстия. Принадлежность отверстия
+ * показана цветом внутренних стенок counterbore (посадка + стенка CA),
+ * контрольные отверстия — серыми стенками; дно и поверхность — алюминий.
  */
 (function (g) {
   "use strict";
@@ -79,7 +79,7 @@
 
   // ---------- элементы (детали + контрольные отверстия) → карманы ----------
 
-  // Каждый элемент: {outline, depth, ca: {cx,cy,r}|null, plate: {...}|null}
+  // Каждый элемент: {outline, depth, ca: {cx,cy,r}|null, color}
   function collectFeatures(model) {
     var T = model.thickness;
     var defDepth = Math.max(0.5, T - 1.5); // стандартная глубина посадки
@@ -93,7 +93,7 @@
         outline: seatOutline(h.x, h.y, seat, !!h.slotOn, ang),
         depth: h.depth > 0 ? h.depth : defDepth,
         ca: h.apertureCA > 0 ? { cx: h.x, cy: h.y, r: h.apertureCA / 2 } : null,
-        plate: h.d > 0 ? { kind: "circle", cx: h.x, cy: h.y, r: h.d / 2, color: CTRL_COLOR } : null
+        color: CTRL_COLOR
       });
     });
 
@@ -106,19 +106,42 @@
           outline: seatOutline(p.cx, p.cy, seat, !!p.slotOn, ang),
           depth: defDepth,
           ca: p.apertureCA > 0 ? { cx: p.cx, cy: p.cy, r: p.apertureCA / 2 } : null,
-          plate: { kind: "circle", cx: p.cx, cy: p.cy, r: p.d / 2, color: color }
+          color: color
         });
       } else {
-        var poly = HC.geom.placementPoly(p);
         fs.push({
-          outline: poly,
+          outline: HC.geom.placementPoly(p),
           depth: defDepth,
           ca: null,
-          plate: { kind: "poly", cx: p.cx, cy: p.cy, poly: poly, color: color }
+          color: color
         });
       }
     });
     return fs;
+  }
+
+  // Боковая поверхность контура от z0 до z1, слегка втянутая внутрь (inset),
+  // чтобы цветная стенка не мерцала поверх серой стенки слоя диска.
+  function wallGeometry(pts, z0, z1, inset) {
+    var cx = 0, cy = 0;
+    pts.forEach(function (p) { cx += p.x; cy += p.y; });
+    cx /= pts.length; cy /= pts.length;
+    var q = pts.map(function (p) {
+      var dx = cx - p.x, dy = cy - p.y;
+      var len = Math.sqrt(dx * dx + dy * dy) || 1;
+      var k = Math.min(1, inset / len);
+      return { x: p.x + dx * k, y: p.y + dy * k };
+    });
+    var pos = [];
+    for (var i = 0; i < q.length; i++) {
+      var a = q[i], b = q[(i + 1) % q.length];
+      pos.push(a.x, a.y, z0, b.x, b.y, z0, b.x, b.y, z1);
+      pos.push(a.x, a.y, z0, b.x, b.y, z1, a.x, a.y, z1);
+    }
+    var geo = new g.THREE.BufferGeometry();
+    geo.setAttribute("position", new g.THREE.Float32BufferAttribute(pos, 3));
+    geo.computeVertexNormals();
+    return geo;
   }
 
   // ---------- сборка сцены ----------
@@ -160,32 +183,27 @@
       group.add(mesh);
     }
 
-    // детали — цветные пластины толщиной 1 мм на дне посадок
-    var plateMats = {};
+    // принадлежность отверстия — цветом внутренних стенок counterbore:
+    // стенка посадки (с пазом) на глубину, ниже неё — стенка сквозной CA
+    var wallMats = {};
     function matFor(color) {
-      if (!plateMats[color]) plateMats[color] = new g.THREE.MeshStandardMaterial({ color: color, metalness: 0.1, roughness: 0.6 });
-      return plateMats[color];
-    }
-    var plateH = Math.min(1, T / 4);
-    features.forEach(function (f) {
-      if (!f.plate) return;
-      var z = -Math.min(f.depth, T - eps);
-      var mesh;
-      if (f.plate.kind === "circle") {
-        var geo = new g.THREE.CylinderGeometry(f.plate.r, f.plate.r, plateH, 48);
-        geo.rotateX(Math.PI / 2);
-        mesh = new g.THREE.Mesh(geo, matFor(f.plate.color));
-        mesh.position.set(f.plate.cx, f.plate.cy, z + plateH / 2);
-      } else {
-        // лёгкая усадка контура, чтобы пластина не сливалась со стенками кармана
-        var shrunk = f.plate.poly.map(function (q) {
-          return { x: f.plate.cx + (q.x - f.plate.cx) * 0.985, y: f.plate.cy + (q.y - f.plate.cy) * 0.985 };
+      if (!wallMats[color]) {
+        wallMats[color] = new THREE.MeshStandardMaterial({
+          color: color, metalness: 0.15, roughness: 0.55, side: THREE.DoubleSide
         });
-        var geo2 = new g.THREE.ExtrudeGeometry(toShape(shrunk), { depth: plateH, bevelEnabled: false });
-        mesh = new g.THREE.Mesh(geo2, matFor(f.plate.color));
-        mesh.position.z = z;
       }
-      group.add(mesh);
+      return wallMats[color];
+    }
+    var inset = 0.05; // втягивание цветной стенки внутрь, мм
+    features.forEach(function (f) {
+      var zSeat = -Math.min(f.depth, T);
+      group.add(new THREE.Mesh(wallGeometry(f.outline, 0, zSeat, inset), matFor(f.color)));
+      if (!f.through && f.ca) {
+        group.add(new THREE.Mesh(
+          wallGeometry(circlePoly(f.ca.cx, f.ca.cy, f.ca.r, 64), zSeat, -T, inset),
+          matFor(f.color)
+        ));
+      }
     });
 
     // номера позиций — спрайты над деталями (повёрнуты к камере всегда)
