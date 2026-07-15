@@ -20,7 +20,7 @@
 '   holes-dump;1
 '   part;{имя детали}
 '   columns;name;x;y;diameter;depth;type;extra1;extra2;tapped
-'   {имя};{x};{y};{d};{depth или "through"};{drilled|counterbore|countersink|spotface};{extra1};{extra2};{yes|no}
+'   {имя};{x};{y};{d};{depth или "through"};{drilled|counterbore|countersink};{extra1};{extra2};{yes|no}
 ' extra1/extra2: для counterbore — Ø зенковки; глубина зенковки;
 '                для countersink — Ø зенковки; угол, °.
 ' Одна строка Hole-элемента с несколькими центрами (массив/несколько точек
@@ -55,19 +55,11 @@ Sub Main()
 
 	Dim built As Integer = 0
 	For Each hf As Object In holeFeats
-		Dim typeName As String = "drilled"
+		Dim dia As Double = 0
 		Try
-			Select Case CType(hf.HoleType, Integer)
-				Case HoleTypeEnum.kDrilledHoleType : typeName = "drilled"
-				Case HoleTypeEnum.kCounterboreHoleType : typeName = "counterbore"
-				Case HoleTypeEnum.kCountersinkHoleType : typeName = "countersink"
-				Case HoleTypeEnum.kSpotFaceHoleType : typeName = "spotface"
-			End Select
+			dia = CDbl(hf.HoleDiameter.Value) * mm
 		Catch
 		End Try
-
-		Dim dia As Double = 0
-		Try : dia = CDbl(hf.HoleDiameter.Value) * mm : Catch : End Try
 
 		Dim depthStr As String = "through"
 		Try
@@ -77,20 +69,33 @@ Sub Main()
 		Catch
 		End Try
 
+		' Тип отверстия определяем не по HoleTypeEnum (имена расходятся между
+		' версиями Inventor), а по наличию свойств зенковки/цековки: их чтение
+		' на обычном сверлёном отверстии просто бросает исключение (Try/Catch).
+		Dim cbD As Double = 0, cbDepth As Double = 0
+		Try : cbD = CDbl(hf.CounterboreDiameter.Value) * mm : Catch : End Try
+		Try : cbDepth = CDbl(hf.CounterboreDepth.Value) * mm : Catch : End Try
+		Dim csD As Double = 0, csAng As Double = 0
+		Try : csD = CDbl(hf.CountersinkDiameter.Value) * mm : Catch : End Try
+		Try : csAng = CDbl(hf.CountersinkAngle.Value) * 180.0 / Math.PI : Catch : End Try
+
+		Dim typeName As String = "drilled"
 		Dim extra1 As String = "", extra2 As String = ""
-		Try
-			If typeName = "counterbore" Then
-				extra1 = (CDbl(hf.CounterboreDiameter.Value) * mm).ToString("0.###", inv)
-				extra2 = (CDbl(hf.CounterboreDepth.Value) * mm).ToString("0.###", inv)
-			ElseIf typeName = "countersink" Then
-				extra1 = (CDbl(hf.CountersinkDiameter.Value) * mm).ToString("0.###", inv)
-				extra2 = (CDbl(hf.CountersinkAngle.Value) * 180.0 / Math.PI).ToString("0.#", inv)
-			End If
-		Catch
-		End Try
+		If cbD > 0 Then
+			typeName = "counterbore"
+			extra1 = cbD.ToString("0.###", inv)
+			extra2 = cbDepth.ToString("0.###", inv)
+		ElseIf csD > 0 Then
+			typeName = "countersink"
+			extra1 = csD.ToString("0.###", inv)
+			extra2 = csAng.ToString("0.#", inv)
+		End If
 
 		Dim tapped As String = "no"
-		Try : If CBool(hf.Tapped) Then tapped = "yes" : Catch : End Try
+		Try
+			If CBool(hf.Tapped) Then tapped = "yes"
+		Catch
+		End Try
 
 		Dim centers As Object = hf.HoleCenterPoints
 		Dim idx As Integer = 0
