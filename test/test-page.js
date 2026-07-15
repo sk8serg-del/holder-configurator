@@ -40,8 +40,8 @@ check("список дисков заполнен", $("discSelect").options.leng
 check("диск по умолчанию — Ø298", $("discSelect").value === "disc-298", $("discSelect").value);
 check("контрольные отверстия: 3 строки", d.querySelectorAll("#controlList .ctrl-row").length === 3);
 const ctrlNames = Array.from(d.querySelectorAll("#controlList .ctrl-head label")).map(function (el) { return el.textContent.trim(); });
-check("имена: Свидетель Центр / Свидетель / Контроль",
-  ctrlNames[0] === "Свидетель Центр" && ctrlNames[1] === "Свидетель" && ctrlNames[2] === "Контроль",
+check("имена: Свидетель Центр / Свидетель / Reference",
+  ctrlNames[0] === "Свидетель Центр" && ctrlNames[1] === "Свидетель" && ctrlNames[2] === "Reference",
   ctrlNames.join(" | "));
 check("у свидетелей поле детали d = 25.4 (авто D=25,6/CA=23,9)",
   d.querySelectorAll("#controlList .c-d").length === 2 &&
@@ -55,10 +55,10 @@ check("настройки контрольных отверстий свёрну
 const summaries = Array.from(d.querySelectorAll("#controlList .c-summary")).map(function (el) { return el.textContent; });
 check("свёрнутая строка свидетеля: d25,4 (D25,6/CA23,9) · паз",
   summaries[0] === "d25,4 (D25,6/CA23,9) · паз", summaries[0]);
-check("свёрнутая строка Контроля: (D30,1/CA24,1) · глуб. 3 без паза",
+check("свёрнутая строка Reference: (D30,1/CA24,1) · глуб. 3 без паза",
   summaries[2] === "(D30,1/CA24,1) · глуб. 3", summaries[2]);
 const seatDs = Array.from(d.querySelectorAll("#controlList .c-seat-d")).map(function (el) { return el.value; });
-check("Контроль: посадка D=30.1, CA=24.1, без поля d",
+check("Reference: посадка D=30.1, CA=24.1, без поля d",
   seatDs.indexOf("30.1") !== -1 &&
   Array.from(d.querySelectorAll("#controlList .c-ca")).some(function (el) { return el.value === "24.1"; }),
   seatDs.join(","));
@@ -200,7 +200,7 @@ const rep = $("report").innerHTML;
 check("в отчёте есть таблица координат", rep.indexOf("Координаты отверстий") !== -1);
 check("в отчёте есть имя технолога", rep.indexOf("Тестов") !== -1);
 check("в отчёте контрольные без выключенного Свидетеля Центр",
-  rep.indexOf("Контроль Ø") !== -1 && rep.indexOf("Свидетель Центр Ø") === -1);
+  rep.indexOf("Reference Ø") !== -1 && rep.indexOf("Свидетель Центр Ø") === -1);
 
 // --- смена диска и типа детали ---
 $("clPE").value = "9"; // испортим, чтобы проверить сброс к дефолту

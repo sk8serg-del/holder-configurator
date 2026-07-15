@@ -43,7 +43,7 @@ const model = {
 
 const group = HC.viewer3d._buildGroup(model);
 
-// слои: глубины {3 (Контроль), 4.5 (детали и свидетели)} → границы 0/3/4.5/6 → 3 слоя
+// слои: глубины {3 (Reference), 4.5 (детали и свидетели)} → границы 0/3/4.5/6 → 3 слоя
 const meshes = [];
 group.traverse((o) => { if (o.isMesh) meshes.push(o); });
 const layers = meshes.filter((m) => m.geometry.type === "ExtrudeGeometry" && m.position.x === 0 && m.position.y === 0 && m.position.z < 0 && m.material.color.getHex() === 0xc9cdd1);
