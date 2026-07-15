@@ -7,10 +7,14 @@
 ' Требования к детали: та же система координат, что и у HolderFromCSV —
 ' центр диска в начале координат, ось диска — Z (эскиз на плоскости XY).
 '
-' ВАЖНО: видит только отверстия, сделанные командой «Отверстие» (Hole
-' feature). Отверстия, вырезанные просто эскизом круга и Extrude/Cut, эта
-' выгрузка не находит — их придётся добавить в CSV руками или переделать
-' в Hole feature.
+' Кроме Hole-элементов дампер вторым проходом ищет простые круглые вырезы
+' (Extrude, Operation = Cut) — если крепёжные отверстия сделаны эскизом
+' круга + Extrude, а не командой «Отверстие». Условие захвата: в эскизе
+' выреза ровно одна окружность и больше никакой геометрии, а сам эскиз лежит
+' на плоскости XY (или ей параллельной) — тогда координаты круга в эскизе
+' совпадают с X/Y в модели без пересчёта. Fillet/Chamfer (фаска) и Emboss
+' (гравировка) дампером НЕ обрабатываются — это не отверстия, их положение
+' для конфигуратора не нужно.
 '
 ' Формат CSV (";" разделитель, "." десятичная точка, единицы — мм):
 '   holes-dump;1
@@ -41,12 +45,6 @@ Sub Main()
 	' Object (позднее связывание) — чтобы расхождения в именах свойств между
 	' версиями Inventor ловились через Try/Catch, а не валили весь рулесет.
 	Dim holeFeats As Object = compDef.Features.HoleFeatures
-	If holeFeats.Count = 0 Then
-		MessageBox.Show("В детали нет Hole-элементов (Отверстие). " & _
-			"Отверстия простым вырезом круга эта выгрузка не видит.", _
-			"DumpHoles", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-		Return
-	End If
 
 	Dim inv As System.Globalization.CultureInfo = System.Globalization.CultureInfo.InvariantCulture
 	Dim mm As Double = 10.0 ' внутренние единицы Inventor — см → мм
@@ -108,8 +106,44 @@ Sub Main()
 		Next
 	Next
 
+	' --- второй проход: круглые вырезы Extrude (не через команду «Отверстие») ---
+	Dim extrudeFeats As Object = compDef.Features.ExtrudeFeatures
+	For Each ef As Object In extrudeFeats
+		Try
+			' интересуют только вырезы (Cut); эскиз-профиль должен быть
+			' ровно одной окружностью — иначе это не «простое круглое
+			' отверстие», а что-то сложнее (пропускаем без ошибки)
+			If CType(ef.Definition.Operation, Integer) <> PartFeatureOperationEnum.kCutOperation Then Continue For
+			Dim sk As Object = ef.Definition.Profile.Parent
+			If sk.SketchCircles.Count <> 1 Then Continue For
+			If sk.SketchLines.Count > 0 OrElse sk.SketchArcs.Count > 0 OrElse sk.SketchSplines.Count > 0 Then Continue For
+
+			Dim circ As Object = sk.SketchCircles.Item(1)
+			Dim cx As Double = CDbl(circ.CenterSketchPoint.Geometry.X) * mm
+			Dim cy As Double = CDbl(circ.CenterSketchPoint.Geometry.Y) * mm
+			Dim dia As Double = CDbl(circ.Radius) * 2.0 * mm
+
+			Dim depthStr As String = "through"
+			Try
+				If CType(ef.Definition.ExtentType, Integer) <> PartFeatureExtentEnum.kThroughAllExtent Then
+					depthStr = (CDbl(ef.Definition.Extent.Distance.Value) * mm).ToString("0.###", inv)
+				End If
+			Catch
+			End Try
+
+			Dim nm As String = CStr(ef.Name).Replace(";", ",")
+			rows.Add(nm & ";" & cx.ToString("0.###", inv) & ";" & cy.ToString("0.###", inv) & ";" & _
+				dia.ToString("0.###", inv) & ";" & depthStr & ";drilled;;;no")
+			built += 1
+		Catch
+			' эскиз/операция не подошли под ожидаемую структуру — пропускаем
+			' этот Extrude, остальные строки уже собранного CSV не теряются
+		End Try
+	Next
+
 	If built = 0 Then
-		MessageBox.Show("Не удалось прочитать ни одного отверстия.", "DumpHoles")
+		MessageBox.Show("Не удалось прочитать ни одного отверстия (ни Hole-элементов, " & _
+			"ни простых круглых вырезов Extrude на плоскости XY).", "DumpHoles")
 		Return
 	End If
 
