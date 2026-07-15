@@ -80,7 +80,9 @@ const fullModel = Object.assign({}, model, {
   blankDiameter: 324.5,
   fixtures: {
     holes: [{ d: 6, points: [[4.1, 156.446], [133.436, -81.774], [-137.536, -74.672]] }],
-    grooves: [{ inner: 297.5, outer: 303.5, depth: 2 }]
+    grooves: [{ inner: 297.5, outer: 303.5, depth: 2 }],
+    // фигурный вырез (полигон) на фланце
+    cutouts: [{ label: "Mountings", points: [[-140, 60], [-120, 70], [-125, 90], [-145, 82]] }]
   }
 });
 const g2 = HC.viewer3d._buildGroup(fullModel);

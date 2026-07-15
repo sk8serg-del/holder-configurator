@@ -195,6 +195,11 @@
         out.push('<circle cx="' + fmt(p[0]) + '" cy="' + fmt(p[1]) + '" r="' + fmt(grp.d / 2) + '" fill="#dededa" stroke="#8a8a84" stroke-width="' + fmt(sw) + '"/>');
       });
     });
+    // фигурные вырезы болванки (декор): произвольный контур-полигон
+    ((model.fixtures && model.fixtures.cutouts) || []).forEach(function (cut) {
+      var pts = (cut.points || []).map(function (p) { return fmt(p[0]) + "," + fmt(p[1]); }).join(" ");
+      if (pts) out.push('<polygon points="' + pts + '" fill="#dededa" stroke="#8a8a84" stroke-width="' + fmt(sw) + '"/>');
+    });
 
     // центр диска
     var cm = Ruse * 0.03;

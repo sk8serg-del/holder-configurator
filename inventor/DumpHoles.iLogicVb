@@ -7,20 +7,21 @@
 ' Требования к детали: та же система координат, что и у HolderFromCSV —
 ' центр диска в начале координат, ось диска — Z (эскиз на плоскости XY).
 '
-' Кроме Hole-элементов дампер вторым проходом ищет простые круглые вырезы
-' (Extrude, Operation = Cut) — если крепёжные отверстия сделаны эскизом
-' круга + Extrude, а не командой «Отверстие». Условие захвата: в эскизе
-' выреза ровно одна окружность и больше никакой геометрии, а сам эскиз лежит
-' на плоскости XY (или ей параллельной) — тогда координаты круга в эскизе
-' совпадают с X/Y в модели без пересчёта. Fillet/Chamfer (фаска) и Emboss
-' (гравировка) дампером НЕ обрабатываются — это не отверстия, их положение
-' для конфигуратора не нужно.
+' Кроме Hole-элементов дампер вторым проходом разбирает вырезы Extrude/Cut:
+'   - круглые (эскиз-окружность) → строка circle с Ø;
+'   - фигурные (линии/дуги) → строка contour со списком точек контура
+'     (напр. фигурный вырез Mountings). Дуги сэмплируются, сегменты
+'     сцепляются по совпадающим концам в замкнутый контур.
+' Координаты берутся через SketchToModelSpace, поэтому плоскость эскиза
+' может быть любой. Fillet/Chamfer (фаска) и Emboss (гравировка) НЕ
+' обрабатываются — гравировку вносим в каталог вручную.
 '
 ' Формат CSV (";" разделитель, "." десятичная точка, единицы — мм):
 '   holes-dump;1
 '   part;{имя детали}
 '   columns;name;x;y;diameter;depth;type;extra1;extra2;tapped
 '   {имя};{x};{y};{d};{depth или "through"};{drilled|counterbore|countersink};{extra1};{extra2};{yes|no}
+'   contour;{имя};{depth или "through"};x1;y1;x2;y2;...   — фигурный вырез
 ' extra1/extra2: для counterbore — Ø зенковки; глубина зенковки;
 '                для countersink — Ø зенковки; угол, °.
 ' Одна строка Hole-элемента с несколькими центрами (массив/несколько точек
@@ -48,6 +49,7 @@ Sub Main()
 
 	Dim inv As System.Globalization.CultureInfo = System.Globalization.CultureInfo.InvariantCulture
 	Dim mm As Double = 10.0 ' внутренние единицы Inventor — см → мм
+	Dim tg As TransientGeometry = ThisApplication.TransientGeometry
 	Dim rows As New List(Of String)
 	rows.Add("holes-dump;1")
 	rows.Add("part;" & doc.DisplayName.Replace(";", ","))
@@ -189,6 +191,90 @@ Sub Main()
 				dias(k).ToString("0.###", inv) & ";" & depthStr & ";drilled;;;no")
 			built += 1
 		Next
+
+		' --- фигурные вырезы: контуры из линий/дуг эскиза (напр. Mountings) ---
+		' Собираем сегменты (линии — 2 точки, дуги — сэмплируем), сцепляем по
+		' совпадающим концам в замкнутые контуры, выводим строкой:
+		'   contour;{имя};{depth|through};x1;y1;x2;y2;...
+		Try
+			Dim hasNonCircle As Boolean = False
+			Try : hasNonCircle = (sk.SketchLines.Count > 0 OrElse sk.SketchArcs.Count > 0) : Catch : End Try
+			If hasNonCircle Then
+				Dim segs As New List(Of List(Of Double()))
+				' линии
+				For Each ln As Object In sk.SketchLines
+					Dim isC As Boolean = False
+					Try : isC = CBool(ln.Construction) : Catch : End Try
+					If isC Then Continue For
+					Dim seg As New List(Of Double())
+					seg.Add(ToModelMM(sk, ln.StartSketchPoint.Geometry, mm))
+					seg.Add(ToModelMM(sk, ln.EndSketchPoint.Geometry, mm))
+					segs.Add(seg)
+				Next
+				' дуги — сэмплируем по углу от начала на величину SweepAngle
+				For Each ar As Object In sk.SketchArcs
+					Dim isCA As Boolean = False
+					Try : isCA = CBool(ar.Construction) : Catch : End Try
+					If isCA Then Continue For
+					Dim segA As New List(Of Double())
+					Dim c2 As Object = ar.CenterSketchPoint.Geometry
+					Dim s2 As Object = ar.StartSketchPoint.Geometry
+					Dim rr As Double = CDbl(ar.Radius)
+					Dim a0 As Double = Math.Atan2(CDbl(s2.Y) - CDbl(c2.Y), CDbl(s2.X) - CDbl(c2.X))
+					Dim sweep As Double = 0
+					Try : sweep = CDbl(ar.SweepAngle) : Catch : End Try
+					Dim nS As Integer = 12
+					For q As Integer = 0 To nS
+						Dim aa As Double = a0 + sweep * q / nS
+						Dim p2 As Object = tg.CreatePoint2d(CDbl(c2.X) + rr * Math.Cos(aa), CDbl(c2.Y) + rr * Math.Sin(aa))
+						segA.Add(ToModelMM(sk, p2, mm))
+					Next
+					segs.Add(segA)
+				Next
+
+				' сцепка сегментов в контуры по совпадающим концам
+				If segs.Count > 0 Then
+				Dim used(segs.Count - 1) As Boolean
+				Dim tolC As Double = 0.02 ' мм
+				For i As Integer = 0 To segs.Count - 1
+					If used(i) Then Continue For
+					Dim lp As New List(Of Double())
+					For Each sp As Double() In segs(i) : lp.Add(sp) : Next
+					used(i) = True
+					Dim extended As Boolean = True
+					Do While extended
+						extended = False
+						Dim tail As Double() = lp(lp.Count - 1)
+						For j As Integer = 0 To segs.Count - 1
+							If used(j) Then Continue For
+							Dim s As List(Of Double()) = segs(j)
+							If Dist2(tail, s(0)) < tolC Then
+								For t As Integer = 1 To s.Count - 1 : lp.Add(s(t)) : Next
+								used(j) = True : extended = True : Exit For
+							ElseIf Dist2(tail, s(s.Count - 1)) < tolC Then
+								For t As Integer = s.Count - 2 To 0 Step -1 : lp.Add(s(t)) : Next
+								used(j) = True : extended = True : Exit For
+							End If
+						Next
+					Loop
+					' убираем дублирующую замыкающую точку
+					If lp.Count >= 4 AndAlso Dist2(lp(0), lp(lp.Count - 1)) < tolC Then lp.RemoveAt(lp.Count - 1)
+					If lp.Count >= 3 Then
+						Dim sb As New System.Text.StringBuilder()
+						sb.Append("contour;") : sb.Append(baseName) : sb.Append(";") : sb.Append(depthStr)
+						For Each pp As Double() In lp
+							sb.Append(";") : sb.Append(pp(0).ToString("0.###", inv))
+							sb.Append(";") : sb.Append(pp(1).ToString("0.###", inv))
+						Next
+						rows.Add(sb.ToString())
+						built += 1
+					End If
+				Next
+				End If
+			End If
+		Catch
+			' контур не разобрался — пропускаем, круглые строки уже сохранены
+		End Try
 	Next
 
 	If built = 0 Then
@@ -204,5 +290,16 @@ Sub Main()
 	If dlg.ShowDialog() <> System.Windows.Forms.DialogResult.OK Then Return
 
 	System.IO.File.WriteAllText(dlg.FileName, String.Join(vbCrLf, rows) & vbCrLf, New System.Text.UTF8Encoding(True))
-	MessageBox.Show("Готово: выгружено отверстий — " & built.ToString() & "." & vbCrLf & dlg.FileName, "DumpHoles")
+	MessageBox.Show("Готово: выгружено элементов — " & built.ToString() & "." & vbCrLf & dlg.FileName, "DumpHoles")
 End Sub
+
+' Точка эскиза (Point2d) → {x, y} в мм модельных координат
+Function ToModelMM(sk As Object, pt2d As Object, mm As Double) As Double()
+	Dim g3 As Object = sk.SketchToModelSpace(pt2d)
+	Return New Double() {CDbl(g3.X) * mm, CDbl(g3.Y) * mm}
+End Function
+
+' Расстояние между двумя точками {x, y}
+Function Dist2(a As Double(), b As Double()) As Double
+	Return Math.Sqrt((a(0) - b(0)) * (a(0) - b(0)) + (a(1) - b(1)) * (a(1) - b(1)))
+End Function

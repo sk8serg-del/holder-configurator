@@ -178,6 +178,13 @@ check("нарисован фланцевый крепёж вне полезно�
     return Math.sqrt(cx * cx + cy * cy) > 149;
   }));
 check("тех. отверстия 1-3 активны при включённом «Свидетель Центр»", svgHtml0.indexOf("translate(-19") !== -1);
+// фигурный вырез (полигон-fixture) рисуется как <polygon>
+const svgCut = w.HC.renderSVG({
+  discDiameter: 298, blankDiameter: 324.5,
+  fixtures: { cutouts: [{ label: "Mountings", points: [[-140, 60], [-120, 70], [-125, 90], [-145, 82]] }] },
+  controlHoles: [], placed: []
+});
+check("фигурный вырез рисуется как polygon в SVG", svgCut.indexOf("<polygon") !== -1);
 
 // --- паз под пинцет должен быть виден и в общей раскладке, не только в карточке ---
 seatInput.value = "12";

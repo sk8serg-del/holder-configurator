@@ -162,6 +162,15 @@
         });
       });
     }
+    // фигурные вырезы болванки — сквозные полигоны (декор)
+    var fixturePolys = [];
+    if (model.fixtures && model.fixtures.cutouts) {
+      model.fixtures.cutouts.forEach(function (cut) {
+        if (cut.points && cut.points.length >= 3) {
+          fixturePolys.push(cut.points.map(function (p) { return { x: p[0], y: p[1] }; }));
+        }
+      });
+    }
 
     var features = collectFeatures(model).map(function (f) {
       f.depth = Math.min(Math.max(f.depth, 0.3), T);
@@ -189,6 +198,9 @@
       });
       fixtureCircles.forEach(function (fc) {
         shape.holes.push(toPath(circlePoly(fc.cx, fc.cy, fc.r, 28))); // крепёж — насквозь
+      });
+      fixturePolys.forEach(function (poly) {
+        shape.holes.push(toPath(poly)); // фигурный вырез — насквозь
       });
       var geo = new THREE.ExtrudeGeometry(shape, { depth: t1 - t0, bevelEnabled: false, curveSegments: 4 });
       var mesh = new THREE.Mesh(geo, discMat);
