@@ -204,6 +204,15 @@
           matFor(f.color)
         ));
       }
+      if (!f.through) {
+        // ступенька — дно посадки: контур посадки с вырезом CA, чуть выше
+        // серого дна слоя, чтобы не мерцать
+        var floor = toShape(f.outline);
+        if (f.ca) floor.holes.push(toPath(circlePoly(f.ca.cx, f.ca.cy, f.ca.r, 64)));
+        var mesh = new THREE.Mesh(new THREE.ShapeGeometry(floor), matFor(f.color));
+        mesh.position.z = zSeat + 0.02;
+        group.add(mesh);
+      }
     });
 
     // номера позиций — спрайты над деталями (повёрнуты к камере всегда)
