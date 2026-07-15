@@ -86,7 +86,22 @@ main { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 }
 
 .form-panel { flex: 0 0 390px; max-width: 100%; }
-.preview-panel { flex: 1 1 420px; min-width: 320px; }
+
+/* Раскладка всегда на виду: панель липнет к верху окна, форма слева
+   скроллится как обычно. Если панель выше окна — скролл внутри неё. */
+.preview-panel {
+  flex: 1 1 420px;
+  min-width: 320px;
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+
+/* На узких экранах панели складываются в столбик — липкость не нужна */
+@media (max-width: 800px) {
+  .preview-panel { position: static; max-height: none; }
+}
 
 section { margin-bottom: 20px; }
 
