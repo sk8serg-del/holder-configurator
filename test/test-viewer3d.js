@@ -97,5 +97,23 @@ g2.traverse((o) => {
 });
 check("полный диск: все вершины конечны (крепёж + канавка не дали NaN)", finite2);
 
+// --- реальный диск disc-298: крепёж Mounting2 лежит внутри вырезов Mountings ---
+require(path.join(__dirname, "..", "js", "catalog.js"));
+const disc = HC.CATALOG.discs[0];
+const realModel = {
+  discDiameter: disc.diameter, blankDiameter: disc.blankDiameter, thickness: disc.thickness,
+  fixtures: disc.fixtures, controlHoles: [], placed: [], showNumbers: false
+};
+const gReal = HC.viewer3d._buildGroup(realModel);
+let finiteReal = true, meshesReal = 0;
+gReal.traverse((o) => {
+  if (!o.isMesh) return;
+  meshesReal++;
+  const a = o.geometry.attributes.position.array;
+  for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) { finiteReal = false; break; }
+});
+check("реальный disc-298 (крепёж внутри вырезов Mountings) собирается без NaN", finiteReal && meshesReal > 0,
+  "finite=" + finiteReal + " meshes=" + meshesReal);
+
 console.log(failures ? "\nПРОВАЛЕНО: " + failures : "\nТест 3D-построителя пройден.");
 process.exit(failures ? 1 : 0);

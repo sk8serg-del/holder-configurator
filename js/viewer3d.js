@@ -162,13 +162,29 @@
         });
       });
     }
-    // фигурные вырезы болванки — сквозные полигоны (декор)
+    // фигурные вырезы болванки — сквозные полигоны (декор). Прореживаем
+    // слишком близкие точки (дуги насэмплированы часто) — иначе вырожденные
+    // треугольники стенок дают артефакты.
     var fixturePolys = [];
     if (model.fixtures && model.fixtures.cutouts) {
       model.fixtures.cutouts.forEach(function (cut) {
-        if (cut.points && cut.points.length >= 3) {
-          fixturePolys.push(cut.points.map(function (p) { return { x: p[0], y: p[1] }; }));
-        }
+        if (!cut.points || cut.points.length < 3) return;
+        var poly = [];
+        cut.points.forEach(function (p) {
+          var last = poly[poly.length - 1];
+          if (!last || Math.hypot(p[0] - last.x, p[1] - last.y) > 0.1) poly.push({ x: p[0], y: p[1] });
+        });
+        // замыкающая точка, совпавшая с первой, — убрать
+        if (poly.length > 3 && Math.hypot(poly[0].x - poly[poly.length - 1].x, poly[0].y - poly[poly.length - 1].y) < 0.1) poly.pop();
+        if (poly.length >= 3) fixturePolys.push(poly);
+      });
+    }
+    // крепёж, попадающий внутрь фигурного выреза (болт сквозь «ушко»), отдельно
+    // не режем: вырез уже убирает материал, а два налегающих контура в одном
+    // ExtrudeGeometry ломают триангуляцию (артефакты, пропажа отверстий)
+    if (fixturePolys.length && HC.geom && HC.geom.pointInPoly) {
+      fixtureCircles = fixtureCircles.filter(function (fc) {
+        return !fixturePolys.some(function (poly) { return HC.geom.pointInPoly(fc.cx, fc.cy, poly); });
       });
     }
 
@@ -184,7 +200,8 @@
     bounds.sort(function (a, b) { return a - b; });
     bounds = bounds.filter(function (v, i, arr) { return i === 0 || v - arr[i - 1] > eps; });
 
-    var discMat = new THREE.MeshStandardMaterial({ color: 0xc9cdd1, metalness: 0.55, roughness: 0.5 });
+    // DoubleSide — чтобы стенки сквозных отверстий/вырезов были видны и с изнанки
+    var discMat = new THREE.MeshStandardMaterial({ color: 0xc9cdd1, metalness: 0.55, roughness: 0.5, side: THREE.DoubleSide });
 
     for (var i = 0; i + 1 < bounds.length; i++) {
       var t0 = bounds[i], t1 = bounds[i + 1];
