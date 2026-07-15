@@ -302,14 +302,19 @@
       }
     });
 
-    // кольцевые канавки маски — плоская тёмная полоса на поверхности (декор)
+    // кольцевые канавки маски — тёмная полоса на поверхности (декор). polygonOffset
+    // прижимает её к верхней грани без z-файтинга (иначе на большом диске пропадает).
     if (model.fixtures && model.fixtures.grooves) {
-      var grMat = new THREE.MeshStandardMaterial({ color: 0x9a988f, metalness: 0.3, roughness: 0.75, side: THREE.DoubleSide });
+      var grMat = new THREE.MeshStandardMaterial({
+        color: 0x5f5b54, metalness: 0.4, roughness: 0.85, side: THREE.DoubleSide,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+      });
       model.fixtures.grooves.forEach(function (gr) {
         var ring = toShape(circlePoly(0, 0, gr.outer / 2, 96));
         ring.holes.push(toPath(circlePoly(0, 0, gr.inner / 2, 96)));
         var m = new THREE.Mesh(new THREE.ShapeGeometry(ring), grMat);
-        m.position.z = 0.03;
+        m.position.z = 0;
+        m.renderOrder = 1;
         group.add(m);
       });
     }
@@ -320,8 +325,12 @@
       var rz = model.discDiameter / 2;
       var zone = toShape(circlePoly(0, 0, rz + zw, 160));
       zone.holes.push(toPath(circlePoly(0, 0, rz - zw, 160)));
-      var zm = new THREE.Mesh(new THREE.ShapeGeometry(zone), new THREE.MeshStandardMaterial({ color: 0x6f9e6f, metalness: 0.1, roughness: 0.8 }));
-      zm.position.z = 0.04;
+      var zm = new THREE.Mesh(new THREE.ShapeGeometry(zone), new THREE.MeshStandardMaterial({
+        color: 0x6f9e6f, metalness: 0.1, roughness: 0.8,
+        polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3
+      }));
+      zm.position.z = 0;
+      zm.renderOrder = 2;
       group.add(zm);
     }
 
