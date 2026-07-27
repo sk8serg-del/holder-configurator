@@ -174,10 +174,12 @@
     var host = $("controlList");
     host.innerHTML = "";
     ctrlHoles.forEach(function (h) {
-      // привязанные отверстия показываем строкой только когда их условие
-      // выполнено (опорное выкл. для shownWhenOff / вкл. для shownWhenOn) —
-      // тогда у них появляется собственная галочка и их можно убрать
-      if ((h.shownWhenOff || h.shownWhenOn) && !isControlShown(h)) return;
+      // техотверстия 1/2/3 (shownWhenOn) жёстко привязаны к свидетелю — без
+      // отдельной строки/галочки; появляются и исчезают только вместе с ним
+      if (h.shownWhenOn) return;
+      // центральное техотверстие (shownWhenOff) показываем со своей галочкой,
+      // только когда опорное выключено — тогда его можно убрать отдельно
+      if (h.shownWhenOff && !isControlShown(h)) return;
       host.appendChild(ctrlHoleRow(h));
     });
   }
@@ -196,11 +198,15 @@
     return true;
   }
 
-  // активно ли отверстие в геометрии (keepout): показано по опорному И включено
-  // собственной галочкой. Так техотверстие в центре можно убрать даже когда оно
-  // появилось из-за выключенного «Свидетеля Центр».
+  // активно ли отверстие в геометрии (keepout):
+  //  • shownWhenOn (техотв. 1/2/3) — жёстко по опорному, без своей галочки;
+  //  • shownWhenOff (центральное) — показано по опорному И включено своей галочкой
+  //    (его можно убрать отдельно, чтобы освободить центр);
+  //  • обычное — по своей галочке.
   function isControlActive(h) {
-    return isControlShown(h) && h.on;
+    if (h.shownWhenOn) return isControlShown(h);
+    if (h.shownWhenOff) return isControlShown(h) && h.on;
+    return h.on;
   }
 
   // управляет ли это отверстие показом привязанных (по имени)
