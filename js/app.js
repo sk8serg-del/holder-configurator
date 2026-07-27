@@ -174,16 +174,17 @@
     var host = $("controlList");
     host.innerHTML = "";
     ctrlHoles.forEach(function (h) {
-      // авто-отверстия (привязанные к другому) не показываем отдельной строкой
-      if (h.shownWhenOff || h.shownWhenOn) return;
+      // привязанные отверстия показываем строкой только когда их условие
+      // выполнено (опорное выкл. для shownWhenOff / вкл. для shownWhenOn) —
+      // тогда у них появляется собственная галочка и их можно убрать
+      if ((h.shownWhenOff || h.shownWhenOn) && !isControlShown(h)) return;
       host.appendChild(ctrlHoleRow(h));
     });
   }
 
-  // активно ли отверстие в геометрии: обычное — по своей галочке; привязанное —
-  // по состоянию опорного отверстия (shownWhenOff — когда выключено,
-  // shownWhenOn — когда включено)
-  function isControlActive(h) {
+  // показывается ли привязанное отверстие сейчас (по состоянию опорного);
+  // для обычных отверстий — всегда
+  function isControlShown(h) {
     if (h.shownWhenOff) {
       var refOff = ctrlHoles.filter(function (r) { return r.name === h.shownWhenOff; })[0];
       return refOff ? !refOff.on : true;
@@ -192,7 +193,19 @@
       var refOn = ctrlHoles.filter(function (r) { return r.name === h.shownWhenOn; })[0];
       return refOn ? refOn.on : false;
     }
-    return h.on;
+    return true;
+  }
+
+  // активно ли отверстие в геометрии (keepout): показано по опорному И включено
+  // собственной галочкой. Так техотверстие в центре можно убрать даже когда оно
+  // появилось из-за выключенного «Свидетеля Центр».
+  function isControlActive(h) {
+    return isControlShown(h) && h.on;
+  }
+
+  // управляет ли это отверстие показом привязанных (по имени)
+  function controlsOthers(h) {
+    return ctrlHoles.some(function (r) { return r.shownWhenOn === h.name || r.shownWhenOff === h.name; });
   }
 
   function ctrlHoleRow(h) {
@@ -258,11 +271,17 @@
 
     on(".c-on", "change", function (e) {
       h.on = e.target.checked;
-      var dEl = div.querySelector(".c-d"); if (dEl) dEl.disabled = !h.on;
-      var seatEl = div.querySelector(".c-seat-d"); if (seatEl) seatEl.disabled = !h.on;
-      var caEl = div.querySelector(".c-ca"); if (caEl) caEl.disabled = !h.on;
-      var slotOnEl = div.querySelector(".c-slot-on"); if (slotOnEl) slotOnEl.disabled = !h.on;
-      var slotAngleEl = div.querySelector(".c-slot-angle"); if (slotAngleEl) slotAngleEl.disabled = !h.on || !h.slotOn;
+      if (controlsOthers(h)) {
+        // это опорное отверстие (напр. «Свидетель Центр») — перерисуем список,
+        // чтобы привязанные техотверстия появились/исчезли со своими галочками
+        renderControlHoles();
+      } else {
+        var dEl = div.querySelector(".c-d"); if (dEl) dEl.disabled = !h.on;
+        var seatEl = div.querySelector(".c-seat-d"); if (seatEl) seatEl.disabled = !h.on;
+        var caEl = div.querySelector(".c-ca"); if (caEl) caEl.disabled = !h.on;
+        var slotOnEl = div.querySelector(".c-slot-on"); if (slotOnEl) slotOnEl.disabled = !h.on;
+        var slotAngleEl = div.querySelector(".c-slot-angle"); if (slotAngleEl) slotAngleEl.disabled = !h.on || !h.slotOn;
+      }
       markDirty();
     });
     on(".c-d", "input", function (e) { h.d = parseFloat(e.target.value); syncAutoFields(); refreshPreview(); markDirty(); });
