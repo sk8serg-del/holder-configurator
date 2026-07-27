@@ -42,9 +42,11 @@
     var w = spec.w, h = spec.h;
     if (!(w > 0) || !(h > 0)) return "";
     var gap = spec.seatGap > 0 ? spec.seatGap : 0;
-    // радиус охвата: посадка (габарит + припуск) и, если есть, длина паза
+    var inset = spec.caInset > 0 ? spec.caInset : 0;
+    // радиус охвата: посадка (габарит + припуск); паз может выступать за посадку
+    // на 2.5 мм в любую сторону, поэтому учитываем полудиагональ посадки + 2.5
     var reach = Math.max(w, h) / 2 + gap;
-    if (spec.slotOn) reach = Math.max(reach, (Math.min(w, h) + 5) / 2);
+    if (spec.slotOn) reach = Math.max(reach, Math.hypot(w + 2 * gap, h + 2 * gap) / 2 + 2.5);
     var pad = reach * 0.16;
     var half = reach + pad;
     var textH = half * 0.5;
@@ -57,8 +59,14 @@
       seatGap: gap, caInset: spec.caInset, slotOn: spec.slotOn, slotAngle: spec.slotAngle,
       fill: col.fill, stroke: col.stroke
     }, sw));
+    // подпись под картинкой — как у круглой детали: габарит и отступы (+ припуск / − CA)
     var label = fmt(w) + "×" + fmt(h);
-    var fs = Math.min(textH * 0.62, (2 * half * 0.9) / (label.length * 0.56));
+    var offs = [];
+    if (gap > 0) offs.push("+" + fmtRu(gap));
+    if (inset > 0) offs.push("−" + fmtRu(inset));
+    if (offs.length) label += " (" + offs.join(" / ") + ")";
+    if (spec.slotOn) label += " · " + HC.t("паз");
+    var fs = Math.min(textH * 0.6, (2 * half * 0.92) / (label.length * 0.56));
     out.push('<text x="0" y="' + fmt(half + textH * 0.55) + '" font-size="' + fmt(fs) + '" text-anchor="middle" fill="#1a3550">' + esc(label) + "</text>");
     out.push("</svg>");
     return out.join("");
@@ -139,10 +147,19 @@
     var out = [];
 
     if (spec.slotOn) {
-      var minDim = Math.min(w, h);
-      var slotW = Math.min(9, minDim * 0.6);
-      var slotL = minDim + 2 * 2.5;
+      // паз — так же, как у круга: торцы выступают за посадку на 2.5 мм, иначе
+      // он полностью скрыт под деталью. Длину берём по фактическому размеру
+      // посадки ВДОЛЬ оси паза (проекция контура посадки на направление паза).
       var ang = rot + (spec.slotAngle || 0);
+      var ar = (ang * Math.PI) / 180, ux = Math.cos(ar), uy = Math.sin(ar);
+      var seatLocal = HC.geom.shapePoly(spec.type, 0, 0, w + 2 * gap, h + 2 * gap, ch, rot);
+      var halfExt = 0;
+      for (var si = 0; si < seatLocal.length; si++) {
+        var pr = Math.abs(seatLocal[si].x * ux + seatLocal[si].y * uy);
+        if (pr > halfExt) halfExt = pr;
+      }
+      var slotL = 2 * halfExt + 2 * 2.5;
+      var slotW = Math.min(9, (Math.min(w, h) + 2 * gap) * 0.75);
       out.push(
         '<g transform="translate(' + fmt(cx) + "," + fmt(cy) + ") rotate(" + fmt(ang) + ')">' +
         '<path d="' + stadiumPath(slotL, slotW) + '" fill="none" stroke="#000" stroke-width="' + fmt(sw) + '"/></g>'
