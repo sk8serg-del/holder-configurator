@@ -9,98 +9,110 @@
 <body>
 <div class="app">
   <header>
-    <h1>Конфигуратор подложкодержателей</h1>
+    <h1 data-i18n="Конфигуратор подложкодержателей">Конфигуратор подложкодержателей</h1>
+    <div class="lang-switch">
+      <button type="button" id="langRu" class="lang active">RU</button>
+      <button type="button" id="langEn" class="lang">EN</button>
+    </div>
   </header>
   <main>
     <form class="panel form-panel" id="orderForm" autocomplete="on" onsubmit="return false">
       <section>
-        <h2>1. Заказчик</h2>
-        <label>Технолог (ФИО)
-          <input id="custName" name="name" autocomplete="name" placeholder="Иванов И. И." required>
+        <h2 data-i18n="1. Заказчик">1. Заказчик</h2>
+        <label><span data-i18n="Технолог (ФИО)">Технолог (ФИО)</span>
+          <input id="custName" name="name" autocomplete="name" placeholder="Иванов И. И." data-i18n-ph="Иванов И. И." required>
         </label>
-        <label>Организация
+        <label><span data-i18n="Организация">Организация</span>
           <input id="custOrg" name="organization" autocomplete="organization">
         </label>
-        <label>Контакт (e-mail / телефон)
+        <label><span data-i18n="Контакт (e-mail / телефон)">Контакт (e-mail / телефон)</span>
           <input id="custContact" name="email" autocomplete="email">
         </label>
       </section>
 
       <section>
-        <h2>2. Подложка</h2>
-        <label>Диск
+        <h2 data-i18n="2. Подложкодержатель">2. Подложкодержатель</h2>
+        <div class="dims">
+          <label><span data-i18n="Номер">Номер</span><input type="text" id="holderNo"></label>
+          <label><span data-i18n="Название">Название</span><input type="text" id="holderName"></label>
+        </div>
+        <label><span data-i18n="Диск">Диск</span>
           <select id="discSelect"></select>
         </label>
-        <label>Контрольные отверстия
+        <label id="customDiscWrap" hidden><span data-i18n="Ø кастомного подложкодержителя, мм">Ø кастомного подложкодержителя, мм</span>
+          <input type="number" id="customDiscDia" min="1" step="0.1" value="200">
+        </label>
+        <label><span data-i18n="Контрольные отверстия">Контрольные отверстия</span>
           <select id="controlSelect"></select>
         </label>
         <div id="controlList"></div>
-        <div class="hint">Позиции контрольных отверстий фиксированы; наличие и диаметр — задаются здесь.</div>
+        <div class="hint" data-i18n="Позиции контрольных отверстий фиксированы; наличие и диаметр — задаются здесь.">Позиции контрольных отверстий фиксированы; наличие и диаметр — задаются здесь.</div>
         <div class="hint" id="discInfo"></div>
-        <button type="button" id="discDelBtn" class="link" hidden>удалить эту подложку</button>
+        <button type="button" id="discDelBtn" class="link" hidden data-i18n="удалить этот подложкодержатель">удалить этот подложкодержатель</button>
 
         <details class="upload-disc">
-          <summary>＋ Загрузить свою подложку (CSV из Inventor)</summary>
-          <div class="hint" style="margin-bottom:8px">Файл выгрузки правила <code>DumpHoles</code>. Подложка добавится в список и сохранится в этом браузере.</div>
-          <label>Файл выгрузки (.csv)<input type="file" id="discFile" accept=".csv,text/csv"></label>
-          <label>Название<input id="discName" placeholder="напр. Диск Ø320"></label>
+          <summary data-i18n="＋ Загрузить свой подложкодержатель (CSV из Inventor)">＋ Загрузить свой подложкодержатель (CSV из Inventor)</summary>
+          <div class="hint" style="margin-bottom:8px" data-i18n-html="Файл выгрузки правила <code>DumpHoles</code>. Подложкодержатель добавится в список и сохранится в этом браузере.">Файл выгрузки правила <code>DumpHoles</code>. Подложкодержатель добавится в список и сохранится в этом браузере.</div>
+          <label><span data-i18n="Файл выгрузки (.csv)">Файл выгрузки (.csv)</span><input type="file" id="discFile" accept=".csv,text/csv"></label>
+          <label><span data-i18n="Название">Название</span><input id="discName" placeholder="напр. Диск Ø320" data-i18n-ph="напр. Диск Ø320"></label>
           <div class="dims">
-            <label>Ø полезной зоны, мм<input type="number" id="discZone" min="1" step="0.1" value="298"></label>
-            <label>Толщина, мм<input type="number" id="discThk" min="0.1" step="0.1" value="6"></label>
+            <label><span data-i18n="Ø полезной зоны, мм">Ø полезной зоны, мм</span><input type="number" id="discZone" min="1" step="0.1" value="298"></label>
+            <label><span data-i18n="Толщина, мм">Толщина, мм</span><input type="number" id="discThk" min="0.1" step="0.1" value="6"></label>
           </div>
-          <button type="button" id="discLoadBtn" class="secondary">Добавить в каталог</button>
+          <button type="button" id="discLoadBtn" class="secondary" data-i18n="Добавить в каталог">Добавить в каталог</button>
           <div id="discLoadMsg" class="status"></div>
         </details>
       </section>
 
       <section>
-        <h2>3. Детали</h2>
+        <h2 data-i18n="3. Детали">3. Детали</h2>
         <div id="partsList"></div>
-        <button type="button" id="addPart" class="secondary">+ Добавить деталь</button>
+        <button type="button" id="addPart" class="secondary" data-i18n="+ Добавить деталь">+ Добавить деталь</button>
       </section>
 
       <section>
-        <h2>4. Минимальные зазоры, мм</h2>
+        <h2 data-i18n="4. Минимальные зазоры, мм">4. Минимальные зазоры, мм</h2>
         <div class="clearances">
-          <label>деталь–деталь<input id="clPP" type="number" min="0" step="0.1"></label>
-          <label>деталь–край<input id="clPE" type="number" min="0" step="0.1"></label>
-          <label>деталь–контр. отв.<input id="clPC" type="number" min="0" step="0.1"></label>
+          <label><span data-i18n="деталь–деталь">деталь–деталь</span><input id="clPP" type="number" min="0" step="0.1"></label>
+          <label><span data-i18n="деталь–край">деталь–край</span><input id="clPE" type="number" min="0" step="0.1"></label>
+          <label><span data-i18n="деталь–контр. отв.">деталь–контр. отв.</span><input id="clPC" type="number" min="0" step="0.1"></label>
         </div>
-        <button type="button" id="clReset" class="link">сбросить к значениям по умолчанию</button>
+        <button type="button" id="clReset" class="link" data-i18n="сбросить к значениям по умолчанию">сбросить к значениям по умолчанию</button>
       </section>
 
-      <button type="button" id="packBtn" class="primary">Разложить</button>
+      <button type="button" id="packBtn" class="primary" data-i18n="Разложить">Разложить</button>
       <div id="statusMsg" class="status"></div>
     </form>
 
     <div class="panel preview-panel">
       <div class="preview-head">
-        <div id="summary" class="summary">Выберите параметры и нажмите «Разложить»</div>
+        <div id="summary" class="summary" data-i18n="Выберите параметры и нажмите «Разложить»">Выберите параметры и нажмите «Разложить»</div>
         <div class="view-opts">
           <div class="view-toggle">
             <button type="button" id="view2dBtn" class="active">2D</button>
             <button type="button" id="view3dBtn">3D</button>
           </div>
-          <label class="numbers-toggle"><input type="checkbox" id="showNumbers"> номера позиций</label>
+          <label class="numbers-toggle"><input type="checkbox" id="showNumbers"> <span data-i18n="номера позиций">номера позиций</span></label>
         </div>
       </div>
       <div id="svgHost" class="svg-host"></div>
       <div id="view3dHost" class="view3d" hidden></div>
-      <div id="view3dHint" class="hint view3d-hint" hidden>Левая кнопка — поворот · правая (или Shift+левая) — перетаскивание · колесо — масштаб · двойной клик — сброс. На тач: один палец — поворот, два — масштаб и перетаскивание.</div>
+      <div id="view3dHint" class="hint view3d-hint" hidden data-i18n="Левая кнопка — поворот · правая (или Shift+левая) — перетаскивание · колесо — масштаб · двойной клик — сброс. На тач: один палец — поворот, два — масштаб и перетаскивание.">Левая кнопка — поворот · правая (или Shift+левая) — перетаскивание · колесо — масштаб · двойной клик — сброс. На тач: один палец — поворот, два — масштаб и перетаскивание.</div>
       <div class="actions">
-        <button type="button" id="csvBtn" disabled>Скачать CSV для Inventor</button>
-        <button type="button" id="reportBtn" disabled>Отчёт / PDF</button>
-        <button type="button" id="sendBtn" class="primary" disabled>Отправить заказ</button>
+        <button type="button" id="csvBtn" disabled data-i18n="Скачать CSV для Inventor">Скачать CSV для Inventor</button>
+        <button type="button" id="reportBtn" disabled data-i18n="Отчёт / PDF">Отчёт / PDF</button>
+        <button type="button" id="sendBtn" class="primary" disabled data-i18n="Отправить заказ">Отправить заказ</button>
       </div>
       <div id="sendMsg" class="status"></div>
     </div>
   </main>
-  <footer>Координаты отверстий — от центра диска, единицы — мм. Контрольные отверстия фиксированы и изменению не подлежат.</footer>
+  <footer data-i18n="Координаты отверстий — от центра диска, единицы — мм. Контрольные отверстия фиксированы и изменению не подлежат.">Координаты отверстий — от центра диска, единицы — мм. Контрольные отверстия фиксированы и изменению не подлежат.</footer>
 </div>
 
 <div id="report"></div>
 
 <script src="js/catalog.js"></script>
+<script src="js/i18n.js"></script>
 <script src="js/geometry.js"></script>
 <script src="js/packer.js"></script>
 <script src="js/render.js"></script>

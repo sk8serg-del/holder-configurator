@@ -7,7 +7,7 @@
  *   discDiameter: мм,
  *   controlHoles: [{x, y, d}],                 — запретные зоны
  *   clearances: { pp, pe, pc },                — деталь–деталь, деталь–край, деталь–КО
- *   parts: [{ type:'circle'|'rect'|'oct', d, w, h, chamfer,
+ *   parts: [{ type:'circle'|'rect'|'oct'|'oval', d, w, h, chamfer,
  *             qty: число | null (null = максимум),
  *             orientation: 'fixed' | 'grid' | 'radial-w' | 'radial-h',
  *                 fixed    — без поворота (0°),

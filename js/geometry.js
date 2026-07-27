@@ -7,6 +7,7 @@
  *   { type:'circle', cx, cy, d }
  *   { type:'rect',   cx, cy, w, h, rot }          rot — градусы, против часовой
  *   { type:'oct',    cx, cy, w, h, chamfer, rot } прямоугольник с фаской углов 45°
+ *   { type:'oval',   cx, cy, w, h, rot }          эллипс с полуосями w/2 (X) и h/2 (Y)
  */
 (function (g) {
   "use strict";
@@ -38,10 +39,24 @@
     );
   }
 
+  // Эллипс с полуосями w/2 (вдоль X) и h/2 (вдоль Y), заданный полигоном.
+  // Вершины лежат НА эллипсе; при seg=48 хорда отступает от дуги на доли мм —
+  // для расчёта зазоров и триангуляции 3D этого достаточно.
+  function ellipsePoly(cx, cy, w, h, rot, seg) {
+    seg = seg || 48;
+    var a = w / 2, b = h / 2, pts = [];
+    for (var i = 0; i < seg; i++) {
+      var th = (2 * Math.PI * i) / seg;
+      pts.push([a * Math.cos(th), b * Math.sin(th)]);
+    }
+    return transform(pts, cx, cy, rot);
+  }
+
   // Контур размещения; null для круга
   function placementPoly(p) {
     if (p.type === "circle") return null;
     if (p.type === "rect") return rectPoly(p.cx, p.cy, p.w, p.h, p.rot);
+    if (p.type === "oval") return ellipsePoly(p.cx, p.cy, p.w, p.h, p.rot);
     return octPoly(p.cx, p.cy, p.w, p.h, p.chamfer, p.rot);
   }
 
@@ -155,6 +170,7 @@
     EPS: EPS,
     rectPoly: rectPoly,
     octPoly: octPoly,
+    ellipsePoly: ellipsePoly,
     placementPoly: placementPoly,
     placementDist: placementDist,
     edgeDist: edgeDist,

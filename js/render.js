@@ -48,6 +48,8 @@
     var out = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + vb + '" font-family="system-ui, Segoe UI, sans-serif">'];
     if (spec.type === "circle") {
       out.push('<circle cx="0" cy="0" r="' + fmt(spec.d / 2) + '" fill="' + col.fill + '" stroke="' + col.stroke + '" stroke-width="' + fmt(sw) + '"/>');
+    } else if (spec.type === "oval") {
+      out.push('<ellipse cx="0" cy="0" rx="' + fmt(spec.w / 2) + '" ry="' + fmt(spec.h / 2) + '" fill="' + col.fill + '" stroke="' + col.stroke + '" stroke-width="' + fmt(sw) + '"/>');
     } else {
       var poly = spec.type === "rect"
         ? HC.geom.rectPoly(0, 0, spec.w, spec.h, 0)
@@ -146,7 +148,7 @@
     if (D != null) labelParts.push("D" + fmtRu(D));
     if (CA != null) labelParts.push("CA" + fmtRu(CA));
     var label = (d != null ? "d" + fmtRu(d) : "") + (labelParts.length ? (d != null ? " (" : "(") + labelParts.join("/") + ")" : "");
-    if (spec.depth > 0) label += " · глуб. " + fmtRu(spec.depth);
+    if (spec.depth > 0) label += " · " + HC.t("глуб.") + " " + fmtRu(spec.depth);
     var fs = Math.min(textH * 0.5, (2 * half * 0.92) / (label.length * 0.56));
     out.push(
       '<text x="0" y="' + fmt(half + textH * 0.58) + '" font-size="' + fmt(fs) +

@@ -13,8 +13,23 @@
 
   // ---------- каталог ----------
 
+  // Кастомный подложкодержитель: обычный круглый диск, диаметр которого
+  // технолог задаёт на странице. Контрольных отверстий и элементов болванки нет.
+  function customDisc() {
+    var dia = parseFloat($("customDiscDia").value);
+    return {
+      id: "custom",
+      name: HC.t("Кастомный подложкодержитель"),
+      diameter: dia > 0 ? dia : 0,
+      thickness: 6,
+      controlVariants: [{ id: "none", name: HC.t("Без контрольных отверстий"), holes: [] }],
+      defaults: { partPart: 6, partEdge: 3, partControl: 6 }
+    };
+  }
+
   function currentDisc() {
     var id = $("discSelect").value;
+    if (id === "custom") return customDisc();
     for (var i = 0; i < HC.CATALOG.discs.length; i++) {
       if (HC.CATALOG.discs[i].id === id) return HC.CATALOG.discs[i];
     }
@@ -31,17 +46,19 @@
   }
 
   function fillDiscSelect() {
-    $("discSelect").innerHTML = HC.CATALOG.discs.map(function (d) {
-      return '<option value="' + d.id + '">' + d.name + "</option>";
+    var opts = HC.CATALOG.discs.map(function (d) {
+      return '<option value="' + d.id + '">' + HC.t(d.name) + "</option>";
     }).join("");
+    opts += '<option value="custom">' + HC.t("Кастомный подложкодержитель (задать Ø)") + "</option>";
+    $("discSelect").innerHTML = opts;
   }
 
   function fillControlSelect() {
     var d = currentDisc();
     $("controlSelect").innerHTML = d.controlVariants.map(function (v) {
-      return '<option value="' + v.id + '">' + v.name + "</option>";
+      return '<option value="' + v.id + '">' + HC.t(v.name) + "</option>";
     }).join("");
-    $("discInfo").textContent = "Диаметр диска: " + d.diameter + " мм";
+    $("discInfo").textContent = HC.t("Диаметр диска: {0} мм", d.diameter);
     // кнопка удаления — только для загруженных пользователем подложек
     $("discDelBtn").hidden = String(d.id).indexOf("user-") !== 0;
   }
@@ -73,29 +90,29 @@
     var msgEl = $("discLoadMsg");
     function msg(t, cls) { msgEl.textContent = t || ""; msgEl.className = "status" + (cls ? " " + cls : ""); }
     var file = input.files && input.files[0];
-    if (!file) { msg("Выберите CSV-файл выгрузки.", "error"); return; }
+    if (!file) { msg(HC.t("Выберите CSV-файл выгрузки."), "error"); return; }
     var zone = parseFloat($("discZone").value), thk = parseFloat($("discThk").value);
-    if (!(zone > 0)) { msg("Укажите Ø полезной зоны.", "error"); return; }
+    if (!(zone > 0)) { msg(HC.t("Укажите Ø полезной зоны."), "error"); return; }
     var reader = new FileReader();
     reader.onload = function () {
       try {
-        var name = $("discName").value.trim() || file.name.replace(/-holes\.csv$/i, "").replace(/\.csv$/i, "") || "Подложка";
+        var name = $("discName").value.trim() || file.name.replace(/-holes\.csv$/i, "").replace(/\.csv$/i, "") || HC.t("Подложкодержатель");
         var entry = HC.holderImport.buildDiscEntry(reader.result, {
           id: "user-" + Date.now(), name: name, discDiameter: zone, thickness: thk > 0 ? thk : 6
         });
-        if (!entry) { msg("В файле не найдено геометрии — это выгрузка DumpHoles?", "error"); return; }
+        if (!entry) { msg(HC.t("В файле не найдено геометрии — это выгрузка DumpHoles?"), "error"); return; }
         HC.CATALOG.discs.push(entry);
         saveCustomDiscs();
         fillDiscSelect();
         $("discSelect").value = entry.id;
         onDiscChange();
-        var extra = entry._threadPoints && entry._threadPoints.length ? " Резьбовых отверстий без Ø: " + entry._threadPoints.length + " (уточните в модели)." : "";
-        msg("Подложка «" + entry.name + "» добавлена и сохранена." + extra, "ok");
+        var extra = entry._threadPoints && entry._threadPoints.length ? HC.t(" Резьбовых отверстий без Ø: {0} (уточните в модели).", entry._threadPoints.length) : "";
+        msg(HC.t("Подложкодержатель «{0}» добавлен и сохранён.{1}", entry.name, extra), "ok");
       } catch (e) {
-        msg("Ошибка разбора: " + e.message, "error");
+        msg(HC.t("Ошибка разбора: {0}", e.message), "error");
       }
     };
-    reader.onerror = function () { msg("Не удалось прочитать файл.", "error"); };
+    reader.onerror = function () { msg(HC.t("Не удалось прочитать файл."), "error"); };
     reader.readAsText(file);
   }
 
@@ -110,6 +127,7 @@
   }
 
   function onDiscChange() {
+    $("customDiscWrap").hidden = $("discSelect").value !== "custom";
     fillControlSelect();
     rebuildControlHoles();
     applyDefaultClearances();
@@ -184,18 +202,18 @@
     // все настройки спрятаны в сворачиваемый блок; наружу — только галочка
     // наличия отверстия и краткая строка с текущими размерами
     div.innerHTML =
-      '<div class="ctrl-head"><label><input type="checkbox" class="c-on"' + (h.on ? " checked" : "") + ">" + h.name + "</label></div>" +
+      '<div class="ctrl-head"><label><input type="checkbox" class="c-on"' + (h.on ? " checked" : "") + ">" + HC.t(h.name) + "</label></div>" +
       '<details class="ctrl-details">' +
       '<summary><span class="c-summary"></span></summary>' +
       '<div class="dims">' +
-      (h.d != null ? '<label>Деталь d, мм<input type="number" class="c-d" min="0.1" step="0.1" value="' + h.d + '"' + (h.on ? "" : " disabled") + "></label>" : "") +
-      '<label>Ø посадки D, мм<input type="number" class="c-seat-d" min="' + (h.d != null ? h.d : 0.1) + '" step="0.1" value="' + (h.seatD == null ? "" : h.seatD) + '"' + (h.on ? "" : " disabled") + "></label>" +
-      '<label>Зона CA, мм<input type="number" class="c-ca" min="0.1" step="0.1" max="' + (caMax == null ? "" : caMax) + '" value="' + (h.apertureCA == null ? "" : h.apertureCA) + '"' + (h.on ? "" : " disabled") + "></label>" +
+      (h.d != null ? "<label>" + HC.t("Деталь d, мм") + '<input type="number" class="c-d" min="0.1" step="0.1" value="' + h.d + '"' + (h.on ? "" : " disabled") + "></label>" : "") +
+      "<label>" + HC.t("Ø посадки D, мм") + '<input type="number" class="c-seat-d" min="' + (h.d != null ? h.d : 0.1) + '" step="0.1" value="' + (h.seatD == null ? "" : h.seatD) + '"' + (h.on ? "" : " disabled") + "></label>" +
+      "<label>" + HC.t("Зона CA, мм") + '<input type="number" class="c-ca" min="0.1" step="0.1" max="' + (caMax == null ? "" : caMax) + '" value="' + (h.apertureCA == null ? "" : h.apertureCA) + '"' + (h.on ? "" : " disabled") + "></label>" +
       "</div>" +
       (h.slotAvailable
         ? '<div class="slot-line">' +
-          '<label><input type="checkbox" class="c-slot-on"' + (h.slotOn ? " checked" : "") + (h.on ? "" : " disabled") + "> паз под пинцет</label>" +
-          '<label>Угол, °<input type="number" class="c-slot-angle" min="0" max="359" step="1" value="' + h.slotAngle + '"' + (h.slotOn && h.on ? "" : " disabled") + "></label>" +
+          '<label><input type="checkbox" class="c-slot-on"' + (h.slotOn ? " checked" : "") + (h.on ? "" : " disabled") + "> " + HC.t("паз под пинцет") + "</label>" +
+          "<label>" + HC.t("Угол, °") + '<input type="number" class="c-slot-angle" min="0" max="359" step="1" value="' + h.slotAngle + '"' + (h.slotOn && h.on ? "" : " disabled") + "></label>" +
           "</div>"
         : "") +
       '<div class="part-preview hole-diagram"></div>' +
@@ -207,9 +225,9 @@
       if (h.seatD > 0) partsT.push("D" + ru(h.seatD));
       if (h.apertureCA > 0) partsT.push("CA" + ru(h.apertureCA));
       var t = (h.d > 0 ? "d" + ru(h.d) + " " : "") + (partsT.length ? "(" + partsT.join("/") + ")" : "");
-      if (h.depth > 0) t += " · глуб. " + ru(h.depth);
-      if (h.slotOn) t += " · паз";
-      return t || "параметры";
+      if (h.depth > 0) t += " · " + HC.t("глуб.") + " " + ru(h.depth);
+      if (h.slotOn) t += " · " + HC.t("паз");
+      return t || HC.t("параметры");
     }
 
     function refreshPreview() {
@@ -275,7 +293,7 @@
   function controlSummary() {
     var act = ctrlHoles.filter(isControlActive);
     if (!act.length) return "нет";
-    return act.map(function (h) { return h.name + " Ø" + (h.seatD != null ? h.seatD : h.d); }).join("; ");
+    return act.map(function (h) { return HC.t(h.name) + " Ø" + (h.seatD != null ? h.seatD : h.d); }).join("; ");
   }
 
   // ---------- детали ----------
@@ -320,53 +338,54 @@
     div.className = "part-row";
     var caMax = autoCA(p.seatD); // максимум CA — от Ø посадки D
     var dims = p.type === "circle"
-      ? '<label>Диаметр детали d, мм<input type="number" class="p-d" min="0.1" step="0.1" value="' + p.d + '"></label>' +
-        '<label>Ø посадки D, мм <span class="hint">(авто, можно поправить, не меньше d)</span><input type="number" class="p-seat-d" min="' + p.d + '" step="0.1" value="' + (p.seatD == null ? "" : p.seatD) + '"></label>' +
-        '<label>Зона напыления CA, мм <span class="hint">(авто-максимум, можно только уменьшить)</span><input type="number" class="p-ca" min="0.1" step="0.1" max="' + (caMax == null ? "" : caMax) + '" value="' + (p.apertureCA == null ? "" : p.apertureCA) + '"></label>'
-      : '<label>Ширина, мм<input type="number" class="p-w" min="0.1" step="0.1" value="' + p.w + '"></label>' +
-        '<label>Высота, мм<input type="number" class="p-h" min="0.1" step="0.1" value="' + p.h + '"></label>' +
-        (p.type === "oct" ? '<label>Фаска, мм<input type="number" class="p-ch" min="0" step="0.1" value="' + p.chamfer + '"></label>' : "");
+      ? "<label>" + HC.t("Диаметр детали d, мм") + '<input type="number" class="p-d" min="0.1" step="0.1" value="' + p.d + '"></label>' +
+        "<label>" + HC.t("Ø посадки D, мм") + ' <span class="hint">' + HC.t("(авто, можно поправить, не меньше d)") + '</span><input type="number" class="p-seat-d" min="' + p.d + '" step="0.1" value="' + (p.seatD == null ? "" : p.seatD) + '"></label>' +
+        "<label>" + HC.t("Зона напыления CA, мм") + ' <span class="hint">' + HC.t("(авто-максимум, можно только уменьшить)") + '</span><input type="number" class="p-ca" min="0.1" step="0.1" max="' + (caMax == null ? "" : caMax) + '" value="' + (p.apertureCA == null ? "" : p.apertureCA) + '"></label>'
+      : "<label>" + HC.t("Ширина, мм") + '<input type="number" class="p-w" min="0.1" step="0.1" value="' + p.w + '"></label>' +
+        "<label>" + HC.t("Высота, мм") + '<input type="number" class="p-h" min="0.1" step="0.1" value="' + p.h + '"></label>' +
+        (p.type === "oct" ? "<label>" + HC.t("Фаска, мм") + '<input type="number" class="p-ch" min="0" step="0.1" value="' + p.chamfer + '"></label>' : "");
 
     div.innerHTML =
-      '<div class="row-head"><strong>Деталь ' + (i + 1) + "</strong>" +
-      (parts.length > 1 ? '<button type="button" class="p-del" title="Удалить деталь">✕</button>' : "") +
+      '<div class="row-head"><strong>' + HC.t("Деталь {0}", i + 1) + "</strong>" +
+      (parts.length > 1 ? '<button type="button" class="p-del" title="' + HC.t("Удалить деталь") + '">✕</button>' : "") +
       "</div>" +
-      '<label>Форма<select class="p-type">' +
-      '<option value="circle"' + (p.type === "circle" ? " selected" : "") + ">Круглая</option>" +
-      '<option value="rect"' + (p.type === "rect" ? " selected" : "") + ">Прямоугольная</option>" +
-      '<option value="oct"' + (p.type === "oct" ? " selected" : "") + ">Прямоугольная с фаской</option>" +
+      "<label>" + HC.t("Форма") + '<select class="p-type">' +
+      '<option value="circle"' + (p.type === "circle" ? " selected" : "") + ">" + HC.t("Круглая") + "</option>" +
+      '<option value="rect"' + (p.type === "rect" ? " selected" : "") + ">" + HC.t("Прямоугольная") + "</option>" +
+      '<option value="oct"' + (p.type === "oct" ? " selected" : "") + ">" + HC.t("Прямоугольная с фаской") + "</option>" +
+      '<option value="oval"' + (p.type === "oval" ? " selected" : "") + ">" + HC.t("Овальная") + "</option>" +
       "</select></label>" +
       '<div class="dims">' + dims + "</div>" +
       (p.type === "circle"
         ? '<div class="slot-line">' +
-          '<label><input type="checkbox" class="p-slot-on"' + (p.slotOn ? " checked" : "") + '> паз под пинцет <span class="hint">(нужен Ø посадки D)</span></label>' +
-          '<label>Угол, °<input type="number" class="p-slot-angle" min="0" max="359" step="1" value="' + p.slotAngle + '"' + (p.slotOn ? "" : " disabled") + "></label>" +
+          '<label><input type="checkbox" class="p-slot-on"' + (p.slotOn ? " checked" : "") + "> " + HC.t("паз под пинцет") + ' <span class="hint">' + HC.t("(нужен Ø посадки D)") + "</span></label>" +
+          "<label>" + HC.t("Угол, °") + '<input type="number" class="p-slot-angle" min="0" max="359" step="1" value="' + p.slotAngle + '"' + (p.slotOn ? "" : " disabled") + "></label>" +
           "</div>"
         : "") +
       '<div class="part-preview' + (p.type === "circle" ? " hole-diagram" : "") + '">' +
       (p.type === "circle" ? HC.renderHoleDiagram(p) : HC.renderPartPreview(p)) + "</div>" +
       (p.type !== "circle"
-        ? '<label>Ориентация<select class="p-orient">' +
-          '<option value="fixed"' + (p.orientation === "fixed" ? " selected" : "") + ">фиксированная (без поворота)</option>" +
-          '<option value="grid"' + (p.orientation === "grid" ? " selected" : "") + ">свободная (0° / 90°)</option>" +
-          '<option value="radial-w"' + (p.orientation === "radial-w" ? " selected" : "") + ">радиальная — ширина вдоль радиуса</option>" +
-          '<option value="radial-h"' + (p.orientation === "radial-h" ? " selected" : "") + ">радиальная — высота вдоль радиуса</option>" +
+        ? "<label>" + HC.t("Ориентация") + '<select class="p-orient">' +
+          '<option value="fixed"' + (p.orientation === "fixed" ? " selected" : "") + ">" + HC.t("фиксированная (без поворота)") + "</option>" +
+          '<option value="grid"' + (p.orientation === "grid" ? " selected" : "") + ">" + HC.t("свободная (0° / 90°)") + "</option>" +
+          '<option value="radial-w"' + (p.orientation === "radial-w" ? " selected" : "") + ">" + HC.t("радиальная — ширина вдоль радиуса") + "</option>" +
+          '<option value="radial-h"' + (p.orientation === "radial-h" ? " selected" : "") + ">" + HC.t("радиальная — высота вдоль радиуса") + "</option>" +
           "</select></label>"
         : "") +
       '<div class="qty-line">' +
-      '<label><input type="radio" name="qty' + i + '" value="max"' + (p.qtyMode === "max" ? " checked" : "") + ">максимум</label>" +
-      '<label><input type="radio" name="qty' + i + '" value="qty"' + (p.qtyMode === "qty" ? " checked" : "") + ">количество:</label>" +
+      '<label><input type="radio" name="qty' + i + '" value="max"' + (p.qtyMode === "max" ? " checked" : "") + "> " + HC.t("максимум") + "</label>" +
+      '<label><input type="radio" name="qty' + i + '" value="qty"' + (p.qtyMode === "qty" ? " checked" : "") + "> " + HC.t("количество:") + "</label>" +
       '<input type="number" class="p-qty" min="1" step="1" value="' + p.qty + '"' + (p.qtyMode === "max" ? " disabled" : "") + ">" +
       "</div>" +
       (p.qtyMode === "qty"
         ? '<div class="place-line">' +
-          '<label>Расположение<select class="p-anchor">' +
-          '<option value="center"' + (p.anchor === "center" ? " selected" : "") + ">от центра</option>" +
-          '<option value="edge"' + (p.anchor === "edge" ? " selected" : "") + ">от края</option>" +
-          '<option value="diameter"' + (p.anchor === "diameter" ? " selected" : "") + ">по диаметру</option>" +
+          "<label>" + HC.t("Расположение") + '<select class="p-anchor">' +
+          '<option value="center"' + (p.anchor === "center" ? " selected" : "") + ">" + HC.t("от центра") + "</option>" +
+          '<option value="edge"' + (p.anchor === "edge" ? " selected" : "") + ">" + HC.t("от края") + "</option>" +
+          '<option value="diameter"' + (p.anchor === "diameter" ? " selected" : "") + ">" + HC.t("по диаметру") + "</option>" +
           "</select></label>" +
           (p.anchor === "diameter"
-            ? '<label>Ø расположения, мм<input type="number" class="p-anchor-d" min="1" step="1" value="' + p.anchorD + '"></label>'
+            ? "<label>" + HC.t("Ø расположения, мм") + '<input type="number" class="p-anchor-d" min="1" step="1" value="' + p.anchorD + '"></label>'
             : "") +
           "</div>"
         : "");
@@ -454,7 +473,7 @@
   function markDirty() {
     if (lastResult) {
       lastResult = null;
-      $("summary").textContent = "Пересчитываю…";
+      $("summary").textContent = HC.t("Пересчитываю…");
     }
     setActions(false);
     setStatus("");
@@ -468,62 +487,64 @@
   // ---------- раскладка ----------
 
   function typeShort(spec) {
-    if (spec.type === "circle") return "круглая Ø" + spec.d;
-    if (spec.type === "rect") return "прямоугольная " + spec.w + "×" + spec.h;
-    return "с фаской " + spec.w + "×" + spec.h + "×" + spec.chamfer;
+    if (spec.type === "circle") return HC.t("круглая Ø{0}", spec.d);
+    if (spec.type === "rect") return HC.t("прямоугольная {0}×{1}", spec.w, spec.h);
+    if (spec.type === "oval") return HC.t("овальная {0}×{1}", spec.w, spec.h);
+    return HC.t("с фаской {0}×{1}×{2}", spec.w, spec.h, spec.chamfer);
   }
 
   function validate() {
     var errs = [];
     var disc = currentDisc();
-    if (!parts.length) errs.push("Добавьте хотя бы одну деталь.");
+    if (disc.id === "custom" && !(disc.diameter > 0)) errs.push(HC.t("Укажите диаметр кастомного подложкодержителя (мм)."));
+    if (!parts.length) errs.push(HC.t("Добавьте хотя бы одну деталь."));
     parts.forEach(function (p, i) {
-      var n = "Деталь " + (i + 1) + ": ";
+      var n = HC.t("Деталь {0}: ", i + 1);
       if (p.type === "circle") {
         if (!(p.d > 0)) {
-          errs.push(n + "укажите диаметр.");
+          errs.push(n + HC.t("укажите диаметр."));
         } else if (p.d >= disc.diameter) {
-          errs.push(n + "деталь больше диска.");
+          errs.push(n + HC.t("деталь больше диска."));
         } else {
           if (p.seatD != null && p.seatD < p.d - 1e-6) {
-            errs.push(n + "Ø посадки D не может быть меньше диаметра детали d (" + p.d + ").");
+            errs.push(n + HC.t("Ø посадки D не может быть меньше диаметра детали d ({0}).", p.d));
           }
           if (p.apertureCA != null) {
             var maxCA = autoCA(p.seatD);
             if (maxCA == null || p.apertureCA > maxCA + 1e-6) {
-              errs.push(n + "зона напыления CA не может быть больше D−1.5 мм" + (maxCA != null ? " (максимум " + maxCA + ")" : "") + ".");
+              errs.push(n + HC.t("зона напыления CA не может быть больше D−1.5 мм") + (maxCA != null ? HC.t(" (максимум {0})", maxCA) : "") + ".");
             }
           }
         }
       } else {
-        if (!(p.w > 0) || !(p.h > 0)) errs.push(n + "укажите ширину и высоту.");
+        if (!(p.w > 0) || !(p.h > 0)) errs.push(n + HC.t("укажите ширину и высоту."));
         else if (p.type === "oct") {
-          if (!(p.chamfer >= 0)) errs.push(n + "укажите фаску (0 — без фаски).");
-          else if (p.chamfer >= Math.min(p.w, p.h) / 2) errs.push(n + "фаска должна быть меньше половины меньшей стороны.");
+          if (!(p.chamfer >= 0)) errs.push(n + HC.t("укажите фаску (0 — без фаски)."));
+          else if (p.chamfer >= Math.min(p.w, p.h) / 2) errs.push(n + HC.t("фаска должна быть меньше половины меньшей стороны."));
         }
       }
-      if (p.qtyMode === "qty" && !(p.qty >= 1)) errs.push(n + "укажите количество (целое ≥ 1).");
+      if (p.qtyMode === "qty" && !(p.qty >= 1)) errs.push(n + HC.t("укажите количество (целое ≥ 1)."));
       if (p.qtyMode === "qty" && p.anchor === "diameter" && !(p.anchorD > 0)) {
-        errs.push(n + "укажите диаметр расположения.");
+        errs.push(n + HC.t("укажите диаметр расположения."));
       }
     });
     ctrlHoles.forEach(function (h) {
       if (!isControlActive(h)) return;
-      var hn = "Контрольное отверстие «" + h.name + "»: ";
-      if (!(h.seatD > 0)) { errs.push(hn + "укажите Ø посадки."); return; }
+      var hn = HC.t("Контрольное отверстие «{0}»: ", HC.t(h.name));
+      if (!(h.seatD > 0)) { errs.push(hn + HC.t("укажите Ø посадки.")); return; }
       if (h.d != null && h.seatD < h.d - 1e-6) {
-        errs.push(hn + "Ø посадки D не может быть меньше диаметра детали d (" + h.d + ").");
+        errs.push(hn + HC.t("Ø посадки D не может быть меньше диаметра детали d ({0}).", h.d));
       }
       if (h.apertureCA != null) {
         var maxCAh = autoCA(h.seatD);
         if (maxCAh == null || h.apertureCA > maxCAh + 1e-6) {
-          errs.push(hn + "зона напыления CA не может быть больше D−1.5 мм" + (maxCAh != null ? " (максимум " + maxCAh + ")" : "") + ".");
+          errs.push(hn + HC.t("зона напыления CA не может быть больше D−1.5 мм") + (maxCAh != null ? HC.t(" (максимум {0})", maxCAh) : "") + ".");
         }
       }
     });
     ["clPP", "clPE", "clPC"].forEach(function (id) {
       var v = parseFloat($(id).value);
-      if (!(v >= 0)) errs.push("Все зазоры должны быть числами ≥ 0.");
+      if (!(v >= 0)) errs.push(HC.t("Все зазоры должны быть числами ≥ 0."));
     });
     return errs;
   }
@@ -533,7 +554,7 @@
     var errs = validate();
     if (errs.length) {
       setStatus(errs.join("\n"), "error");
-      $("summary").textContent = "Исправьте ошибки в форме — раскладка обновится сама.";
+      $("summary").textContent = HC.t("Исправьте ошибки в форме — раскладка обновится сама.");
       return;
     }
 
@@ -577,20 +598,20 @@
 
     var lines = [], warn = false;
     res.perPart.forEach(function (r, i) {
-      var label = "Деталь " + (i + 1) + " (" + typeShort(opts.parts[i]) + "): ";
-      if (r.requested == null) lines.push(label + "максимум — размещено " + r.placed);
-      else if (r.placed >= r.requested) lines.push(label + "размещено " + r.placed + " из " + r.requested);
-      else { lines.push(label + "влезло только " + r.placed + " из " + r.requested + " ⚠"); warn = true; }
+      var label = HC.t("Деталь {0} ({1}): ", i + 1, typeShort(opts.parts[i]));
+      if (r.requested == null) lines.push(label + HC.t("максимум — размещено {0}", r.placed));
+      else if (r.placed >= r.requested) lines.push(label + HC.t("размещено {0} из {1}", r.placed, r.requested));
+      else { lines.push(label + HC.t("влезло только {0} из {1} ⚠", r.placed, r.requested)); warn = true; }
     });
-    lines.push("Всего отверстий под детали: " + res.placed.length);
+    lines.push(HC.t("Всего отверстий под детали: {0}", res.placed.length));
     $("summary").textContent = lines.join("\n");
 
     refreshView();
     setActions(res.placed.length > 0);
     if (!res.placed.length) {
-      setStatus("Ни одна деталь не поместилась: проверьте размеры и зазоры.", "error");
+      setStatus(HC.t("Ни одна деталь не поместилась: проверьте размеры и зазоры."), "error");
     } else {
-      setStatus(warn ? "Поместились не все детали — уменьшите количество, зазоры или размеры." : "Готово.", warn ? "error" : "ok");
+      setStatus(warn ? HC.t("Поместились не все детали — уменьшите количество, зазоры или размеры.") : HC.t("Готово."), warn ? "error" : "ok");
     }
   }
 
@@ -624,7 +645,7 @@
     });
     if (!ok) {
       setViewMode(false);
-      setSendMsg("3D-вид недоступен в этом браузере (нет WebGL).", "error");
+      setSendMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
     }
   }
 
@@ -635,7 +656,7 @@
 
   function setViewMode(is3d) {
     if (is3d && !(HC.viewer3d && HC.viewer3d.available())) {
-      setSendMsg("3D-вид недоступен: библиотека Three.js не загрузилась.", "error");
+      setSendMsg(HC.t("3D-вид недоступен: библиотека Three.js не загрузилась."), "error");
       return;
     }
     mode3d = is3d;
@@ -660,6 +681,8 @@
         org: $("custOrg").value.trim(),
         contact: $("custContact").value.trim()
       },
+      holderNo: $("holderNo").value.trim(),
+      holderName: $("holderName").value.trim(),
       disc: { id: lr.disc.id, name: lr.disc.name, diameter: lr.disc.diameter },
       controlName: lr.controlName,
       controlHoles: lr.opts.controlHoles,
@@ -668,12 +691,12 @@
       partsSummary: lr.perPart.map(function (r, i) {
         var s = lr.opts.parts[i];
         var orientNote = {
-          "radial-w": " — радиально, ширина вдоль радиуса",
-          "radial-h": " — радиально, высота вдоль радиуса"
+          "radial-w": HC.t(" — радиально, ширина вдоль радиуса"),
+          "radial-h": HC.t(" — радиально, высота вдоль радиуса")
         }[s.orientation] || "";
         return {
           type: s.type,
-          size: (s.type === "circle" ? "Ø" + s.d : s.w + " × " + s.h + (s.type === "oct" ? ", фаска " + s.chamfer : "")) + orientNote,
+          size: (s.type === "circle" ? "Ø" + s.d : s.w + " × " + s.h + (s.type === "oct" ? ", " + HC.t("фаска") + " " + s.chamfer : "")) + orientNote,
           requested: r.requested,
           placed: r.placed
         };
@@ -714,7 +737,33 @@
   loadCustomer();
   doPack(); // первая раскладка сразу при открытии, дальше — автоматически при правках
 
+  // ---------- переключение языка ----------
+  // Динамическая разметка (детали, контрольные отверстия, сводка) собирается через
+  // HC.t на месте, поэтому её нужно перерисовать; состояние формы при этом сохраняется.
+  function setLanguage(lang) {
+    var discVal = $("discSelect").value, ctrlVal = $("controlSelect").value;
+    HC.i18n.set(lang); // сохраняет выбор, переводит статическую разметку
+    $("langRu").classList.toggle("active", lang === "ru");
+    $("langEn").classList.toggle("active", lang === "en");
+    fillDiscSelect(); $("discSelect").value = discVal;
+    fillControlSelect(); if (ctrlVal) $("controlSelect").value = ctrlVal;
+    renderControlHoles();
+    renderParts();
+    doPack(); // сводка и статусы — на новом языке
+  }
+
+  // применяем сохранённый язык к статической разметке и подсветке кнопок
+  $("langRu").classList.toggle("active", HC.i18n.get() === "ru");
+  $("langEn").classList.toggle("active", HC.i18n.get() === "en");
+  HC.i18n.apply();
+  $("langRu").addEventListener("click", function () { setLanguage("ru"); });
+  $("langEn").addEventListener("click", function () { setLanguage("en"); });
+
   $("discSelect").addEventListener("change", onDiscChange);
+  $("customDiscDia").addEventListener("input", function () {
+    $("discInfo").textContent = HC.t("Диаметр диска: {0} мм", currentDisc().diameter || "?");
+    markDirty();
+  });
   $("discLoadBtn").addEventListener("click", loadDiscFromFile);
   $("discDelBtn").addEventListener("click", deleteCurrentDisc);
   $("controlSelect").addEventListener("change", function () {
@@ -751,35 +800,37 @@
     if (!lastResult) return;
     var order = assembleOrder();
     if (!order.customer.name) {
-      setSendMsg("Укажите ФИО технолога — им подписывается заказ.", "error");
+      setSendMsg(HC.t("Укажите ФИО технолога — им подписывается заказ."), "error");
       $("custName").focus();
       return;
     }
     saveCustomer();
-    var typeLabel = { circle: "круг", rect: "прямоуг.", oct: "с фаской" };
+    var typeLabel = { circle: HC.t("круг"), rect: HC.t("прямоуг."), oct: HC.t("с фаской"), oval: HC.t("овал") };
     var payload = {
       id: order.id,
       date: order.date,
       name: order.customer.name,
       org: order.customer.org,
       contact: order.customer.contact,
+      holderNo: order.holderNo,
+      holderName: order.holderName,
       disc: order.disc.name + " (Ø" + order.disc.diameter + ")",
       control: order.controlName,
       parts: order.partsSummary.map(function (r, i) {
-        return (i + 1) + ") " + typeLabel[r.type] + " " + r.size + " — " + r.placed +
-          (r.requested == null ? " (макс.)" : " из " + r.requested);
+        return (i + 1) + ") " + (typeLabel[r.type] || r.type) + " " + r.size + " — " + r.placed +
+          (r.requested == null ? " " + HC.t("(макс.)") : HC.t(" из {0}", r.requested));
       }).join("; "),
       placed: order.placed.length,
       clearances: order.clearances.pp + " / " + order.clearances.pe + " / " + order.clearances.pc,
       csv: HC.buildCSV(order)
     };
     $("sendBtn").disabled = true;
-    setSendMsg("Отправляю…");
+    setSendMsg(HC.t("Отправляю…"));
     HC.submitOrder(payload).then(function () {
-      setSendMsg("Заказ " + order.id + " отправлен и записан в таблицу.", "ok");
+      setSendMsg(HC.t("Заказ {0} отправлен и записан в таблицу.", order.id), "ok");
       $("sendBtn").disabled = false;
     }).catch(function (err) {
-      setSendMsg("Не удалось отправить: " + err.message, "error");
+      setSendMsg(HC.t("Не удалось отправить: {0}", err.message), "error");
       $("sendBtn").disabled = false;
     });
   });

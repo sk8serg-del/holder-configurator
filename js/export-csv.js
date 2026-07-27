@@ -6,11 +6,13 @@
  *   order;{номер};{дата};{технолог};{организация}
  *   disc;{id};{название};{диаметр}
  *   clearances;{дет-дет};{дет-край};{дет-КО}
+ *   holder;{номер};{название}  — номер и название подложкодержателя (метаданные заказа)
  *   columns;type;cx;cy;w;h;chamfer;rotation;diameter
  *   control;x;y;;;;;d          — контрольные отверстия
  *   circle;cx;cy;;;;;d
  *   rect;cx;cy;w;h;;rot;
  *   oct;cx;cy;w;h;chamfer;rot;
+ *   oval;cx;cy;w;h;;rot;      — эллипс с полуосями w/2 и h/2
  */
 (function (g) {
   "use strict";
@@ -30,6 +32,7 @@
     L.push("holder-csv;1");
     L.push(["order", safe(order.id), safe(order.date), safe(order.customer.name), safe(order.customer.org)].join(";"));
     L.push(["disc", safe(order.disc.id), safe(order.disc.name), num(order.disc.diameter)].join(";"));
+    L.push(["holder", safe(order.holderNo || ""), safe(order.holderName || "")].join(";"));
     L.push(["clearances", num(order.clearances.pp), num(order.clearances.pe), num(order.clearances.pc)].join(";"));
     L.push("columns;type;cx;cy;w;h;chamfer;rotation;diameter");
     (order.controlHoles || []).forEach(function (h) {
@@ -41,6 +44,8 @@
         L.push(["circle", num(p.cx), num(p.cy), "", "", "", "", num(p.d)].join(";"));
       } else if (p.type === "rect") {
         L.push(["rect", num(p.cx), num(p.cy), num(p.w), num(p.h), "", num(p.rot || 0), ""].join(";"));
+      } else if (p.type === "oval") {
+        L.push(["oval", num(p.cx), num(p.cy), num(p.w), num(p.h), "", num(p.rot || 0), ""].join(";"));
       } else {
         L.push(["oct", num(p.cx), num(p.cy), num(p.w), num(p.h), num(p.chamfer || 0), num(p.rot || 0), ""].join(";"));
       }
