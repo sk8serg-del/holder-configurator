@@ -35,31 +35,31 @@
     return (Math.round(v * 100) / 100).toString().replace(".", ",");
   }
 
-  // Мини-предпросмотр формы детали для карточки в форме заказа.
-  // spec = {type:'circle'|'rect'|'oct', d, w, h, chamfer}
+  // Мини-предпросмотр НЕкруглой детали для карточки в форме заказа: показывает
+  // посадку/деталь/зону напыления/паз. spec = {type, w, h, chamfer, seatGap,
+  // caInset, slotOn, slotAngle}. (Для круга карточка использует renderHoleDiagram.)
   HC.renderPartPreview = function (spec) {
-    var w = spec.type === "circle" ? spec.d : spec.w;
-    var h = spec.type === "circle" ? spec.d : spec.h;
+    var w = spec.w, h = spec.h;
     if (!(w > 0) || !(h > 0)) return "";
-    var pad = Math.max(w, h) * 0.14;
-    var vb = fmt(-w / 2 - pad) + " " + fmt(-h / 2 - pad) + " " + fmt(w + 2 * pad) + " " + fmt(h + 2 * pad);
-    var sw = Math.max(w, h) / 50;
+    var gap = spec.seatGap > 0 ? spec.seatGap : 0;
+    // радиус охвата: посадка (габарит + припуск) и, если есть, длина паза
+    var reach = Math.max(w, h) / 2 + gap;
+    if (spec.slotOn) reach = Math.max(reach, (Math.min(w, h) + 5) / 2);
+    var pad = reach * 0.16;
+    var half = reach + pad;
+    var textH = half * 0.5;
+    var vb = fmt(-half) + " " + fmt(-half) + " " + fmt(2 * half) + " " + fmt(2 * half + textH);
+    var sw = reach / 26;
     var col = PART_COLORS[0];
     var out = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + vb + '" font-family="system-ui, Segoe UI, sans-serif">'];
-    if (spec.type === "circle") {
-      out.push('<circle cx="0" cy="0" r="' + fmt(spec.d / 2) + '" fill="' + col.fill + '" stroke="' + col.stroke + '" stroke-width="' + fmt(sw) + '"/>');
-    } else if (spec.type === "oval") {
-      out.push('<ellipse cx="0" cy="0" rx="' + fmt(spec.w / 2) + '" ry="' + fmt(spec.h / 2) + '" fill="' + col.fill + '" stroke="' + col.stroke + '" stroke-width="' + fmt(sw) + '"/>');
-    } else {
-      var poly = spec.type === "rect"
-        ? HC.geom.rectPoly(0, 0, spec.w, spec.h, 0)
-        : HC.geom.octPoly(0, 0, spec.w, spec.h, spec.chamfer || 0, 0);
-      var pts = poly.map(function (q) { return fmt(q.x) + "," + fmt(q.y); }).join(" ");
-      out.push('<polygon points="' + pts + '" fill="' + col.fill + '" stroke="' + col.stroke + '" stroke-width="' + fmt(sw) + '"/>');
-    }
-    var label = spec.type === "circle" ? "Ø" + fmt(spec.d) : fmt(spec.w) + "×" + fmt(spec.h);
-    var fs = Math.min(h * 0.45, (w * 1.5) / label.length);
-    out.push('<text x="0" y="0" font-size="' + fmt(fs) + '" text-anchor="middle" dominant-baseline="central" fill="#1a3550">' + esc(label) + "</text>");
+    out.push(polyFeatureSVG({
+      type: spec.type, cx: 0, cy: 0, w: w, h: h, chamfer: spec.chamfer, rot: 0,
+      seatGap: gap, caInset: spec.caInset, slotOn: spec.slotOn, slotAngle: spec.slotAngle,
+      fill: col.fill, stroke: col.stroke
+    }, sw));
+    var label = fmt(w) + "×" + fmt(h);
+    var fs = Math.min(textH * 0.62, (2 * half * 0.9) / (label.length * 0.56));
+    out.push('<text x="0" y="' + fmt(half + textH * 0.55) + '" font-size="' + fmt(fs) + '" text-anchor="middle" fill="#1a3550">' + esc(label) + "</text>");
     out.push("</svg>");
     return out.join("");
   };
@@ -122,6 +122,46 @@
     }
     return out.join("");
   }
+
+  function polyPts(poly) {
+    return poly.map(function (q) { return fmt(q.x) + "," + fmt(q.y); }).join(" ");
+  }
+
+  // Отрисовка НЕкруглой детали с посадкой/зоной напыления/пазом (абсолютные
+  // координаты). seatGap — припуск посадки (контур больше на seatGap со стороны),
+  // caInset — отступ зоны напыления (контур меньше на caInset со стороны). Порядок
+  // как у круга: паз, посадка (контур), деталь (заливка), CA (пунктир внутри).
+  function polyFeatureSVG(spec, sw) {
+    var cx = spec.cx || 0, cy = spec.cy || 0, rot = spec.rot || 0;
+    var w = spec.w, h = spec.h, ch = spec.type === "oct" ? (spec.chamfer || 0) : 0;
+    var gap = spec.seatGap > 0 ? spec.seatGap : 0;
+    var inset = spec.caInset > 0 ? spec.caInset : 0;
+    var out = [];
+
+    if (spec.slotOn) {
+      var minDim = Math.min(w, h);
+      var slotW = Math.min(9, minDim * 0.6);
+      var slotL = minDim + 2 * 2.5;
+      var ang = rot + (spec.slotAngle || 0);
+      out.push(
+        '<g transform="translate(' + fmt(cx) + "," + fmt(cy) + ") rotate(" + fmt(ang) + ')">' +
+        '<path d="' + stadiumPath(slotL, slotW) + '" fill="none" stroke="#000" stroke-width="' + fmt(sw) + '"/></g>'
+      );
+    }
+    if (gap > 0) {
+      var seat = HC.geom.shapePoly(spec.type, cx, cy, w + 2 * gap, h + 2 * gap, ch, rot);
+      out.push('<polygon points="' + polyPts(seat) + '" fill="' + (spec.seatFill || "none") + '" stroke="#000" stroke-width="' + fmt(sw) + '"/>');
+    }
+    var part = HC.geom.shapePoly(spec.type, cx, cy, w, h, ch, rot);
+    out.push('<polygon points="' + polyPts(part) + '" fill="' + (spec.fill || "#2b6cb0") + '" stroke="' + (spec.stroke || "#1a4971") + '" stroke-width="' + fmt(sw * 0.6) + '"/>');
+    if (inset > 0 && w - 2 * inset > 0 && h - 2 * inset > 0) {
+      var ca = HC.geom.shapePoly(spec.type, cx, cy, w - 2 * inset, h - 2 * inset, ch, rot);
+      out.push('<polygon points="' + polyPts(ca) + '" fill="none" stroke="#000" stroke-width="' + fmt(sw) +
+        '" stroke-dasharray="' + fmt(sw * 2.5) + " " + fmt(sw * 1.8) + '"/>');
+    }
+    return out.join("");
+  }
+  HC.polyFeatureSVG = polyFeatureSVG;
 
   // Крупная схема отверстия под круглую деталь (или контрольного отверстия)
   // для карточки в форме заказа. spec = {d, seatD, apertureCA, depth, slotOn,
@@ -237,9 +277,11 @@
           "</g>"
         );
       } else {
-        var poly = HC.geom.placementPoly(p);
-        var pts = poly.map(function (q) { return fmt(q.x) + "," + fmt(q.y); }).join(" ");
-        out.push('<polygon points="' + pts + '" fill="' + col.fill + '" stroke="' + col.stroke + '" stroke-width="' + fmt(sw * 1.5) + '"/>');
+        out.push(polyFeatureSVG({
+          type: p.type, cx: p.cx, cy: p.cy, w: p.w, h: p.h, chamfer: p.chamfer, rot: p.rot,
+          seatGap: p.seatGap, caInset: p.caInset, slotOn: p.slotOn, slotAngle: p.slotAngle,
+          fill: col.fill, stroke: col.stroke
+        }, sw * 1.5));
       }
       if (model.showNumbers) {
         var fs = Math.max(2, Math.min(R / 18, (p.type === "circle" ? p.d : Math.min(p.w, p.h)) * 0.55));

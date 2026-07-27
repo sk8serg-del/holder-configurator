@@ -77,6 +77,11 @@
     return p;
   }
 
+  // Контур зоны напыления: полигон (некруглые детали) или круг (круглые/КО).
+  function caPolyOf(ca) {
+    return ca.poly ? ca.poly : circlePoly(ca.cx, ca.cy, ca.r, 64);
+  }
+
   // Дальность выхода луча из точки (cx,cy) по направлению (ux,uy) до границы
   // полигона (наибольшее t пересечения с рёбрами).
   function rayExitDist(cx, cy, ux, uy, poly) {
@@ -137,10 +142,18 @@
           color: color
         });
       } else {
+        // некруглая деталь: карман = контур посадки (габарит + припуск),
+        // зона напыления — сквозной вырез уменьшенного контура. Паз в 3D для
+        // некруглых пока не вырезаем (сложное объединение полигонов) — он виден на 2D-схеме.
+        var g2 = p.seatGap > 0 ? p.seatGap : 0;
+        var ci = p.caInset > 0 ? p.caInset : 0;
+        var caShape = (ci > 0 && p.w - 2 * ci > 0 && p.h - 2 * ci > 0)
+          ? HC.geom.shapePoly(p.type, p.cx, p.cy, p.w - 2 * ci, p.h - 2 * ci, p.chamfer || 0, p.rot)
+          : null;
         fs.push({
-          outline: HC.geom.placementPoly(p),
+          outline: HC.geom.shapePoly(p.type, p.cx, p.cy, p.w + 2 * g2, p.h + 2 * g2, p.chamfer || 0, p.rot),
           depth: defDepth,
-          ca: null,
+          ca: caShape ? { poly: caShape } : null,
           color: color
         });
       }
@@ -255,7 +268,7 @@
         if (f.through || f.depth >= t1 - eps) {
           shape.holes.push(toPath(f.outline));            // слой внутри кармана
         } else if (f.ca) {
-          shape.holes.push(toPath(circlePoly(f.ca.cx, f.ca.cy, f.ca.r, 64))); // сквозная CA
+          shape.holes.push(toPath(caPolyOf(f.ca))); // сквозная CA
         }
       });
       fixtureCircles.forEach(function (fc) {
@@ -287,7 +300,7 @@
       group.add(new THREE.Mesh(wallGeometry(f.outline, 0, zSeat, inset), matFor(f.color)));
       if (!f.through && f.ca) {
         group.add(new THREE.Mesh(
-          wallGeometry(circlePoly(f.ca.cx, f.ca.cy, f.ca.r, 64), zSeat, -T, inset),
+          wallGeometry(caPolyOf(f.ca), zSeat, -T, inset),
           matFor(f.color)
         ));
       }
@@ -295,7 +308,7 @@
         // ступенька — дно посадки: контур посадки с вырезом CA, чуть выше
         // серого дна слоя, чтобы не мерцать
         var floor = toShape(f.outline);
-        if (f.ca) floor.holes.push(toPath(circlePoly(f.ca.cx, f.ca.cy, f.ca.r, 64)));
+        if (f.ca) floor.holes.push(toPath(caPolyOf(f.ca)));
         var mesh = new THREE.Mesh(new THREE.ShapeGeometry(floor), matFor(f.color));
         mesh.position.z = zSeat + 0.02;
         group.add(mesh);

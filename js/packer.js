@@ -48,6 +48,12 @@
     }
     var p = { type: spec.type, cx: cx, cy: cy, w: spec.w, h: spec.h, rot: rot || 0, partIndex: partIndex };
     if (spec.type === "oct") p.chamfer = spec.chamfer || 0;
+    // посадка/зона напыления/паз — только для схемы отображения (2D/3D), на раскладку
+    // не влияют; угол паза у каждого экземпляра берётся из формы (+ поворот детали)
+    p.seatGap = spec.seatGap;
+    p.caInset = spec.caInset;
+    p.slotOn = spec.slotOn;
+    p.slotAngle = spec.slotAngle;
     return p;
   }
 

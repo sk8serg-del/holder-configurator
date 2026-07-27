@@ -52,12 +52,18 @@
     return transform(pts, cx, cy, rot);
   }
 
+  // Контур фигуры заданного типа по габаритам w×h (для посадки/зоны напыления —
+  // тот же тип, но увеличенный/уменьшенный габарит). Круг здесь не обрабатывается.
+  function shapePoly(type, cx, cy, w, h, chamfer, rot) {
+    if (type === "rect") return rectPoly(cx, cy, w, h, rot);
+    if (type === "oval") return ellipsePoly(cx, cy, w, h, rot);
+    return octPoly(cx, cy, w, h, chamfer, rot); // oct
+  }
+
   // Контур размещения; null для круга
   function placementPoly(p) {
     if (p.type === "circle") return null;
-    if (p.type === "rect") return rectPoly(p.cx, p.cy, p.w, p.h, p.rot);
-    if (p.type === "oval") return ellipsePoly(p.cx, p.cy, p.w, p.h, p.rot);
-    return octPoly(p.cx, p.cy, p.w, p.h, p.chamfer, p.rot);
+    return shapePoly(p.type, p.cx, p.cy, p.w, p.h, p.chamfer, p.rot);
   }
 
   function dist(ax, ay, bx, by) {
@@ -171,6 +177,7 @@
     rectPoly: rectPoly,
     octPoly: octPoly,
     ellipsePoly: ellipsePoly,
+    shapePoly: shapePoly,
     placementPoly: placementPoly,
     placementDist: placementDist,
     edgeDist: edgeDist,

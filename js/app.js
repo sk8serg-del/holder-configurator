@@ -312,15 +312,30 @@
     return ca > 0 ? Math.round(ca * 100) / 100 : null;
   }
 
+  // Некруглые детали: посадка/зона напыления задаются отступами от контура.
+  // Припуск на посадку (контур больше на N мм со стороны) — растёт с размером, как у круга.
+  function autoSeatGap(w, h) {
+    var m = Math.max(w || 0, h || 0);
+    return m <= 50 ? 0.1 : (m <= 100 ? 0.15 : 0.2);
+  }
+  // Отступ зоны напыления (контур меньше на N мм со стороны) — как у круга ≈0.6 мм.
+  function autoCaInset(w, h) {
+    var m = Math.min(w || 0, h || 0);
+    return m > 1.6 ? 0.6 : Math.max(0, Math.round((m / 2 - 0.2) * 100) / 100);
+  }
+
   function defaultPart() {
     var d = 25.4; // стандартная деталь
     var seatD = autoSeatD(d);
     return {
       type: "circle", d: d, w: 20, h: 10, chamfer: 2,
-      // посадка (D) и зона напыления (CA) — только для круглых; авто, пока пользователь не поправит вручную
+      // посадка (D) и зона напыления (CA) — для круглых; авто, пока пользователь не поправит вручную
       seatD: seatD, seatDAuto: true,
       apertureCA: autoCA(seatD), apertureCAAuto: true,
-      slotOn: false, slotAngle: 0, // паз под пинцет — только для круглых, требует заданного D
+      // посадка/зона напыления некруглых — отступами от контура (авто)
+      seatGap: autoSeatGap(20, 10), seatGapAuto: true,
+      caInset: autoCaInset(20, 10), caInsetAuto: true,
+      slotOn: false, slotAngle: 0, // паз под пинцет — у всех типов деталей
       qtyMode: "max", qty: 10,
       orientation: "grid",           // fixed | grid | radial-w | radial-h
       anchor: "center", anchorD: 150 // расположение при неполном заполнении
@@ -343,7 +358,9 @@
         "<label>" + HC.t("Зона напыления CA, мм") + ' <span class="hint">' + HC.t("(авто-максимум, можно только уменьшить)") + '</span><input type="number" class="p-ca" min="0.1" step="0.1" max="' + (caMax == null ? "" : caMax) + '" value="' + (p.apertureCA == null ? "" : p.apertureCA) + '"></label>'
       : "<label>" + HC.t("Ширина, мм") + '<input type="number" class="p-w" min="0.1" step="0.1" value="' + p.w + '"></label>' +
         "<label>" + HC.t("Высота, мм") + '<input type="number" class="p-h" min="0.1" step="0.1" value="' + p.h + '"></label>' +
-        (p.type === "oct" ? "<label>" + HC.t("Фаска, мм") + '<input type="number" class="p-ch" min="0" step="0.1" value="' + p.chamfer + '"></label>' : "");
+        (p.type === "oct" ? "<label>" + HC.t("Фаска, мм") + '<input type="number" class="p-ch" min="0" step="0.1" value="' + p.chamfer + '"></label>' : "") +
+        "<label>" + HC.t("Припуск на посадку, мм") + '<input type="number" class="p-seat-gap" min="0" step="0.05" value="' + (p.seatGap == null ? "" : p.seatGap) + '"></label>' +
+        "<label>" + HC.t("Отступ зоны напыления, мм") + '<input type="number" class="p-ca-inset" min="0" step="0.05" value="' + (p.caInset == null ? "" : p.caInset) + '"></label>';
 
     div.innerHTML =
       '<div class="row-head"><strong>' + HC.t("Деталь {0}", i + 1) + "</strong>" +
@@ -356,12 +373,11 @@
       '<option value="oval"' + (p.type === "oval" ? " selected" : "") + ">" + HC.t("Овальная") + "</option>" +
       "</select></label>" +
       '<div class="dims">' + dims + "</div>" +
-      (p.type === "circle"
-        ? '<div class="slot-line">' +
-          '<label><input type="checkbox" class="p-slot-on"' + (p.slotOn ? " checked" : "") + "> " + HC.t("паз под пинцет") + ' <span class="hint">' + HC.t("(нужен Ø посадки D)") + "</span></label>" +
-          "<label>" + HC.t("Угол, °") + '<input type="number" class="p-slot-angle" min="0" max="359" step="1" value="' + p.slotAngle + '"' + (p.slotOn ? "" : " disabled") + "></label>" +
-          "</div>"
-        : "") +
+      '<div class="slot-line">' +
+      '<label><input type="checkbox" class="p-slot-on"' + (p.slotOn ? " checked" : "") + "> " + HC.t("паз под пинцет") +
+      (p.type === "circle" ? ' <span class="hint">' + HC.t("(нужен Ø посадки D)") + "</span>" : "") + "</label>" +
+      "<label>" + HC.t("Угол, °") + '<input type="number" class="p-slot-angle" min="0" max="359" step="1" value="' + p.slotAngle + '"' + (p.slotOn ? "" : " disabled") + "></label>" +
+      "</div>" +
       '<div class="part-preview' + (p.type === "circle" ? " hole-diagram" : "") + '">' +
       (p.type === "circle" ? HC.renderHoleDiagram(p) : HC.renderPartPreview(p)) + "</div>" +
       (p.type !== "circle"
@@ -402,7 +418,18 @@
     // При изменении d пересчитывает D/CA, пока пользователь их не тронул руками
     // (обновляет поля напрямую через DOM, без renderParts(), чтобы не сбивать фокус при вводе)
     function syncAutoFields() {
-      if (p.type !== "circle") return;
+      if (p.type !== "circle") {
+        // некруглые: пересчёт авто-отступов посадки/зоны напыления при смене габаритов
+        if (p.seatGapAuto) {
+          p.seatGap = autoSeatGap(p.w, p.h);
+          var sgEl = div.querySelector(".p-seat-gap"); if (sgEl) sgEl.value = p.seatGap == null ? "" : p.seatGap;
+        }
+        if (p.caInsetAuto) {
+          p.caInset = autoCaInset(p.w, p.h);
+          var ciEl = div.querySelector(".p-ca-inset"); if (ciEl) ciEl.value = p.caInset == null ? "" : p.caInset;
+        }
+        return;
+      }
       var seatEl = div.querySelector(".p-seat-d");
       if (seatEl) seatEl.setAttribute("min", p.d);
       if (p.seatDAuto) {
@@ -430,8 +457,10 @@
       refreshPreview(); markDirty();
     });
     on(".p-slot-angle", "input", function (e) { p.slotAngle = parseFloat(e.target.value); refreshPreview(); markDirty(); });
-    on(".p-w", "input", function (e) { p.w = parseFloat(e.target.value); refreshPreview(); markDirty(); });
-    on(".p-h", "input", function (e) { p.h = parseFloat(e.target.value); refreshPreview(); markDirty(); });
+    on(".p-w", "input", function (e) { p.w = parseFloat(e.target.value); syncAutoFields(); refreshPreview(); markDirty(); });
+    on(".p-h", "input", function (e) { p.h = parseFloat(e.target.value); syncAutoFields(); refreshPreview(); markDirty(); });
+    on(".p-seat-gap", "input", function (e) { p.seatGap = e.target.value === "" ? null : parseFloat(e.target.value); p.seatGapAuto = false; refreshPreview(); markDirty(); });
+    on(".p-ca-inset", "input", function (e) { p.caInset = e.target.value === "" ? null : parseFloat(e.target.value); p.caInsetAuto = false; refreshPreview(); markDirty(); });
     on(".p-ch", "input", function (e) { p.chamfer = parseFloat(e.target.value); refreshPreview(); markDirty(); });
     on(".p-qty", "input", function (e) { p.qty = parseInt(e.target.value, 10); markDirty(); });
     on(".p-orient", "change", function (e) { p.orientation = e.target.value; markDirty(); });
@@ -518,9 +547,14 @@
         }
       } else {
         if (!(p.w > 0) || !(p.h > 0)) errs.push(n + HC.t("укажите ширину и высоту."));
-        else if (p.type === "oct") {
-          if (!(p.chamfer >= 0)) errs.push(n + HC.t("укажите фаску (0 — без фаски)."));
-          else if (p.chamfer >= Math.min(p.w, p.h) / 2) errs.push(n + HC.t("фаска должна быть меньше половины меньшей стороны."));
+        else {
+          if (p.type === "oct") {
+            if (!(p.chamfer >= 0)) errs.push(n + HC.t("укажите фаску (0 — без фаски)."));
+            else if (p.chamfer >= Math.min(p.w, p.h) / 2) errs.push(n + HC.t("фаска должна быть меньше половины меньшей стороны."));
+          }
+          if (p.seatGap != null && p.seatGap < 0) errs.push(n + HC.t("припуск на посадку не может быть отрицательным."));
+          if (p.caInset != null && p.caInset < 0) errs.push(n + HC.t("отступ зоны напыления не может быть отрицательным."));
+          if (p.caInset != null && p.caInset >= Math.min(p.w, p.h) / 2) errs.push(n + HC.t("отступ зоны напыления должен быть меньше половины меньшей стороны."));
         }
       }
       if (p.qtyMode === "qty" && !(p.qty >= 1)) errs.push(n + HC.t("укажите количество (целое ≥ 1)."));
@@ -576,10 +610,13 @@
           anchor: p.qtyMode === "qty"
             ? { mode: p.anchor, d: p.anchorD }
             : { mode: "center" },
-          // только для отображения на раскладке — угол паза считается на месте, не общий
+          // только для отображения на схеме (2D/3D), на раскладку не влияет
           seatD: p.type === "circle" ? p.seatD : null,
           apertureCA: p.type === "circle" ? p.apertureCA : null,
-          slotOn: p.type === "circle" ? p.slotOn : false
+          seatGap: p.type !== "circle" ? p.seatGap : null,
+          caInset: p.type !== "circle" ? p.caInset : null,
+          slotOn: p.slotOn,
+          slotAngle: p.slotAngle
         };
       })
     };
