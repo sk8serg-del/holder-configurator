@@ -25,19 +25,20 @@ function readIndex() {
 function build() {
   let html = readIndex();
 
-  // <link rel="stylesheet" href="css/style.css"> → <style>...</style>
+  // <link rel="stylesheet" href="css/style.css[?v=…]"> → <style>...</style>
+  // (кэш-версии ?v=… на ассетах игнорируем при инлайне)
   html = html.replace(
-    /<link rel="stylesheet" href="css\/style\.css">/,
+    /<link rel="stylesheet" href="css\/style\.css(\?v=\d+)?">/,
     function () {
       var css = fs.readFileSync(path.join(root, "css", "style.css"), "utf8");
       return "<style>\n" + css + "\n</style>";
     }
   );
 
-  // каждый <script src="js/NAME.js"></script> → <script>...</script>,
+  // каждый <script src="js/NAME.js[?v=…]"></script> → <script>...</script>,
   // строго в исходном порядке подключения (важно — модули зависят друг от друга)
   SCRIPTS.forEach(function (name) {
-    var re = new RegExp('<script src="js\\/' + name.replace(/[/.]/g, "\\$&") + '\\.js"></script>');
+    var re = new RegExp('<script src="js\\/' + name.replace(/[/.]/g, "\\$&") + '\\.js(\\?v=\\d+)?"></script>');
     var js = fs.readFileSync(path.join(root, "js", name + ".js"), "utf8");
     html = html.replace(re, function () { return "<script>\n" + js + "\n</script>"; });
   });
