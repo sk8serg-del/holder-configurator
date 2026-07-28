@@ -432,40 +432,33 @@
       return arcs;
     }
 
-    // До targetN углов, распределённых по дугам пропорционально их ёмкости
-    // (largest remainder method), внутри каждой дуги — равномерно с равным
-    // отступом от обоих краёв (не впритык к запретной зоне).
+    // До targetN углов с ЕДИНЫМ шагом по всему кольцу: свободные дуги как бы
+    // «сшиваются» в одну непрерывную ленту (запретные зоны между ними
+    // пропускаются, не растягивая шаг), точки идут по ленте с равным шагом.
+    // Раньше каждая дуга обсчитывалась НЕЗАВИСИМО (свой шаг, свои отступы от
+    // краёв) — из-за этого узкий карман между двумя близко стоящими
+    // контрольными отверстиями получал деталь строго по центру с огромным
+    // избыточным запасом (десятки мм при требуемых 6), а не тем же шагом,
+    // что и остальное кольцо: изолированный расчёт не «видел», что этот запас
+    // можно использовать, чтобы придвинуть деталь ближе к соседям по всему
+    // кольцу. Общая длина свободных дуг определяет и итоговую ёмкость
+    // (floor(totalFree/minStep)), и сам шаг (totalFree/n).
     function distribute(arcs, minStep, targetN) {
-      // k точек делят дугу на k равных отрезков с центром в каждом (см. ниже) —
-      // расстояние между соседями получается w/k, поэтому ёмкость floor(w/minStep),
-      // БЕЗ +1 (тот +1 был бы верен для другой схемы — точек по краям дуги).
-      // Исключение — ЛЮБАЯ непустая дуга вмещает МИНИМУМ 1 деталь: формуле
-      // floor(w/minStep) нужен целый шаг только когда деталей внутри ЭТОЙ
-      // дуги больше одной (им нужно разойтись друг с другом); одиночной
-      // детали делить шаг не с кем — ей достаточно самой быть в допустимой
-      // зоне (а это уже гарантировано тем, что дуга вообще свободна). Без
-      // этой поправки узкие «карманы» между близко стоящими контрольными
-      // отверстиями (уже одного шага, но не нулевые) считались невместимыми
-      // и оставались пустыми, хотя туда физически помещается одна деталь.
-      var caps = arcs.map(function (a) {
-        var w = a.a1 - a.a0;
-        return w > EPS ? Math.max(1, Math.floor(w / minStep)) : 0;
-      });
-      var totalCap = caps.reduce(function (s, c) { return s + c; }, 0);
-      var n = Math.min(targetN, totalCap);
+      var total = arcs.reduce(function (s, a) { return s + (a.a1 - a.a0); }, 0);
+      if (total <= EPS) return [];
+      var n = Math.min(targetN, Math.max(0, Math.floor(total / minStep)));
       if (n <= 0) return [];
-      var raw = caps.map(function (c) { return (c / totalCap) * n; });
-      var alloc = raw.map(Math.floor);
-      var used = alloc.reduce(function (s, x) { return s + x; }, 0);
-      var order = raw.map(function (r, i) { return { i: i, frac: r - alloc[i] }; }).sort(function (a, b) { return b.frac - a.frac; });
-      for (var idx = 0; used < n && idx < order.length; idx++, used++) alloc[order[idx].i]++;
-      var angs = [];
-      arcs.forEach(function (a, ai) {
-        var k = Math.min(alloc[ai], caps[ai]);
-        if (k <= 0) return;
-        var w = a.a1 - a.a0;
-        for (var m = 0; m < k; m++) angs.push(a.a0 + (w * (m + 0.5)) / k);
-      });
+      var pitch = total / n;
+      var mark = pitch / 2; // старт с полушага — как и раньше, не впритык к границе
+      var cum = 0, angs = [];
+      for (var ai = 0; ai < arcs.length && angs.length < n; ai++) {
+        var a = arcs[ai], w = a.a1 - a.a0;
+        while (mark <= cum + w + 1e-9 && angs.length < n) {
+          angs.push(a.a0 + (mark - cum));
+          mark += pitch;
+        }
+        cum += w;
+      }
       return angs;
     }
 
