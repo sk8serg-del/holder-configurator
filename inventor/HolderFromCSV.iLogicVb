@@ -1,32 +1,31 @@
-' HolderFromCSV — правило iLogic для Autodesk Inventor.
+' HolderFromCSV - правило iLogic для Autodesk Inventor (формат CSV v2).
 '
-' Читает CSV из веб-конфигуратора подложкодержателей и вырезает отверстия
-' в ОТКРЫТОЙ детали (вашей болванке диска). Само тело диска правило не строит.
+' Читает CSV из веб-конфигуратора и вырезает в ОТКРЫТОЙ детали (болванке диска)
+' реальные карманы под детали и контрольные отверстия:
+'   * посадка (seat)          - глухой вырез на глубину depth от верхней грани;
+'   * паз под пинцет (slot)    - глухой вырез на ту же глубину (если включён);
+'   * зона напыления (CA)      - сквозной вырез меньшего контура на дне посадки.
+' Само тело диска правило не строит.
 '
 ' Требования к болванке:
-'   - диск построен с центром в начале координат;
-'   - ось диска — ось Z (эскиз основания на плоскости XY).
+'   - диск построен с центром в начале координат XY;
+'   - ось диска - ось Z (плоский диск). Карманы режутся от верхней грани вниз (-Z).
 '
-' Установка: Inventor → Управление → iLogic → создать правило (или внешнее
-' правило) и вставить этот код целиком.
-'
-' При запуске правило спросит:
-'   1) какой CSV-файл использовать;
-'   2) строить ли контрольные отверстия (если они уже есть в болванке — «Нет»).
-' Все контуры отверстий собираются в один эскиз «HolderFromCSV» и режутся
-' одним вырезом насквозь (симметрично, чтобы не зависеть от толщины диска).
+' Установка: Inventor -> Управление -> iLogic -> создать правило (или внешнее
+' правило) и вставить этот код целиком. При запуске правило спросит CSV и,
+' если в файле есть контрольные отверстия, - строить их или пропустить.
 
 Sub Main()
 	If ThisApplication.ActiveDocument Is Nothing OrElse _
 	   ThisApplication.ActiveDocument.DocumentType <> DocumentTypeEnum.kPartDocumentObject Then
-		MessageBox.Show("Откройте деталь — болванку диска.", "HolderFromCSV", _
+		MessageBox.Show("Откройте деталь - болванку диска.", "HolderFromCSV", _
 			MessageBoxButtons.OK, MessageBoxIcon.Warning)
 		Return
 	End If
 	Dim doc As PartDocument = ThisApplication.ActiveDocument
 	Dim compDef As PartComponentDefinition = doc.ComponentDefinition
 	If compDef.SurfaceBodies.Count = 0 Then
-		MessageBox.Show("В детали нет тела — сначала постройте диск.", "HolderFromCSV", _
+		MessageBox.Show("В детали нет тела - сначала постройте диск.", "HolderFromCSV", _
 			MessageBoxButtons.OK, MessageBoxIcon.Warning)
 		Return
 	End If
@@ -42,6 +41,7 @@ Sub Main()
 
 	' --- разбор файла ---
 	Dim discDia As Double = 0
+	Dim discThk As Double = 0
 	Dim rows As New List(Of String())
 	Dim dataStarted As Boolean = False
 	For Each rawLine As String In lines
@@ -49,15 +49,16 @@ Sub Main()
 		If t = "" Then Continue For
 		Dim f() As String = t.Split(";"c)
 		If dataStarted Then
-			If f.Length >= 8 Then rows.Add(f)
+			If f.Length >= 18 Then rows.Add(f)
 		ElseIf f(0) = "disc" AndAlso f.Length >= 4 Then
-			discDia = Double.Parse(f(3), inv)
+			discDia = ParseNum(f(3), inv)
+			If f.Length >= 5 Then discThk = ParseNum(f(4), inv)
 		ElseIf f(0) = "columns" Then
 			dataStarted = True
 		End If
 	Next
 	If rows.Count = 0 Then
-		MessageBox.Show("В файле не найдено ни одного отверстия. Это CSV из конфигуратора?", _
+		MessageBox.Show("В файле не найдено данных. Это CSV из конфигуратора (формат v2)?", _
 			"HolderFromCSV", MessageBoxButtons.OK, MessageBoxIcon.Warning)
 		Return
 	End If
@@ -73,7 +74,7 @@ Sub Main()
 			"Строить из CSV", "Не строить (уже есть в болванке)", False, "HolderFromCSV")
 	End If
 
-	' --- сверка диаметра болванки с CSV (внутренние единицы Inventor — см) ---
+	' --- сверка диаметра болванки с CSV (внутренние единицы Inventor - см) ---
 	Dim rb As Box = compDef.SurfaceBodies.Item(1).RangeBox
 	Dim curDia As Double = Math.Max(rb.MaxPoint.X - rb.MinPoint.X, rb.MaxPoint.Y - rb.MinPoint.Y) * 10.0
 	If discDia > 0 AndAlso Math.Abs(curDia - discDia) > 0.05 Then
@@ -83,82 +84,96 @@ Sub Main()
 			System.Windows.Forms.DialogResult.Yes Then Return
 	End If
 
-	' --- эскиз на плоскости XY ---
 	Dim tg As TransientGeometry = ThisApplication.TransientGeometry
-	Dim sk As PlanarSketch = compDef.Sketches.Add(compDef.WorkPlanes.Item(3)) ' XY
-	sk.Name = "HolderFromCSV"
+	Dim mm As Double = 0.1 ' мм -> см
+	Dim T As Double = (rb.MaxPoint.Z - rb.MinPoint.Z)   ' толщина диска, см
+	Dim defDepth As Double = Math.Max(0.05, T - 0.15)   ' запасная глубина ~ T-1.5мм
 
-	' Точки задаём в модельных координатах и переводим в координаты эскиза —
-	' так результат не зависит от ориентации осей эскиза.
-	Dim mm As Double = 0.1 ' мм → см
+	' --- плоскость реза = верхняя грань диска (Z макс), нормаль +Z, режем в -Z ---
+	Dim topZ As Double = rb.MaxPoint.Z
+	Dim cutPlane As Object = compDef.WorkPlanes.Item(3) ' XY
+	If Math.Abs(topZ) > 0.0001 Then
+		Dim wp As WorkPlane = compDef.WorkPlanes.AddByPlaneAndOffset(compDef.WorkPlanes.Item(3), topZ)
+		wp.Visible = False
+		cutPlane = wp
+	End If
 
-	Dim built As Integer = 0
+	' контуры собираем в эскизы: посадки/пазы - по глубине, зона напыления - в один
+	Dim seatByDepth As New Dictionary(Of Double, PlanarSketch)
+	Dim slotByDepth As New Dictionary(Of Double, PlanarSketch)
+	Dim caSketch As PlanarSketch = Nothing
+	Dim idx As Integer = 0
+	Dim nSeat As Integer = 0, nSlot As Integer = 0, nCA As Integer = 0
+
 	Try
 		For Each f() As String In rows
-			Dim typ As String = f(0)
-			If typ = "control" AndAlso Not buildControl Then Continue For
+			Dim kind As String = f(0)
+			Dim typ As String = f(1)
+			If kind = "control" AndAlso Not buildControl Then Continue For
 
-			Dim cx As Double = Double.Parse(f(1), inv) * mm
-			Dim cy As Double = Double.Parse(f(2), inv) * mm
+			Dim cx As Double = ParseNum(f(2), inv) * mm
+			Dim cy As Double = ParseNum(f(3), inv) * mm
+			Dim dd As Double = ParseNum(f(4), inv) * mm
+			Dim w As Double = ParseNum(f(5), inv) * mm
+			Dim h As Double = ParseNum(f(6), inv) * mm
+			Dim ch As Double = ParseNum(f(7), inv) * mm
+			Dim rot As Double = ParseNum(f(8), inv)
+			Dim seatD As Double = ParseNum(f(9), inv) * mm
+			Dim caDia As Double = ParseNum(f(10), inv) * mm
+			Dim seatGap As Double = ParseNum(f(11), inv) * mm
+			Dim caInset As Double = ParseNum(f(12), inv) * mm
+			Dim slotOn As Boolean = (f(13) = "1")
+			Dim slotAngle As Double = ParseNum(f(14), inv)
+			Dim slotL As Double = ParseNum(f(15), inv) * mm
+			Dim slotW As Double = ParseNum(f(16), inv) * mm
+			Dim depth As Double = ParseNum(f(17), inv) * mm
+			If depth <= 0 Then depth = defDepth
+			If depth > T Then depth = T
+			Dim dkey As Double = Math.Round(depth, 4)
 
-			If typ = "circle" OrElse typ = "control" Then
-				Dim dia As Double = Double.Parse(f(7), inv) * mm
-				Dim c2d As Point2d = sk.ModelToSketchSpace(tg.CreatePoint(cx, cy, 0))
-				sk.SketchCircles.AddByCenterRadius(c2d, dia / 2)
-				built += 1
-			ElseIf typ = "rect" OrElse typ = "oct" Then
-				Dim w As Double = Double.Parse(f(3), inv) * mm
-				Dim h As Double = Double.Parse(f(4), inv) * mm
-				Dim ch As Double = 0
-				If f(5) <> "" Then ch = Double.Parse(f(5), inv) * mm
-				Dim rotDeg As Double = 0
-				If f(6) <> "" Then rotDeg = Double.Parse(f(6), inv)
+			' --- посадка (глухой вырез на глубину) ---
+			Dim seatSk As PlanarSketch = GetSketch(compDef, cutPlane, seatByDepth, dkey, "HFC_seat", idx)
+			If typ = "circle" Then
+				If seatD > 0 Then AddCircle(seatSk, tg, cx, cy, seatD / 2) : nSeat += 1
+			Else
+				If AddShape(seatSk, tg, typ, cx, cy, w + 2 * seatGap, h + 2 * seatGap, ch, rot) Then nSeat += 1
+			End If
 
-				' вершины контура вокруг (0,0)
-				Dim pts As New List(Of Double())
-				If typ = "rect" Then
-					pts.Add({-w / 2, -h / 2}) : pts.Add({w / 2, -h / 2})
-					pts.Add({w / 2, h / 2}) : pts.Add({-w / 2, h / 2})
-				Else
-					pts.Add({-w / 2 + ch, -h / 2}) : pts.Add({w / 2 - ch, -h / 2})
-					pts.Add({w / 2, -h / 2 + ch}) : pts.Add({w / 2, h / 2 - ch})
-					pts.Add({w / 2 - ch, h / 2}) : pts.Add({-w / 2 + ch, h / 2})
-					pts.Add({-w / 2, h / 2 - ch}) : pts.Add({-w / 2, -h / 2 + ch})
+			' --- паз под пинцет (глухой, на ту же глубину) ---
+			If slotOn AndAlso slotL > 0 AndAlso slotW > 0 Then
+				Dim slotSk As PlanarSketch = GetSketch(compDef, cutPlane, slotByDepth, dkey, "HFC_slot", idx)
+				AddStadium(slotSk, tg, cx, cy, slotAngle, slotL, slotW)
+				nSlot += 1
+			End If
+
+			' --- зона напыления (сквозной вырез меньшего контура) ---
+			If typ = "circle" Then
+				If caDia > 0 Then
+					If caSketch Is Nothing Then caSketch = NewSketch(compDef, cutPlane, "HFC_ca", idx)
+					AddCircle(caSketch, tg, cx, cy, caDia / 2)
+					nCA += 1
 				End If
-
-				' поворот + перенос, модельные координаты → координаты эскиза
-				Dim a As Double = rotDeg * Math.PI / 180
-				Dim cosA As Double = Math.Cos(a), sinA As Double = Math.Sin(a)
-				Dim p2d As New List(Of Point2d)
-				For Each p As Double() In pts
-					Dim px As Double = cx + p(0) * cosA - p(1) * sinA
-					Dim py As Double = cy + p(0) * sinA + p(1) * cosA
-					p2d.Add(sk.ModelToSketchSpace(tg.CreatePoint(px, py, 0)))
-				Next
-
-				' замкнутый контур с общими вершинами
-				Dim firstLine As SketchLine = sk.SketchLines.AddByTwoPoints(p2d(0), p2d(1))
-				Dim prevLine As SketchLine = firstLine
-				For k As Integer = 1 To p2d.Count - 2
-					prevLine = sk.SketchLines.AddByTwoPoints(prevLine.EndSketchPoint, p2d(k + 1))
-				Next
-				sk.SketchLines.AddByTwoPoints(prevLine.EndSketchPoint, firstLine.StartSketchPoint)
-				built += 1
+			Else
+				If caInset > 0 AndAlso (w - 2 * caInset) > 0 AndAlso (h - 2 * caInset) > 0 Then
+					If caSketch Is Nothing Then caSketch = NewSketch(compDef, cutPlane, "HFC_ca", idx)
+					If AddShape(caSketch, tg, typ, cx, cy, w - 2 * caInset, h - 2 * caInset, ch, rot) Then nCA += 1
+				End If
 			End If
 		Next
 
-		If built = 0 Then
-			sk.Delete()
-			MessageBox.Show("Нечего строить: все отверстия пропущены.", "HolderFromCSV")
+		If nSeat = 0 AndAlso nCA = 0 Then
+			MessageBox.Show("Нечего строить: все элементы пропущены.", "HolderFromCSV")
 			Return
 		End If
 
-		' --- один вырез насквозь на все контуры ---
-		Dim prof As Profile = sk.Profiles.AddForSolid
-		Dim exDef As ExtrudeDefinition = compDef.Features.ExtrudeFeatures.CreateExtrudeDefinition( _
-			prof, PartFeatureOperationEnum.kCutOperation)
-		exDef.SetThroughAllExtent(PartFeatureExtentDirectionEnum.kSymmetricExtentDirection)
-		compDef.Features.ExtrudeFeatures.Add(exDef)
+		' --- резы: посадки и пазы глухие (в -Z), зона напыления - насквозь ---
+		For Each kv As KeyValuePair(Of Double, PlanarSketch) In seatByDepth
+			CutBlind(compDef, kv.Value, kv.Key)
+		Next
+		For Each kv As KeyValuePair(Of Double, PlanarSketch) In slotByDepth
+			CutBlind(compDef, kv.Value, kv.Key)
+		Next
+		If caSketch IsNot Nothing AndAlso nCA > 0 Then CutThrough(compDef, caSketch)
 	Catch ex As Exception
 		MessageBox.Show("Ошибка построения: " & ex.Message, "HolderFromCSV", _
 			MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -166,5 +181,127 @@ Sub Main()
 	End Try
 
 	doc.Update()
-	MessageBox.Show("Готово: вырезано отверстий — " & built.ToString() & ".", "HolderFromCSV")
+	MessageBox.Show("Готово. Посадок: " & nSeat.ToString() & _
+		", зон напыления: " & nCA.ToString() & ", пазов: " & nSlot.ToString() & ".", "HolderFromCSV")
+End Sub
+
+' ---------- вспомогательные ----------
+
+Function ParseNum(s As String, inv As System.Globalization.CultureInfo) As Double
+	If s Is Nothing OrElse s.Trim() = "" Then Return 0
+	Dim v As Double
+	If Double.TryParse(s, System.Globalization.NumberStyles.Any, inv, v) Then Return v
+	Return 0
+End Function
+
+Function NewSketch(compDef As PartComponentDefinition, plane As Object, prefix As String, ByRef idx As Integer) As PlanarSketch
+	Dim sk As PlanarSketch = compDef.Sketches.Add(plane)
+	sk.Name = prefix & "_" & idx.ToString()
+	idx += 1
+	Return sk
+End Function
+
+Function GetSketch(compDef As PartComponentDefinition, plane As Object, dict As Dictionary(Of Double, PlanarSketch), _
+		key As Double, prefix As String, ByRef idx As Integer) As PlanarSketch
+	If Not dict.ContainsKey(key) Then dict.Add(key, NewSketch(compDef, plane, prefix, idx))
+	Return dict(key)
+End Function
+
+Sub AddCircle(sk As PlanarSketch, tg As TransientGeometry, cx As Double, cy As Double, r As Double)
+	Dim c2d As Point2d = sk.ModelToSketchSpace(tg.CreatePoint(cx, cy, 0))
+	sk.SketchCircles.AddByCenterRadius(c2d, r)
+End Sub
+
+' Контур прямоугольника/фаски (полилиния) или эллипса (oval). Возвращает True, если добавлен.
+Function AddShape(sk As PlanarSketch, tg As TransientGeometry, typ As String, _
+		cx As Double, cy As Double, w As Double, h As Double, ch As Double, rotDeg As Double) As Boolean
+	If w <= 0 OrElse h <= 0 Then Return False
+
+	If typ = "oval" Then
+		Dim majorR As Double = Math.Max(w, h) / 2
+		Dim minorR As Double = Math.Min(w, h) / 2
+		If minorR <= 0 Then Return False
+		Dim axDeg As Double = rotDeg
+		If h > w Then axDeg = rotDeg + 90
+		Dim axRad As Double = axDeg * Math.PI / 180
+		Dim c2d As Point2d = sk.ModelToSketchSpace(tg.CreatePoint(cx, cy, 0))
+		Dim axPt As Point2d = sk.ModelToSketchSpace(tg.CreatePoint(cx + Math.Cos(axRad), cy + Math.Sin(axRad), 0))
+		Dim ddx As Double = axPt.X - c2d.X, ddy As Double = axPt.Y - c2d.Y
+		Dim dlen As Double = Math.Sqrt(ddx * ddx + ddy * ddy)
+		Dim majorDir As UnitVector2d = tg.CreateUnitVector2d(ddx / dlen, ddy / dlen)
+		sk.SketchEllipses.Add(c2d, majorDir, majorR, minorR)
+		Return True
+	End If
+
+	Dim x As Double = w / 2, y As Double = h / 2
+	Dim pts As New List(Of Double())
+	If typ = "oct" AndAlso ch > 0 Then
+		Dim c As Double = Math.Min(ch, Math.Min(w, h) / 2 - 0.0001)
+		pts.Add({-x + c, -y}) : pts.Add({x - c, -y}) : pts.Add({x, -y + c}) : pts.Add({x, y - c})
+		pts.Add({x - c, y}) : pts.Add({-x + c, y}) : pts.Add({-x, y - c}) : pts.Add({-x, -y + c})
+	Else
+		pts.Add({-x, -y}) : pts.Add({x, -y}) : pts.Add({x, y}) : pts.Add({-x, y})
+	End If
+	AddPolyline(sk, tg, cx, cy, rotDeg, pts)
+	Return True
+End Function
+
+' Стадион (паз): прямые борта + полукруглые торцы, как полилиния.
+Sub AddStadium(sk As PlanarSketch, tg As TransientGeometry, cx As Double, cy As Double, _
+		angleDeg As Double, L As Double, W As Double)
+	Dim r As Double = W / 2
+	Dim hs As Double = Math.Max(0, L / 2 - r)
+	Dim n As Integer = 10
+	Dim pts As New List(Of Double())
+	pts.Add({-hs, -r}) : pts.Add({hs, -r})
+	Dim i As Integer
+	Dim th As Double
+	For i = 1 To n - 1                          ' правый торец: -90..+90
+		th = -Math.PI / 2 + Math.PI * i / n
+		pts.Add({hs + r * Math.Cos(th), r * Math.Sin(th)})
+	Next
+	pts.Add({hs, r}) : pts.Add({-hs, r})
+	For i = 1 To n - 1                          ' левый торец: +90..+270
+		th = Math.PI / 2 + Math.PI * i / n
+		pts.Add({-hs + r * Math.Cos(th), r * Math.Sin(th)})
+	Next
+	AddPolyline(sk, tg, cx, cy, angleDeg, pts)
+End Sub
+
+' Замкнутая полилиния по локальным точкам pts (поворот rotDeg, перенос в cx,cy).
+Sub AddPolyline(sk As PlanarSketch, tg As TransientGeometry, cx As Double, cy As Double, _
+		rotDeg As Double, pts As List(Of Double()))
+	Dim a As Double = rotDeg * Math.PI / 180
+	Dim cosA As Double = Math.Cos(a), sinA As Double = Math.Sin(a)
+	Dim p2d As New List(Of Point2d)
+	For Each p As Double() In pts
+		Dim px As Double = cx + p(0) * cosA - p(1) * sinA
+		Dim py As Double = cy + p(0) * sinA + p(1) * cosA
+		p2d.Add(sk.ModelToSketchSpace(tg.CreatePoint(px, py, 0)))
+	Next
+	Dim firstLine As SketchLine = sk.SketchLines.AddByTwoPoints(p2d(0), p2d(1))
+	Dim prevLine As SketchLine = firstLine
+	Dim k As Integer
+	For k = 1 To p2d.Count - 2
+		prevLine = sk.SketchLines.AddByTwoPoints(prevLine.EndSketchPoint, p2d(k + 1))
+	Next
+	sk.SketchLines.AddByTwoPoints(prevLine.EndSketchPoint, firstLine.StartSketchPoint)
+End Sub
+
+' Глухой вырез на глубину depthCm в направлении -нормаль эскиза (в тело диска).
+Sub CutBlind(compDef As PartComponentDefinition, sk As PlanarSketch, depthCm As Double)
+	Dim prof As Profile = sk.Profiles.AddForSolid
+	Dim exDef As ExtrudeDefinition = compDef.Features.ExtrudeFeatures.CreateExtrudeDefinition( _
+		prof, PartFeatureOperationEnum.kCutOperation)
+	exDef.SetDistanceExtent(depthCm, PartFeatureExtentDirectionEnum.kNegativeExtentDirection)
+	compDef.Features.ExtrudeFeatures.Add(exDef)
+End Sub
+
+' Сквозной вырез (в направлении -нормаль эскиза).
+Sub CutThrough(compDef As PartComponentDefinition, sk As PlanarSketch)
+	Dim prof As Profile = sk.Profiles.AddForSolid
+	Dim exDef As ExtrudeDefinition = compDef.Features.ExtrudeFeatures.CreateExtrudeDefinition( _
+		prof, PartFeatureOperationEnum.kCutOperation)
+	exDef.SetThroughAllExtent(PartFeatureExtentDirectionEnum.kNegativeExtentDirection)
+	compDef.Features.ExtrudeFeatures.Add(exDef)
 End Sub

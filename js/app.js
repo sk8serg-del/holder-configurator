@@ -745,7 +745,7 @@
       },
       holderNo: $("holderNo").value.trim(),
       holderName: $("holderName").value.trim(),
-      disc: { id: lr.disc.id, name: lr.disc.name, diameter: lr.disc.diameter },
+      disc: { id: lr.disc.id, name: lr.disc.name, diameter: lr.disc.diameter, thickness: lr.disc.thickness },
       controlName: lr.controlName,
       controlHoles: lr.opts.controlHoles,
       clearances: lr.opts.clearances,
