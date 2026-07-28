@@ -40,6 +40,8 @@
   // Запас на паз под пинцет: насколько его торец выступает за контур ДЕТАЛИ
   // (паз считается от посадки и торчит на 2.5 мм за неё). Учитывается в раскладке
   // изотропно (в любую сторону) — так гарантируется зазор между пазами соседей.
+  // Не используется для круглых деталей в обычной гекс-сетке (см. ниже) — там
+  // угол паза известен заранее, и вместо запаса берётся точная геометрия.
   function slotPad(spec) {
     if (!spec.slotOn) return 0;
     if (spec.type === "circle") {
@@ -49,15 +51,56 @@
     return (spec.seatGap > 0 ? spec.seatGap : 0) + 2.5;
   }
 
+  // Точный шаг гекс-сетки для круглых деталей с пазом: угол паза у всех
+  // экземпляров одинаков (вертикаль — высота равностороннего треугольника
+  // сетки, см. makePlacement), поэтому вместо изотропного запаса на все
+  // стороны считаем минимальный шаг, при котором зазор pp выдержан по всем
+  // 6 направлениям соседей. По симметрии контура «посадка+паз» различны
+  // только 2 направления: вдоль ряда (0° — паз перпендикулярен, не влияет,
+  // шаг = seatD+pp точно) и по диагонали между рядами (60° — паз частично
+  // выступает навстречу) — решается бинарным поиском по настоящему контуру
+  // (приближённая формула «сумма радиусов» на этой форме на диагонали слегка
+  // занижает реальный зазор — проверено численно, отсюда точный поиск + запас
+  // 0.03 мм на дискретизацию контура при переборе).
+  // Мемоизация: один и тот же (seatD, pp) запрашивается по многу раз за один
+  // HC.pack() (на каждую из 5×5 фаз смещения сетки) — бинарный поиск считаем
+  // один раз, а не на каждую фазу.
+  var hexPitchCache = {};
+  function hexSlotPitch(seatD, pp) {
+    var key = seatD + "|" + pp;
+    if (hexPitchCache[key] != null) return hexPitchCache[key];
+    var n = 192, target = pp + 0.03;
+    var A = geom.seatOutline(0, 0, seatD, true, Math.PI / 2, n); // неподвижный контур — считаем один раз
+    function gapAt(pitch) {
+      var B = geom.seatOutline(pitch * Math.cos(Math.PI / 3), pitch * Math.sin(Math.PI / 3), seatD, true, Math.PI / 2, n);
+      return geom.polyPolyDist(A, B);
+    }
+    var lo = seatD * 0.3, hi = seatD * 3;
+    for (var it = 0; it < 40; it++) {
+      var mid = (lo + hi) / 2;
+      if (gapAt(mid) < target) lo = mid; else hi = mid;
+    }
+    var pitch = Math.max(seatD + pp, hi); // hi — диагональ; seatD+pp — вдоль ряда (точно, паз туда не тянется)
+    hexPitchCache[key] = pitch;
+    return pitch;
+  }
+
   function makePlacement(spec, cx, cy, rot, partIndex) {
     if (spec.type === "circle") {
-      return {
+      var pl = {
         type: "circle", cx: cx, cy: cy, d: spec.d, partIndex: partIndex, pad: spec._pad || 0,
         // посадка/зона напыления/паз — для схемы отображения, на раскладку не влияют.
         // Паз направлен по высоте равностороннего треугольника гекс-сетки: ряды
         // горизонтальные, значит высота — вертикаль (90°), пазы у всех параллельны.
         seatD: spec.seatD, apertureCA: spec.apertureCA, slotOn: spec.slotOn, slotAngle: 90
       };
+      if (spec.slotOn) {
+        // точный контур «посадка+паз» при известном угле — реальная занятая
+        // зона для проверки зазоров (заменяет изотропный запас, см. выше)
+        var seat = spec.seatD > 0 ? spec.seatD : spec.d;
+        pl._outline = geom.seatOutline(cx, cy, seat, true, Math.PI / 2, 64);
+      }
+      return pl;
     }
     var p = { type: spec.type, cx: cx, cy: cy, w: spec.w, h: spec.h, rot: rot || 0, partIndex: partIndex, pad: spec._pad || 0 };
     if (spec.type === "oct") p.chamfer = spec.chamfer || 0;
@@ -102,7 +145,8 @@
   // Гексагональная сетка центров для кругов
   function circleCandidates(spec, ctx, offX, offY) {
     var pad = spec._pad || 0;
-    var pitch = spec.d + ctx.cl.pp + 2 * pad;
+    var seat = spec.seatD > 0 ? spec.seatD : spec.d;
+    var pitch = spec.slotOn ? hexSlotPitch(seat, ctx.cl.pp) : (spec.d + ctx.cl.pp + 2 * pad);
     var rowH = (pitch * Math.sqrt(3)) / 2;
     var Rc = ctx.R - ctx.cl.pe - spec.d / 2 - pad; // максимальный радиус центра
     if (Rc < -EPS) return [];
@@ -155,7 +199,8 @@
       var pad = spec._pad || 0;
       var pitchX, pitchY;
       if (spec.type === "circle") {
-        pitchX = spec.d + ctx.cl.pp + 2 * pad;
+        var seat = spec.seatD > 0 ? spec.seatD : spec.d;
+        pitchX = spec.slotOn ? hexSlotPitch(seat, ctx.cl.pp) : (spec.d + ctx.cl.pp + 2 * pad);
         pitchY = (pitchX * Math.sqrt(3)) / 2;
       } else {
         var swap = rot === 90;
@@ -386,7 +431,14 @@
         spec.orientation = spec.type !== "circle" && spec.allowRotate ? "grid" : "fixed";
       }
       if (!spec.anchor) spec.anchor = { mode: "center" };
-      spec._pad = slotPad(spec); // запас на паз под пинцет (учитывается в раскладке)
+      // Изотропный запас на паз — везде, КРОМЕ обычной гекс-сетки круглых
+      // деталей (anchor не «от края»/«по диаметру» — там угол паза известен
+      // заранее, вместо запаса используется точный контур, см. hexSlotPitch
+      // и makePlacement). На кольцах угол паза зависит от позиции — запас остаётся.
+      var isRingCircle = spec.type === "circle" && spec.qty != null && spec.anchor &&
+        (spec.anchor.mode === "edge" || spec.anchor.mode === "diameter");
+      var isHexSlotCircle = spec.type === "circle" && spec.slotOn && !isRingCircle;
+      spec._pad = isHexSlotCircle ? 0 : slotPad(spec);
       var list = layoutForSpec(spec, ctx);
       var take = spec.qty == null ? list.length : Math.min(spec.qty, list.length);
       for (var k = 0; k < take; k++) ctx.placed.push(list[k]);

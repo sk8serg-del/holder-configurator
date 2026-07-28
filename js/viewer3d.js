@@ -33,32 +33,10 @@
     return pts;
   }
 
-  // Радиальная протяжённость капсулы (стадиона) вдоль направления (c,s):
-  // капсула — отрезок [-hs, hs] по X, «раздутый» на радиус w.
-  function capsuleRadial(c, s, hs, w) {
-    var uc = Math.abs(c), us = Math.abs(s);
-    if (us > 1e-9 && (w / us) * uc <= hs) return w / us;      // боковая прямая
-    var disc = w * w - hs * hs * us * us;                      // торцевая дуга
-    return uc * hs + Math.sqrt(Math.max(0, disc));
-  }
-
-  // Контур «посадка ∪ паз»: обе фигуры звёздные относительно общего центра,
-  // поэтому границу объединения можно снять по лучам: r(θ) = max(круг, капсула).
+  // Контур «посадка ∪ паз» — общая реализация в geometry.js (используется и
+  // здесь для 3D, и в packer.js для точного клиренса в гекс-раскладке).
   function seatOutline(cx, cy, D, slotOn, slotAngleRad) {
-    var R = D / 2;
-    var n = 96;
-    if (!slotOn) return circlePoly(cx, cy, R, n);
-    var L = D + 2 * 2.5;                       // длина паза
-    var W = Math.min(9, D * 0.75);             // ширина паза
-    var hs = Math.max(0, L / 2 - W / 2);
-    var pts = [];
-    for (var i = 0; i < n; i++) {
-      var a = (i / n) * Math.PI * 2;
-      var la = a - slotAngleRad;               // угол в системе паза
-      var r = Math.max(R, capsuleRadial(Math.cos(la), Math.sin(la), hs, W / 2));
-      pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
-    }
-    return pts;
+    return HC.geom.seatOutline(cx, cy, D, slotOn, slotAngleRad, 96);
   }
 
   function toShape(pts) {

@@ -52,6 +52,44 @@
     return transform(pts, cx, cy, rot);
   }
 
+  // Ширина паза под пинцет: стандарт 9 мм, но не больше 0.75 диаметра посадки D
+  function slotWidth(D) { return Math.min(9, D * 0.75); }
+
+  // Дальность луча из центра по направлению (ux,uy) до края капсулы (паза)
+  // длиной L=2·(hs+halfW), шириной 2·halfW, лежащей вдоль своей продольной оси.
+  function capsuleRadial(ux, uy, hs, halfW) {
+    var uc = Math.abs(ux), us = Math.abs(uy);
+    if (us > 1e-9 && (halfW / us) * uc <= hs) return halfW / us; // боковая прямая
+    var disc = halfW * halfW - hs * hs * us * us;                 // торцевая дуга
+    return uc * hs + Math.sqrt(Math.max(0, disc));
+  }
+
+  // Точный контур «посадка ∪ паз» — звёздный многоугольник относительно центра
+  // (cx,cy): посадка Ø D, паз-стадион (см. slotWidth) повёрнут на slotAngleRad
+  // (радианы). Без паза — просто окружность. Используется и для клиренса
+  // круглых деталей в гекс-раскладке (packer.js), и для 3D-вида (viewer3d.js) —
+  // одна и та же реальная форма.
+  function seatOutline(cx, cy, D, slotOn, slotAngleRad, n) {
+    n = n || 96;
+    var R = D / 2, pts = [];
+    if (!slotOn) {
+      for (var i = 0; i < n; i++) {
+        var a = (i / n) * Math.PI * 2;
+        pts.push({ x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
+      }
+      return pts;
+    }
+    var L = D + 2 * 2.5, W = slotWidth(D);
+    var hs = Math.max(0, L / 2 - W / 2);
+    for (var i2 = 0; i2 < n; i2++) {
+      var a2 = (i2 / n) * Math.PI * 2;
+      var la = a2 - slotAngleRad;
+      var r = Math.max(R, capsuleRadial(Math.cos(la), Math.sin(la), hs, W / 2));
+      pts.push({ x: cx + r * Math.cos(a2), y: cy + r * Math.sin(a2) });
+    }
+    return pts;
+  }
+
   // Контур фигуры заданного типа по габаритам w×h (для посадки/зоны напыления —
   // тот же тип, но увеличенный/уменьшенный габарит). Круг здесь не обрабатывается.
   function shapePoly(type, cx, cy, w, h, chamfer, rot) {
@@ -60,9 +98,12 @@
     return octPoly(cx, cy, w, h, chamfer, rot); // oct
   }
 
-  // Контур размещения; null для круга
+  // Контур размещения. Для круга — null (аналитическая проверка по d/2), КРОМЕ
+  // случая, когда заранее посчитан точный контур «посадка+паз» (p._outline —
+  // ставит packer.js для гекс-раскладки с известным углом паза): тогда именно
+  // он и есть реальная занятая зона, проверяется как обычный полигон.
   function placementPoly(p) {
-    if (p.type === "circle") return null;
+    if (p.type === "circle") return p._outline || null;
     return shapePoly(p.type, p.cx, p.cy, p.w, p.h, p.chamfer, p.rot);
   }
 
@@ -161,10 +202,12 @@
     return polyPolyDist(pa, pb);
   }
 
-  // Запас до кромки диска радиуса R (центр диска в 0,0); >= 0 — деталь внутри
+  // Запас до кромки диска радиуса R (центр диска в 0,0); >= 0 — деталь внутри.
+  // Круг без точного контура (p._outline) — аналитически по d/2; иначе (в т.ч.
+  // круг с посадкой+пазом) — по вершинам реального контура, как полигон.
   function edgeDist(A, R) {
-    if (A.type === "circle") return R - (dist(0, 0, A.cx, A.cy) + A.d / 2);
     var poly = placementPoly(A);
+    if (!poly) return R - (dist(0, 0, A.cx, A.cy) + A.d / 2);
     var best = Infinity;
     for (var i = 0; i < poly.length; i++) {
       best = Math.min(best, R - dist(0, 0, poly[i].x, poly[i].y));
@@ -176,10 +219,13 @@
     EPS: EPS,
     rectPoly: rectPoly,
     octPoly: octPoly,
+    slotWidth: slotWidth,
+    seatOutline: seatOutline,
     ellipsePoly: ellipsePoly,
     shapePoly: shapePoly,
     placementPoly: placementPoly,
     placementDist: placementDist,
+    polyPolyDist: polyPolyDist,
     edgeDist: edgeDist,
     pointInPoly: pointInPoly
   };

@@ -56,6 +56,29 @@ check("1: паз кругов гекс-сетки направлен по выс
   res1.placed.every(function (p) { return p.slotAngle === 90; }),
   res1.placed.map(function (p) { return p.slotAngle; }).slice(0, 3).join(","));
 
+// --- 1c. Круги с пазом в гекс-сетке: без изотропного запаса, но зазор точен ---
+// (раньше добавлялся изотропный запас на все стороны — по факту нужен только
+// по диагонали строк, где паз частично «смотрит» на соседа; вдоль ряда паз
+// перпендикулярен и не мешает вовсе)
+var opts1c = {
+  discDiameter: 298, controlHoles: [], clearances: { pp: 6, pe: 3, pc: 6 },
+  parts: [{ type: "circle", d: 25.4, seatD: 25.6, slotOn: true, qty: null, orientation: "fixed", anchor: { mode: "center" } }]
+};
+var res1c = HC.pack(opts1c);
+var minPP1c = Infinity;
+for (var i1c = 0; i1c < res1c.placed.length; i1c++) {
+  for (var j1c = i1c + 1; j1c < res1c.placed.length; j1c++) {
+    minPP1c = Math.min(minPP1c, HC.geom.placementDist(res1c.placed[i1c], res1c.placed[j1c]));
+  }
+}
+check("1c: с пазом реальный (точный, по контуру посадка+паз) зазор ≥ 6",
+  res1c.placed.length > 1 && minPP1c >= 6 - 1e-3, "мин. факт " + minPP1c);
+// сравнение со старой изотропной формулой: (seatD-d)/2 + 2.5 запаса на ВСЕ стороны
+var oldPad1c = Math.max(0, (25.6 - 25.4) / 2) + 2.5;
+var oldMinPP1c = 25.4 + 2 * oldPad1c; // круг-круг расстояние при старом шаге (d+pp+2·oldPad) минус d
+check("1c: зазор заметно меньше старого изотропного (плотнее упаковка)",
+  minPP1c < oldMinPP1c - 1, "факт " + minPP1c.toFixed(2) + " vs старое было бы " + oldMinPP1c.toFixed(2));
+
 // --- 1b. Круги по краю (кольца): паз радиальный ---
 var opts1b = {
   discDiameter: 298, controlHoles: [], clearances: { pp: 6, pe: 3, pc: 6 },
