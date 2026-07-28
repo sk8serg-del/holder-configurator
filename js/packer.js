@@ -37,16 +37,28 @@
   var OFFSET_STEPS = 5;  // перебор смещений сетки: 5×5 на ориентацию
   var RADIAL_STEPS = 4;  // перебор радиальных смещений колец
 
+  // Запас на паз под пинцет: насколько его торец выступает за контур ДЕТАЛИ
+  // (паз считается от посадки и торчит на 2.5 мм за неё). Учитывается в раскладке
+  // изотропно (в любую сторону) — так гарантируется зазор между пазами соседей.
+  function slotPad(spec) {
+    if (!spec.slotOn) return 0;
+    if (spec.type === "circle") {
+      var seat = spec.seatD > 0 ? spec.seatD : spec.d;
+      return Math.max(0, (seat - spec.d) / 2) + 2.5;
+    }
+    return (spec.seatGap > 0 ? spec.seatGap : 0) + 2.5;
+  }
+
   function makePlacement(spec, cx, cy, rot, partIndex) {
     if (spec.type === "circle") {
       return {
-        type: "circle", cx: cx, cy: cy, d: spec.d, partIndex: partIndex,
+        type: "circle", cx: cx, cy: cy, d: spec.d, partIndex: partIndex, pad: spec._pad || 0,
         // посадка/зона напыления/паз — для схемы отображения, на раскладку не влияют;
         // угол паза у каждого экземпляра свой (см. render.js), не общий из формы
         seatD: spec.seatD, apertureCA: spec.apertureCA, slotOn: spec.slotOn
       };
     }
-    var p = { type: spec.type, cx: cx, cy: cy, w: spec.w, h: spec.h, rot: rot || 0, partIndex: partIndex };
+    var p = { type: spec.type, cx: cx, cy: cy, w: spec.w, h: spec.h, rot: rot || 0, partIndex: partIndex, pad: spec._pad || 0 };
     if (spec.type === "oct") p.chamfer = spec.chamfer || 0;
     // посадка/зона напыления/паз — только для схемы отображения (2D/3D), на раскладку
     // не влияют; угол паза у каждого экземпляра берётся из формы (+ поворот детали)
@@ -59,12 +71,13 @@
 
   // Проверка одного размещения: край диска, контрольные отверстия, уже размещённые детали
   function isValid(pl, ctx) {
-    if (geom.edgeDist(pl, ctx.R) < ctx.cl.pe - EPS) return false;
+    var pad = pl.pad || 0;
+    if (geom.edgeDist(pl, ctx.R) < ctx.cl.pe + pad - EPS) return false;
     for (var i = 0; i < ctx.keepouts.length; i++) {
-      if (geom.placementDist(pl, ctx.keepouts[i]) < ctx.cl.pc - EPS) return false;
+      if (geom.placementDist(pl, ctx.keepouts[i]) < ctx.cl.pc + pad + (ctx.keepouts[i].pad || 0) - EPS) return false;
     }
     for (var j = 0; j < ctx.placed.length; j++) {
-      if (geom.placementDist(pl, ctx.placed[j]) < ctx.cl.pp - EPS) return false;
+      if (geom.placementDist(pl, ctx.placed[j]) < ctx.cl.pp + pad + (ctx.placed[j].pad || 0) - EPS) return false;
     }
     return true;
   }
@@ -87,9 +100,10 @@
 
   // Гексагональная сетка центров для кругов
   function circleCandidates(spec, ctx, offX, offY) {
-    var pitch = spec.d + ctx.cl.pp;
+    var pad = spec._pad || 0;
+    var pitch = spec.d + ctx.cl.pp + 2 * pad;
     var rowH = (pitch * Math.sqrt(3)) / 2;
-    var Rc = ctx.R - ctx.cl.pe - spec.d / 2; // максимальный радиус центра
+    var Rc = ctx.R - ctx.cl.pe - spec.d / 2 - pad; // максимальный радиус центра
     if (Rc < -EPS) return [];
     var out = [];
     var jMax = Math.ceil((Rc + rowH) / rowH);
@@ -110,9 +124,10 @@
     var swap = ((rot % 180) + 180) % 180 === 90;
     var w = swap ? spec.h : spec.w;
     var h = swap ? spec.w : spec.h;
-    var px = w + ctx.cl.pp;
-    var py = h + ctx.cl.pp;
-    var Rc = ctx.R - ctx.cl.pe; // грубая граница; точная проверка в isValid по вершинам
+    var pad = spec._pad || 0;
+    var px = w + ctx.cl.pp + 2 * pad;
+    var py = h + ctx.cl.pp + 2 * pad;
+    var Rc = ctx.R - ctx.cl.pe - pad; // грубая граница; точная проверка в isValid по вершинам
     var out = [];
     var iMax = Math.ceil(Rc / px) + 1;
     var jMax = Math.ceil(Rc / py) + 1;
@@ -136,14 +151,15 @@
     var best = { count: -1, list: [] };
     for (var r = 0; r < rotations.length; r++) {
       var rot = rotations[r];
+      var pad = spec._pad || 0;
       var pitchX, pitchY;
       if (spec.type === "circle") {
-        pitchX = spec.d + ctx.cl.pp;
-        pitchY = ((spec.d + ctx.cl.pp) * Math.sqrt(3)) / 2;
+        pitchX = spec.d + ctx.cl.pp + 2 * pad;
+        pitchY = (pitchX * Math.sqrt(3)) / 2;
       } else {
         var swap = rot === 90;
-        pitchX = (swap ? spec.h : spec.w) + ctx.cl.pp;
-        pitchY = (swap ? spec.w : spec.h) + ctx.cl.pp;
+        pitchX = (swap ? spec.h : spec.w) + ctx.cl.pp + 2 * pad;
+        pitchY = (swap ? spec.w : spec.h) + ctx.cl.pp + 2 * pad;
       }
       for (var a = 0; a < OFFSET_STEPS; a++) {
         for (var b = 0; b < OFFSET_STEPS; b++) {
@@ -223,15 +239,16 @@
         var pl = makePl(rings[ri].pts[pi]);
         if (!isValid(pl, ctx)) continue;
         var okSelf = true;
+        var padPl = pl.pad || 0;
         for (var m = 0; m < acc.length; m++) {
-          if (geom.placementDist(pl, acc[m]) < ctx.cl.pp - EPS) { okSelf = false; break; }
+          if (geom.placementDist(pl, acc[m]) < ctx.cl.pp + padPl + (acc[m].pad || 0) - EPS) { okSelf = false; break; }
         }
         // шаг по дуге на кольце — приближение, не гарантия: для длинных
         // деталей у малого радиуса «спицы» могут пересекаться ближе к центру
         // даже при верной тангенциальной раскладке — проверяем и внутри кольца
         if (okSelf) {
           for (var m2 = 0; m2 < validPts.length; m2++) {
-            if (geom.placementDist(pl, validPts[m2]) < ctx.cl.pp - EPS) { okSelf = false; break; }
+            if (geom.placementDist(pl, validPts[m2]) < ctx.cl.pp + padPl + (validPts[m2].pad || 0) - EPS) { okSelf = false; break; }
           }
         }
         if (okSelf) validPts.push(pl);
@@ -277,14 +294,15 @@
     var alongWidth = spec.orientation === "radial-w";
     var radExt = alongWidth ? spec.w : spec.h;   // размер вдоль радиуса
     var tangExt = alongWidth ? spec.h : spec.w;  // размер поперёк радиуса
-    var step = radExt + ctx.cl.pp;
-    var rMax = ctx.R - ctx.cl.pe - radExt / 2;
+    var pad = spec._pad || 0;
+    var step = radExt + ctx.cl.pp + 2 * pad;
+    var rMax = ctx.R - ctx.cl.pe - radExt / 2 - pad;
     if (rMax < -EPS) return [];
 
     var attempts = [];
     for (var o = 0; o < RADIAL_STEPS; o++) {
-      var rFrom = radExt / 2 + (o / RADIAL_STEPS) * step;
-      var rings = ringCandidates(rFrom, rMax, step, tangExt + ctx.cl.pp, alongWidth ? 0 : 90);
+      var rFrom = radExt / 2 + pad + (o / RADIAL_STEPS) * step;
+      var rings = ringCandidates(rFrom, rMax, step, tangExt + ctx.cl.pp + 2 * pad, alongWidth ? 0 : 90);
       attempts.push(fillRings(rings, spec, ctx, function (cand) {
         return makePlacement(spec, cand.cx, cand.cy, cand.rot, spec.partIndex);
       }));
@@ -298,8 +316,9 @@
   // друг к другу в решётке, — они образуют клин в одном секторе, а не кольцо
   // по всей окружности.
   function circleRingLayout(spec, ctx) {
-    var step = spec.d + ctx.cl.pp;
-    var rMax = ctx.R - ctx.cl.pe - spec.d / 2;
+    var pad = spec._pad || 0;
+    var step = spec.d + ctx.cl.pp + 2 * pad;
+    var rMax = ctx.R - ctx.cl.pe - spec.d / 2 - pad;
     if (rMax < -EPS) return [];
 
     var attempts = [];
@@ -308,7 +327,7 @@
       var rings = ringCandidates(phase, rMax, step, step, 0);
       attempts.push(fillRings(rings, spec, ctx, function (cand) {
         return {
-          type: "circle", cx: cand.cx, cy: cand.cy, d: spec.d, partIndex: spec.partIndex,
+          type: "circle", cx: cand.cx, cy: cand.cy, d: spec.d, partIndex: spec.partIndex, pad: pad,
           seatD: spec.seatD, apertureCA: spec.apertureCA, slotOn: spec.slotOn
         };
       }));
@@ -337,8 +356,9 @@
         pc: opts.clearances.pc
       },
       keepouts: (opts.controlHoles || []).map(function (h) {
-        // занятая зона контрольного отверстия — Ø посадки, если задан
-        return { type: "circle", cx: h.x, cy: h.y, d: h.seatD != null ? h.seatD : h.d };
+        // занятая зона контрольного отверстия — Ø посадки, если задан;
+        // если у КО есть паз — он торчит за посадку, добавляем запас
+        return { type: "circle", cx: h.x, cy: h.y, d: h.seatD != null ? h.seatD : h.d, pad: h.slotOn ? 2.5 : 0 };
       }),
       placed: []
     };
@@ -363,6 +383,7 @@
         spec.orientation = spec.type !== "circle" && spec.allowRotate ? "grid" : "fixed";
       }
       if (!spec.anchor) spec.anchor = { mode: "center" };
+      spec._pad = slotPad(spec); // запас на паз под пинцет (учитывается в раскладке)
       var list = layoutForSpec(spec, ctx);
       var take = spec.qty == null ? list.length : Math.min(spec.qty, list.length);
       for (var k = 0; k < take; k++) ctx.placed.push(list[k]);

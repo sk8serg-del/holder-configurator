@@ -246,27 +246,37 @@ Function AddShape(sk As PlanarSketch, tg As TransientGeometry, typ As String, _
 	Return True
 End Function
 
-' Стадион (паз): прямые борта + полукруглые торцы, как полилиния.
+' Стадион (паз): два прямых борта + два полукруглых торца НАСТОЯЩИМИ дугами
+' (AddByThreePoints — без указания направления, устойчиво к ориентации осей эскиза).
 Sub AddStadium(sk As PlanarSketch, tg As TransientGeometry, cx As Double, cy As Double, _
 		angleDeg As Double, L As Double, W As Double)
 	Dim r As Double = W / 2
 	Dim hs As Double = Math.Max(0, L / 2 - r)
-	Dim n As Integer = 10
-	Dim pts As New List(Of Double())
-	pts.Add({-hs, -r}) : pts.Add({hs, -r})
-	Dim i As Integer
-	Dim th As Double
-	For i = 1 To n - 1                          ' правый торец: -90..+90
-		th = -Math.PI / 2 + Math.PI * i / n
-		pts.Add({hs + r * Math.Cos(th), r * Math.Sin(th)})
-	Next
-	pts.Add({hs, r}) : pts.Add({-hs, r})
-	For i = 1 To n - 1                          ' левый торец: +90..+270
-		th = Math.PI / 2 + Math.PI * i / n
-		pts.Add({-hs + r * Math.Cos(th), r * Math.Sin(th)})
-	Next
-	AddPolyline(sk, tg, cx, cy, angleDeg, pts)
+	If hs <= 0.00001 Then          ' паз вырождается в круг
+		AddCircle(sk, tg, cx, cy, r)
+		Return
+	End If
+	Dim a As Double = angleDeg * Math.PI / 180
+	Dim cosA As Double = Math.Cos(a), sinA As Double = Math.Sin(a)
+	Dim pBL As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, -hs, -r)  ' низ-лево
+	Dim pBR As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, hs, -r)   ' низ-право
+	Dim pTR As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, hs, r)    ' верх-право
+	Dim pTL As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, -hs, r)   ' верх-лево
+	Dim pR As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, hs + r, 0) ' крайняя точка правого торца
+	Dim pL As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, -hs - r, 0)' крайняя точка левого торца
+	sk.SketchLines.AddByTwoPoints(pBL, pBR)          ' нижний борт
+	sk.SketchArcs.AddByThreePoints(pBR, pR, pTR)     ' правый полукруг
+	sk.SketchLines.AddByTwoPoints(pTR, pTL)          ' верхний борт
+	sk.SketchArcs.AddByThreePoints(pTL, pL, pBL)     ' левый полукруг
 End Sub
+
+' Локальная точка паза (lx,ly) -> точка в координатах эскиза (поворот + перенос).
+Function SlotPt(sk As PlanarSketch, tg As TransientGeometry, cx As Double, cy As Double, _
+		cosA As Double, sinA As Double, lx As Double, ly As Double) As Point2d
+	Dim px As Double = cx + lx * cosA - ly * sinA
+	Dim py As Double = cy + lx * sinA + ly * cosA
+	Return sk.ModelToSketchSpace(tg.CreatePoint(px, py, 0))
+End Function
 
 ' Замкнутая полилиния по локальным точкам pts (поворот rotDeg, перенос в cx,cy).
 Sub AddPolyline(sk As PlanarSketch, tg As TransientGeometry, cx As Double, cy As Double, _
