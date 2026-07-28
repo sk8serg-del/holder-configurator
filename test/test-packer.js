@@ -332,6 +332,27 @@ check("15: детали внутри свободной дуги равноме�
   JSON.stringify(gaps15.map(function (g) { return g.toFixed(1); })));
 verifyLayout("15", opts15, res15);
 
+// --- 16. Узкая дуга между двумя близкими контрольными отверстиями (свидетель
+// и reference всего в 60° друг от друга) — она уже одного «шага» между
+// деталями, но помещает РОВНО ОДНУ деталь (ей не с кем делить шаг, важна
+// только её собственная валидность). Баг-репорт: этот карман считался
+// невместимым и оставался пустым, хотя одна деталь туда физически влезает ---
+var opts16 = {
+  discDiameter: 298,
+  clearances: { pp: 6, pe: 3, pc: 6 },
+  controlHoles: [
+    { x: 0, y: 0, d: 25.4, seatD: 25.6, apertureCA: 22.6, slotOn: true },
+    { x: -13.527, y: 110.173, d: 25.4, seatD: 25.6, apertureCA: 22.6, slotOn: true },
+    { x: -102.176, y: 43.371, seatD: 30.1, depth: 3, apertureCA: 24.2, slotOn: false }
+  ],
+  parts: [{ type: "circle", d: 40, seatD: 40.2, apertureCA: 38.7, qty: 10, anchor: { mode: "diameter", d: 222 } }]
+};
+var res16 = HC.pack(opts16);
+check("16: узкий карман между свидетелем и reference заполнен одной деталью (макс. разрыв < 70°, не ~128°)",
+  angleSpread(res16) < (70 * Math.PI) / 180,
+  (angleSpread(res16) * 180 / Math.PI).toFixed(1) + "°");
+verifyLayout("16", opts16, res16);
+
 console.log("\nВремя: " + (Date.now() - t0) + " мс");
 if (failures) {
   console.log("ПРОВАЛЕНО ПРОВЕРОК: " + failures);
