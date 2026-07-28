@@ -367,18 +367,33 @@
     var rMax = ctx.R - ctx.cl.pe - spec.d / 2 - pad;
     if (rMax < -EPS) return [];
 
+    function makePl(cand) {
+      return {
+        type: "circle", cx: cand.cx, cy: cand.cy, d: spec.d, partIndex: spec.partIndex, pad: pad,
+        // на кольцах паз направлен радиально (от центра диска)
+        seatD: spec.seatD, apertureCA: spec.apertureCA, slotOn: spec.slotOn,
+        slotAngle: (Math.atan2(cand.cy, cand.cx) * 180) / Math.PI
+      };
+    }
+
     var attempts = [];
-    for (var o = 0; o < RADIAL_STEPS; o++) {
-      var phase = (o / RADIAL_STEPS) * step;
-      var rings = ringCandidates(phase, rMax, step, step, 0);
-      attempts.push(fillRings(rings, spec, ctx, function (cand) {
-        return {
-          type: "circle", cx: cand.cx, cy: cand.cy, d: spec.d, partIndex: spec.partIndex, pad: pad,
-          // на кольцах паз направлен радиально (от центра диска)
-          seatD: spec.seatD, apertureCA: spec.apertureCA, slotOn: spec.slotOn,
-          slotAngle: (Math.atan2(cand.cy, cand.cx) * 180) / Math.PI
-        };
-      }));
+    var mode = (spec.anchor && spec.anchor.mode) || "center";
+    if (mode === "edge") {
+      // «от края»: цель однозначна — сесть РОВНО на предел минимального
+      // зазора (rMax), а не там, где случайно окажется шаг фазы. Подбираем
+      // rFrom так, чтобы rMax сам был узлом решётки колец (rMax − rFrom —
+      // целое число шагов) — самое внешнее кольцо ложится точно на rMax.
+      var lo = Math.max(0, spec.d / 2 + pad);
+      var n = Math.floor((rMax - lo) / step + 1e-9);
+      var rFrom = rMax - Math.max(0, n) * step;
+      var rings = ringCandidates(rFrom, rMax, step, step, 0);
+      attempts.push(fillRings(rings, spec, ctx, makePl));
+    } else {
+      for (var o = 0; o < RADIAL_STEPS; o++) {
+        var phase = (o / RADIAL_STEPS) * step;
+        var rings2 = ringCandidates(phase, rMax, step, step, 0);
+        attempts.push(fillRings(rings2, spec, ctx, makePl));
+      }
     }
     return pickBestAttempt(attempts, spec);
   }

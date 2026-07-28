@@ -285,6 +285,13 @@ check("14: «от края» — круги по всему кольцу (мак
   (angleSpread(res14edge) * 180 / Math.PI).toFixed(0) + "°");
 verifyLayout("14-edge", base12, res14edge);
 
+// «от края» должно садиться РОВНО на предел зазора (pe=3), а не с запасом —
+// раньше внешнее кольцо могло оказаться на целый шаг решётки (d+pp) дальше
+// от края, чем нужно (баг-репорт пользователя)
+var edgeGap = 149 - (Math.max.apply(null, radii(res14edge)) + 15 / 2);
+check("14: «от края» — деталь у самого края, зазор ≈ pe (не с запасом)",
+  Math.abs(edgeGap - 3) < 0.01, "факт зазор " + edgeGap.toFixed(3) + " (нужно ≈ 3)");
+
 var res14dia = HC.pack(Object.assign({}, base12, {
   parts: [{ type: "circle", d: 15, qty: 8, anchor: { mode: "diameter", d: 150 } }]
 }));

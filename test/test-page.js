@@ -57,8 +57,8 @@ check("настройки контрольных отверстий свёрну
 const summaries = Array.from(d.querySelectorAll("#controlList .c-summary")).map(function (el) { return el.textContent; });
 check("свёрнутая строка свидетеля: d25,4 (D25,6/CA22,6) · глуб. 4,5 · паз",
   summaries[0] === "d25,4 (D25,6/CA22,6) · глуб. 4,5 · паз", summaries[0]);
-check("свёрнутая строка Reference: (D30,1/CA24,2) · глуб. 4 без паза",
-  summaries[2] === "(D30,1/CA24,2) · глуб. 4", summaries[2]);
+check("свёрнутая строка Reference: (D30,1/CA24,2) · глуб. 3 без паза",
+  summaries[2] === "(D30,1/CA24,2) · глуб. 3", summaries[2]);
 const seatDs = Array.from(d.querySelectorAll("#controlList .c-seat-d")).map(function (el) { return el.value; });
 check("Reference: посадка D=30.1, CA=24.2, без поля d",
   seatDs.indexOf("30.1") !== -1 &&

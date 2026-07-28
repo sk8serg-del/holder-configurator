@@ -349,6 +349,21 @@
     return m > 1.6 ? 0.6 : Math.max(0, Math.round((m / 2 - 0.2) * 100) / 100);
   }
 
+  // Диаметр по умолчанию для расположения «по диаметру» — как у Ø свидетеля
+  // (кольцо, на котором стоят «Свидетель»/«Свидетель Центр»), если он есть у
+  // текущего диска; иначе — старый общий дефолт 150.
+  function defaultAnchorD() {
+    var holes = currentControl().holes || [];
+    var wit = holes.filter(function (h) { return /^Свидетель/.test(h.name || ""); })
+      .sort(function (a, b) { return (a.x * a.x + a.y * a.y) - (b.x * b.x + b.y * b.y); })
+      .pop(); // самый дальний от центра «Свидетель» — это и есть кольцо
+    if (wit) {
+      var r = Math.sqrt(wit.x * wit.x + wit.y * wit.y);
+      if (r > 0) return Math.round(r * 2 * 100) / 100;
+    }
+    return 150;
+  }
+
   function defaultPart() {
     var d = 25.4; // стандартная деталь
     var seatD = autoSeatD(d);
@@ -362,8 +377,8 @@
       caInset: autoCaInset(20, 10), caInsetAuto: true,
       slotOn: false, slotAngle: 0, // паз под пинцет — у всех типов деталей
       qtyMode: "max", qty: 10,
-      orientation: "grid",           // fixed | grid | radial-w | radial-h
-      anchor: "center", anchorD: 150 // расположение при неполном заполнении
+      orientation: "grid",                     // fixed | grid | radial-w | radial-h
+      anchor: "center", anchorD: defaultAnchorD() // расположение при неполном заполнении
     };
   }
 

@@ -77,7 +77,7 @@
             holes: [
               { x: 0, y: 0, name: "Свидетель Центр", d: 25.4, seatD: 25.6, apertureCA: 22.6, depth: 4.5, slotAvailable: true },
               { x: -13.527, y: 110.173, name: "Свидетель", d: 25.4, seatD: 25.6, apertureCA: 22.6, depth: 4.5, slotAvailable: true },
-              { x: -102.176, y: 43.371, name: "Reference", seatD: 30.1, apertureCA: 24.2, depth: 4, slotAvailable: false },
+              { x: -102.176, y: 43.371, name: "Reference", seatD: 30.1, apertureCA: 24.2, depth: 3, slotAvailable: false },
               // 3 технологических отверстия Ø3.3 у центра (R≈19) — есть, когда есть
               // «Свидетель Центр» (привязаны к нему, без отдельных галочек)
               { x: -19, y: 0, name: "Тех. отверстие 1", d: 3.3, slotAvailable: false, shownWhenOn: "Свидетель Центр" },
