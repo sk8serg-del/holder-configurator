@@ -466,7 +466,7 @@
     var totalCap = perRegion.reduce(function (s, p) { return s + p.length; }, 0);
 
     var angles;
-    if (totalCap <= spec.qty) {
+    if (spec.qty == null || totalCap <= spec.qty) {
       // мест не больше, чем нужно (обычный случай — qty превышает то, что
       // вообще может влезть) — используем все точки максимальной ёмкости
       angles = [].concat.apply([], perRegion);
@@ -501,14 +501,30 @@
     return acc;
   }
 
+  // «Максимум» для круга с anchor «от края»/«по диаметру»: одно кольцо по
+  // анкеру не всегда выгоднее гекс-сетки по всей площади (и наоборот — для
+  // немногих крупных деталей у края точный ряд по кольцу нередко вмещает
+  // больше, чем сетка с её фиксированным шагом, см. фикс минШага выше). Раз
+  // цель — максимум, а не конкретное количество, считаем оба варианта и
+  // берём тот, где деталей больше (при равенстве — кольцо, раз anchor задан
+  // явно). Каждый вариант считаем со СВОИМ запасом на паз: у сетки при пазе
+  // запас 0 (угол паза известен заранее, зазор — по точному контуру), у
+  // кольца — изотропный (угол паза на кольце радиальный, разный у каждой
+  // позиции, см. circleRingLayout).
+  function circleLayoutAuto(spec, ctx) {
+    var ringList = circleRingLayout(Object.assign({}, spec, { _pad: slotPad(spec) }), ctx);
+    var hexList = gridLayout(Object.assign({}, spec, { _pad: spec.slotOn ? 0 : slotPad(spec) }), ctx);
+    return hexList.length > ringList.length ? hexList : ringList;
+  }
+
   function layoutForSpec(spec, ctx) {
     if (spec.type !== "circle" &&
         (spec.orientation === "radial-w" || spec.orientation === "radial-h")) {
       return radialLayout(spec, ctx);
     }
-    if (spec.type === "circle" && spec.qty != null && spec.anchor &&
+    if (spec.type === "circle" && spec.anchor &&
         (spec.anchor.mode === "edge" || spec.anchor.mode === "diameter")) {
-      return circleRingLayout(spec, ctx);
+      return spec.qty == null ? circleLayoutAuto(spec, ctx) : circleRingLayout(spec, ctx);
     }
     return gridLayout(spec, ctx);
   }

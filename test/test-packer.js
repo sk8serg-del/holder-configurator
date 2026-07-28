@@ -359,6 +359,18 @@ check("16: макс. угловой разрыв << прежних ~128°/55° (
   (angleSpread(res16) * 180 / Math.PI).toFixed(1) + "°");
 verifyLayout("16", opts16, res16);
 
+// --- 17. «Максимум» (qty: null) для круга с anchor «от края»/«по диаметру»:
+// сравниваем гекс-сетку и кольцо по анкеру, берём где деталей больше.
+// Сценарий теста 15 (крупная деталь Ø90) — там кольцо (5) объективно
+// вместительнее сетки (4), раньше «максимум» всегда шёл через сетку и
+// терял деталь ---
+var opts17 = JSON.parse(JSON.stringify(opts15));
+opts17.parts[0].qty = null;
+var res17 = HC.pack(opts17);
+check("17: «максимум» у края выбирает кольцо, а не сетку (5, не 4)",
+  res17.placed.length === 5, String(res17.placed.length));
+verifyLayout("17", opts17, res17);
+
 console.log("\nВремя: " + (Date.now() - t0) + " мс");
 if (failures) {
   console.log("ПРОВАЛЕНО ПРОВЕРОК: " + failures);
