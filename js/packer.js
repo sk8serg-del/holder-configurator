@@ -439,17 +439,19 @@
     // краёв) — из-за этого узкий карман между двумя близко стоящими
     // контрольными отверстиями получал деталь строго по центру с огромным
     // избыточным запасом (десятки мм при требуемых 6), а не тем же шагом,
-    // что и остальное кольцо: изолированный расчёт не «видел», что этот запас
-    // можно использовать, чтобы придвинуть деталь ближе к соседям по всему
-    // кольцу. Общая длина свободных дуг определяет и итоговую ёмкость
-    // (floor(totalFree/minStep)), и сам шаг (totalFree/n).
-    function distribute(arcs, minStep, targetN) {
+    // что и остальное кольцо. Общая длина свободных дуг определяет и
+    // итоговую ёмкость (floor(totalFree/minStep)), и сам шаг (totalFree/n).
+    // phase — где именно на ленте стоит первая точка (0..pitch): при ДВУХ
+    // независимых контрольных отверстиях один фиксированный старт («с
+    // полушага от первой дуги») не обязательно прижимает точки к обоим сразу
+    // — снаружи перебираются несколько фаз, отсюда phase как параметр.
+    function distribute(arcs, minStep, targetN, phase) {
       var total = arcs.reduce(function (s, a) { return s + (a.a1 - a.a0); }, 0);
       if (total <= EPS) return [];
       var n = Math.min(targetN, Math.max(0, Math.floor(total / minStep)));
       if (n <= 0) return [];
       var pitch = total / n;
-      var mark = pitch / 2; // старт с полушага — как и раньше, не впритык к границе
+      var mark = ((phase % pitch) + pitch) % pitch;
       var cum = 0, angs = [];
       for (var ai = 0; ai < arcs.length && angs.length < n; ai++) {
         var a = arcs[ai], w = a.a1 - a.a0;
@@ -469,18 +471,35 @@
 
     var arcs = freeArcs(r);
     var minStep = tangStep / Math.max(r, EPS);
-    var angles = distribute(arcs, minStep, spec.qty);
+    var total = arcs.reduce(function (s, a) { return s + (a.a1 - a.a0); }, 0);
+    var n = Math.min(spec.qty, Math.max(0, Math.floor(total / minStep)));
+    var pitch = n > 0 ? total / n : minStep;
 
-    var acc = [];
-    angles.forEach(function (th) {
-      var pl = makePl(r * Math.cos(th), r * Math.sin(th));
-      if (!isValid(pl, ctx)) return; // сэмплирование дуг — приближение; здесь точная проверка
-      for (var m = 0; m < acc.length; m++) {
-        if (geom.placementDist(pl, acc[m]) < ctx.cl.pp + pad + (acc[m].pad || 0) - EPS) return;
+    function build(phase) {
+      var angles = distribute(arcs, minStep, spec.qty, phase);
+      var acc = [];
+      angles.forEach(function (th) {
+        var pl = makePl(r * Math.cos(th), r * Math.sin(th));
+        if (!isValid(pl, ctx)) return; // сэмплирование дуг — приближение; здесь точная проверка
+        for (var m = 0; m < acc.length; m++) {
+          if (geom.placementDist(pl, acc[m]) < ctx.cl.pp + pad + (acc[m].pad || 0) - EPS) return;
+        }
+        acc.push(pl);
+      });
+      return acc;
+    }
+
+    var PHASE_STEPS = 24;
+    var best = build(pitch / 2);
+    var bestSpread = angleSpread(best);
+    for (var ps = 0; ps < PHASE_STEPS; ps++) {
+      var acc = build((ps / PHASE_STEPS) * pitch);
+      var spread = angleSpread(acc);
+      if (acc.length > best.length || (acc.length === best.length && spread < bestSpread - EPS)) {
+        best = acc; bestSpread = spread;
       }
-      acc.push(pl);
-    });
-    return acc;
+    }
+    return best;
   }
 
   function layoutForSpec(spec, ctx) {
