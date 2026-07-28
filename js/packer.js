@@ -306,28 +306,50 @@
     return acc;
   }
 
-  // Выбор лучшей из нескольких попыток (разных фаз/смещений колец).
+  // Наибольший угловой разрыв между соседними деталями (по углу их центров
+  // от центра диска), радианы. Метрика равномерности распределения по кольцу:
+  // маленький разрыв — детали идут равномерно по всей окружности; большой —
+  // скучены с одной стороны (напр., там, где не мешают контрольные отверстия).
+  function angleSpread(acc) {
+    if (acc.length < 2) return 0;
+    var angs = acc.map(function (p) { return Math.atan2(p.cy, p.cx); }).sort(function (a, b) { return a - b; });
+    var maxGap = 0;
+    for (var i = 0; i < angs.length; i++) {
+      var next = i + 1 < angs.length ? angs[i + 1] : angs[0] + 2 * Math.PI;
+      maxGap = Math.max(maxGap, next - angs[i]);
+    }
+    return maxGap;
+  }
+
+  // Выбор лучшей из нескольких попыток (разных фаз/смещений/поворотов колец).
   // В приоритете число реально используемых деталей (min(qty, acc.length));
   // при равенстве — насколько хорошо ИМЕННО ИСПОЛЬЗУЕМЫЕ детали соответствуют
   // anchor (средняя «стоимость» их радиуса: без этого критерия, например,
   // «по диаметру» может быть выбрано смещение с кольцом дальше от цели —
   // просто потому что оно даёт чуть больше запасных колец за пределами
-  // фактически нужного количества); при полном равенстве — общая ёмкость
-  // попытки про запас.
+  // фактически нужного количества); при равенстве и этого — равномерность
+  // углового распределения (меньше максимальный разрыв между соседями:
+  // иначе при неполном заполнении, когда часть узлов решётки выбивают
+  // контрольные отверстия, оставшиеся детали могут скучиться на одной
+  // стороне вместо равномерного разброса по свободной дуге); при полном
+  // равенстве — общая ёмкость попытки про запас.
   function pickBestAttempt(attempts, spec) {
     var costOf = anchorRadiusCost(spec.anchor);
     var best = null;
     for (var i = 0; i < attempts.length; i++) {
       var acc = attempts[i];
       var take = spec.qty == null ? acc.length : Math.min(spec.qty, acc.length);
+      var used = take < acc.length ? acc.slice(0, take) : acc;
       var avg = 0;
       for (var k = 0; k < take; k++) avg += costOf(Math.hypot(acc[k].cx, acc[k].cy));
       if (take) avg /= take;
+      var spread = angleSpread(used);
       if (best === null ||
           take > best.take ||
           (take === best.take && avg < best.avg - EPS) ||
-          (take === best.take && Math.abs(avg - best.avg) <= EPS && acc.length > best.acc.length)) {
-        best = { acc: acc, take: take, avg: avg };
+          (take === best.take && Math.abs(avg - best.avg) <= EPS && spread < best.spread - EPS) ||
+          (take === best.take && Math.abs(avg - best.avg) <= EPS && Math.abs(spread - best.spread) <= EPS && acc.length > best.acc.length)) {
+        best = { acc: acc, take: take, avg: avg, spread: spread };
       }
     }
     return best ? best.acc : [];
@@ -357,45 +379,104 @@
   }
 
   // Кольцевая раскладка кругов для расположения «от края» / «по диаметру».
-  // Гекс-сетка не имеет кругового распределения по углу: подбор её узлов,
-  // ближайших к краю или к заданному диаметру, собирает точки, ближайшие
-  // друг к другу в решётке, — они образуют клин в одном секторе, а не кольцо
-  // по всей окружности.
+  // Гекс-сетка не имеет кругового распределения по углу. Вместо жёсткой
+  // угловой решётки (её узлы может выбить контрольное отверстие целиком —
+  // соседние точки решётки скучиваются на одной стороне, оставляя большой
+  // разрыв там, где решётку «съело») ищем на целевом радиусе реально
+  // свободные дуги (сэмплированием по краю диска и контрольным отверстиям)
+  // и распределяем детали РАВНОМЕРНО именно по ним.
   function circleRingLayout(spec, ctx) {
     var pad = spec._pad || 0;
-    var step = spec.d + ctx.cl.pp + 2 * pad;
+    var tangStep = spec.d + ctx.cl.pp + 2 * pad; // мин. хорда между соседями на кольце
     var rMax = ctx.R - ctx.cl.pe - spec.d / 2 - pad;
     if (rMax < -EPS) return [];
 
-    function makePl(cand) {
+    function makePl(cx, cy) {
       return {
-        type: "circle", cx: cand.cx, cy: cand.cy, d: spec.d, partIndex: spec.partIndex, pad: pad,
+        type: "circle", cx: cx, cy: cy, d: spec.d, partIndex: spec.partIndex, pad: pad,
         // на кольцах паз направлен радиально (от центра диска)
         seatD: spec.seatD, apertureCA: spec.apertureCA, slotOn: spec.slotOn,
-        slotAngle: (Math.atan2(cand.cy, cand.cx) * 180) / Math.PI
+        slotAngle: (Math.atan2(cy, cx) * 180) / Math.PI
       };
     }
 
-    var attempts = [];
-    var mode = (spec.anchor && spec.anchor.mode) || "center";
-    if (mode === "edge") {
-      // «от края»: цель однозначна — сесть РОВНО на предел минимального
-      // зазора (rMax), а не там, где случайно окажется шаг фазы. Подбираем
-      // rFrom так, чтобы rMax сам был узлом решётки колец (rMax − rFrom —
-      // целое число шагов) — самое внешнее кольцо ложится точно на rMax.
-      var lo = Math.max(0, spec.d / 2 + pad);
-      var n = Math.floor((rMax - lo) / step + 1e-9);
-      var rFrom = rMax - Math.max(0, n) * step;
-      var rings = ringCandidates(rFrom, rMax, step, step, 0);
-      attempts.push(fillRings(rings, spec, ctx, makePl));
-    } else {
-      for (var o = 0; o < RADIAL_STEPS; o++) {
-        var phase = (o / RADIAL_STEPS) * step;
-        var rings2 = ringCandidates(phase, rMax, step, step, 0);
-        attempts.push(fillRings(rings2, spec, ctx, makePl));
+    // Свободные (по краю + контрольным отверстиям, БЕЗ учёта других деталей
+    // этого же кольца — та проверка отдельно, при расстановке) угловые дуги
+    // на кольце радиуса r; сэмплирование, т.к. форма запретных зон произвольна.
+    function freeArcs(r) {
+      var N = 720; // шаг 0.5°
+      var free = new Array(N);
+      for (var i = 0; i < N; i++) {
+        var th = (i / N) * 2 * Math.PI;
+        var pl = makePl(r * Math.cos(th), r * Math.sin(th));
+        var ok = geom.edgeDist(pl, ctx.R) >= ctx.cl.pe + pad - EPS;
+        if (ok) {
+          for (var k = 0; k < ctx.keepouts.length; k++) {
+            if (geom.placementDist(pl, ctx.keepouts[k]) < ctx.cl.pc + pad + (ctx.keepouts[k].pad || 0) - EPS) { ok = false; break; }
+          }
+        }
+        free[i] = ok;
       }
+      if (free.every(function (v) { return v; })) return [{ a0: 0, a1: 2 * Math.PI }];
+      if (free.every(function (v) { return !v; })) return [];
+      var i0 = 0; // ищем «восход» (был занят — стал свободен), чтобы не резать дугу через 0°
+      while (!(!free[(i0 - 1 + N) % N] && free[i0])) i0++;
+      var arcs = [], i = i0, seen = 0;
+      while (seen < N) {
+        if (free[i % N]) {
+          var start = i;
+          while (seen < N && free[i % N]) { i++; seen++; }
+          arcs.push({ a0: (start / N) * 2 * Math.PI, a1: (i / N) * 2 * Math.PI });
+        } else { i++; seen++; }
+      }
+      return arcs;
     }
-    return pickBestAttempt(attempts, spec);
+
+    // До targetN углов, распределённых по дугам пропорционально их ёмкости
+    // (largest remainder method), внутри каждой дуги — равномерно с равным
+    // отступом от обоих краёв (не впритык к запретной зоне).
+    function distribute(arcs, minStep, targetN) {
+      // k точек делят дугу на k равных отрезков с центром в каждом (см. ниже) —
+      // расстояние между соседями получается w/k, поэтому ёмкость floor(w/minStep),
+      // БЕЗ +1 (тот +1 был бы верен для другой схемы — точек по краям дуги).
+      var caps = arcs.map(function (a) { return Math.max(0, Math.floor((a.a1 - a.a0) / minStep)); });
+      var totalCap = caps.reduce(function (s, c) { return s + c; }, 0);
+      var n = Math.min(targetN, totalCap);
+      if (n <= 0) return [];
+      var raw = caps.map(function (c) { return (c / totalCap) * n; });
+      var alloc = raw.map(Math.floor);
+      var used = alloc.reduce(function (s, x) { return s + x; }, 0);
+      var order = raw.map(function (r, i) { return { i: i, frac: r - alloc[i] }; }).sort(function (a, b) { return b.frac - a.frac; });
+      for (var idx = 0; used < n && idx < order.length; idx++, used++) alloc[order[idx].i]++;
+      var angs = [];
+      arcs.forEach(function (a, ai) {
+        var k = Math.min(alloc[ai], caps[ai]);
+        if (k <= 0) return;
+        var w = a.a1 - a.a0;
+        for (var m = 0; m < k; m++) angs.push(a.a0 + (w * (m + 0.5)) / k);
+      });
+      return angs;
+    }
+
+    var mode = (spec.anchor && spec.anchor.mode) || "center";
+    var r = mode === "edge"
+      ? rMax // «от края» — однозначно предел минимального зазора
+      : Math.min(Math.max(((spec.anchor && spec.anchor.d) || 0) / 2, spec.d / 2 + pad), rMax); // «по диаметру»
+
+    var arcs = freeArcs(r);
+    var minStep = tangStep / Math.max(r, EPS);
+    var angles = distribute(arcs, minStep, spec.qty);
+
+    var acc = [];
+    angles.forEach(function (th) {
+      var pl = makePl(r * Math.cos(th), r * Math.sin(th));
+      if (!isValid(pl, ctx)) return; // сэмплирование дуг — приближение; здесь точная проверка
+      for (var m = 0; m < acc.length; m++) {
+        if (geom.placementDist(pl, acc[m]) < ctx.cl.pp + pad + (acc[m].pad || 0) - EPS) return;
+      }
+      acc.push(pl);
+    });
+    return acc;
   }
 
   function layoutForSpec(spec, ctx) {

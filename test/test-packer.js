@@ -18,7 +18,9 @@ function verifyLayout(name, opts, res) {
   var R = opts.discDiameter / 2;
   var cl = opts.clearances;
   var keepouts = (opts.controlHoles || []).map(function (h) {
-    return { type: "circle", cx: h.x, cy: h.y, d: h.d };
+    // как в самом упаковщике: занятая зона — по Ø посадки, если задан, иначе по d
+    // (у некоторых КО, напр. Reference, задан только seatD, без d)
+    return { type: "circle", cx: h.x, cy: h.y, d: h.seatD != null ? h.seatD : h.d };
   });
   var placed = res.placed;
   var minPP = Infinity, minPE = Infinity, minPC = Infinity;
@@ -302,6 +304,33 @@ check("14: «по диаметру» — радиус близок к цели 7
   return Math.abs(Math.hypot(p.cx, p.cy) - 75) < 5;
 }));
 verifyLayout("14-diameter", base12, res14dia);
+
+// --- 15. Крупная деталь «от края» + контрольные отверстия, выбивающие часть
+// свободной дуги (баг-репорт: детали скучивались с одной стороны вместо
+// равномерного распределения по всей ДОСТУПНОЙ дуге) ---
+var opts15 = {
+  discDiameter: 298,
+  clearances: { pp: 6, pe: 3, pc: 6 },
+  controlHoles: [
+    { x: 0, y: 0, d: 25.4, seatD: 25.6, apertureCA: 22.6, slotOn: true },
+    { x: -13.527, y: 110.173, d: 25.4, seatD: 25.6, apertureCA: 22.6, slotOn: true },
+    { x: -102.176, y: 43.371, seatD: 30.1, depth: 3, apertureCA: 24.2, slotOn: false }
+  ],
+  parts: [{ type: "circle", d: 90, seatD: 90.3, apertureCA: 88.8, qty: 10, anchor: { mode: "edge" } }]
+};
+var res15 = HC.pack(opts15);
+check("15: крупная деталь «от края» — не потеряли деталей (4 из 10, не 3)",
+  res15.placed.length === 4, String(res15.placed.length));
+var angs15 = res15.placed.map(function (p) { return Math.atan2(p.cy, p.cx); }).sort(function (a, b) { return a - b; });
+var gaps15 = angs15.map(function (a, i) {
+  var next = i + 1 < angs15.length ? angs15[i + 1] : angs15[0] + 2 * Math.PI;
+  return (next - a) * 180 / Math.PI;
+});
+var smallGaps15 = gaps15.filter(function (g) { return g < 170; }); // все «рабочие» разрывы (не тот, что упирается в КО)
+check("15: детали внутри свободной дуги равномерны (все малые разрывы ≈ друг другу, не скучены)",
+  smallGaps15.length === 3 && smallGaps15.every(function (g) { return Math.abs(g - smallGaps15[0]) < 1; }),
+  JSON.stringify(gaps15.map(function (g) { return g.toFixed(1); })));
+verifyLayout("15", opts15, res15);
 
 console.log("\nВремя: " + (Date.now() - t0) + " мс");
 if (failures) {
