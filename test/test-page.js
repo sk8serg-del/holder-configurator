@@ -82,6 +82,22 @@ check("название = «d25,4 (D25,6/CA24,1) N<кол-во>» для ста�
   /^d25,4 \(D25,6\/CA24,1\) N\d+$/.test($("holderName").value), $("holderName").value);
 check("название не длиннее 42 символов", $("holderName").value.length <= 42, String($("holderName").value.length));
 
+// --- две детали: обе должны попасть в название, даже если полная форма
+// (с D/CA) не влезает в 42 символа — тогда сокращается детализация, а не
+// выбрасывается деталь целиком (регрессия: раньше вторая деталь пропадала) ---
+$("addPart").click();
+const rows2 = d.querySelectorAll("#partsList .part-row");
+const dInp2 = rows2[1].querySelector(".p-d");
+dInp2.value = "15";
+dInp2.dispatchEvent(new w.Event("input"));
+$("packBtn").click();
+check("название содержит обе детали (не только первую) при переполнении лимита",
+  $("holderName").value.indexOf("d25,4") !== -1 && $("holderName").value.indexOf("d15") !== -1 &&
+  $("holderName").value.length <= 42,
+  $("holderName").value);
+// возвращаем к одной детали для дальнейших тестов
+rows2[1].querySelector(".p-del").click();
+
 // --- предпросмотр детали (для круга — крупная схема d/D/CA, авторасчёт) ---
 check("стандартная деталь d=25.4, авто D/CA (D25,6/CA24,1 = D−1.5)",
   d.querySelector("#partsList .part-preview.hole-diagram svg") !== null &&

@@ -557,14 +557,21 @@
     return (Math.round(v * 100) / 100).toString().replace(".", ",");
   }
 
-  function partDescriptor(spec, placedCount) {
+  // short=true — компактная форма без D/CA (или без фаски у восьмиугольника):
+  // используется, когда полное описание всех деталей не влезает в лимит, но
+  // хочется сохранить упоминание каждой детали, а не жертвовать какими-то из них.
+  function partDescriptor(spec, placedCount, short) {
     var base;
     if (spec.type === "circle") {
-      var dims = [];
-      if (spec.seatD > 0) dims.push("D" + fmtRuShort(spec.seatD));
-      if (spec.apertureCA > 0) dims.push("CA" + fmtRuShort(spec.apertureCA));
-      base = "d" + fmtRuShort(spec.d) + (dims.length ? " (" + dims.join("/") + ")" : "");
-    } else if (spec.type === "oct") {
+      if (short) {
+        base = "d" + fmtRuShort(spec.d);
+      } else {
+        var dims = [];
+        if (spec.seatD > 0) dims.push("D" + fmtRuShort(spec.seatD));
+        if (spec.apertureCA > 0) dims.push("CA" + fmtRuShort(spec.apertureCA));
+        base = "d" + fmtRuShort(spec.d) + (dims.length ? " (" + dims.join("/") + ")" : "");
+      }
+    } else if (spec.type === "oct" && !short) {
       base = fmtRuShort(spec.w) + "×" + fmtRuShort(spec.h) + "×" + fmtRuShort(spec.chamfer || 0);
     } else {
       base = fmtRuShort(spec.w) + "×" + fmtRuShort(spec.h);
@@ -573,13 +580,23 @@
   }
 
   function autoHolderName(opts, perPart) {
-    var descs = [];
+    var items = [];
     perPart.forEach(function (r, i) {
-      if (r.placed > 0) descs.push(partDescriptor(opts.parts[i], r.placed));
+      if (r.placed > 0) items.push({ spec: opts.parts[i], placed: r.placed });
     });
-    var name = descs.join("/");
+    if (!items.length) return "";
+
+    function build(short) {
+      return items.map(function (it) { return partDescriptor(it.spec, it.placed, short); }).join("/");
+    }
+
+    var name = build(false);
+    // не влезает целиком — сначала убираем необязательную детализацию (D/CA,
+    // фаску), но сохраняем упоминание КАЖДОЙ детали, а не жертвуем ими
+    if (name.length > MAX_HOLDER_NAME) name = build(true);
     if (name.length > MAX_HOLDER_NAME) {
-      // не влезает целиком — сначала убираем описания деталей с конца
+      // даже в компактной форме не влезает — только теперь убираем детали с конца
+      var descs = items.map(function (it) { return partDescriptor(it.spec, it.placed, true); });
       while (descs.length > 1 && descs.join("/").length > MAX_HOLDER_NAME) descs.pop();
       name = descs.join("/");
       if (name.length > MAX_HOLDER_NAME) name = name.slice(0, MAX_HOLDER_NAME); // и одно не влезает целиком
