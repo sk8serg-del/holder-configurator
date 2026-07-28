@@ -359,17 +359,28 @@ check("16: макс. угловой разрыв << прежних ~128°/55° (
   (angleSpread(res16) * 180 / Math.PI).toFixed(1) + "°");
 verifyLayout("16", opts16, res16);
 
-// --- 17. «Максимум» (qty: null) для круга с anchor «от края»/«по диаметру»:
-// сравниваем гекс-сетку и кольцо по анкеру, берём где деталей больше.
+// --- 17. «Максимум» (qty: null) для круга: сравниваем гекс-сетку и кольцо
+// («от края», если anchor не «по диаметру»), берём где деталей больше.
 // Сценарий теста 15 (крупная деталь Ø90) — там кольцо (5) объективно
 // вместительнее сетки (4), раньше «максимум» всегда шёл через сетку и
 // терял деталь ---
 var opts17 = JSON.parse(JSON.stringify(opts15));
 opts17.parts[0].qty = null;
 var res17 = HC.pack(opts17);
-check("17: «максимум» у края выбирает кольцо, а не сетку (5, не 4)",
+check("17: «максимум» с anchor «от края» выбирает кольцо, а не сетку (5, не 4)",
   res17.placed.length === 5, String(res17.placed.length));
 verifyLayout("17", opts17, res17);
+
+// --- 17b. То же самое, но anchor по умолчанию («от центра») — сравнение
+// должно сработать НЕЗАВИСИМО от выбранного anchor, иначе пользователю
+// приходится вручную переключать «от края», чтобы получить те же 5 ---
+var opts17b = JSON.parse(JSON.stringify(opts15));
+opts17b.parts[0].qty = null;
+opts17b.parts[0].anchor = { mode: "center" };
+var res17b = HC.pack(opts17b);
+check("17b: «максимум» с anchor «от центра» (по умолчанию) тоже даёт 5, не 4",
+  res17b.placed.length === 5, String(res17b.placed.length));
+verifyLayout("17b", opts17b, res17b);
 
 console.log("\nВремя: " + (Date.now() - t0) + " мс");
 if (failures) {

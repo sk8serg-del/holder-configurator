@@ -501,19 +501,25 @@
     return acc;
   }
 
-  // «Максимум» для круга с anchor «от края»/«по диаметру»: одно кольцо по
-  // анкеру не всегда выгоднее гекс-сетки по всей площади (и наоборот — для
-  // немногих крупных деталей у края точный ряд по кольцу нередко вмещает
-  // больше, чем сетка с её фиксированным шагом, см. фикс минШага выше). Раз
-  // цель — максимум, а не конкретное количество, считаем оба варианта и
-  // берём тот, где деталей больше (при равенстве — кольцо, раз anchor задан
-  // явно). Каждый вариант считаем со СВОИМ запасом на паз: у сетки при пазе
-  // запас 0 (угол паза известен заранее, зазор — по точному контуру), у
-  // кольца — изотропный (угол паза на кольце радиальный, разный у каждой
-  // позиции, см. circleRingLayout).
+  // «Максимум» для круга: одно кольцо не всегда выгоднее гекс-сетки по всей
+  // площади (и наоборот — для немногих крупных деталей у края точный ряд по
+  // кольцу нередко вмещает больше, чем сетка с её фиксированным шагом, см.
+  // фикс минШага выше). Раз цель — максимум, а не конкретное количество,
+  // считаем ОБА варианта и берём тот, где деталей больше — НЕЗАВИСИМО от
+  // выбранного anchor (по умолчанию anchor «от центра», но кольцевой
+  // конкурент всё равно должен быть посчитан, иначе сравнение никогда не
+  // сработает без ручного переключения на «от края»). Если anchor — «по
+  // диаметру», кольцо считаем на этом диаметре, иначе (center/edge) — «от
+  // края» (rMax), это и есть «по внешнему контуру». Каждый вариант — со
+  // СВОИМ запасом на паз: у сетки при пазе запас 0 (угол паза известен
+  // заранее, зазор — по точному контуру), у кольца — изотропный (угол паза
+  // на кольце радиальный, разный у каждой позиции, см. circleRingLayout).
   function circleLayoutAuto(spec, ctx) {
-    var ringList = circleRingLayout(Object.assign({}, spec, { _pad: slotPad(spec) }), ctx);
-    var hexList = gridLayout(Object.assign({}, spec, { _pad: spec.slotOn ? 0 : slotPad(spec) }), ctx);
+    var ringAnchor = spec.anchor && spec.anchor.mode === "diameter" ? spec.anchor : { mode: "edge" };
+    var ringSpec = Object.assign({}, spec, { anchor: ringAnchor, _pad: slotPad(spec) });
+    var ringList = circleRingLayout(ringSpec, ctx);
+    var hexSpec = Object.assign({}, spec, { _pad: spec.slotOn ? 0 : slotPad(spec) });
+    var hexList = gridLayout(hexSpec, ctx);
     return hexList.length > ringList.length ? hexList : ringList;
   }
 
@@ -522,9 +528,12 @@
         (spec.orientation === "radial-w" || spec.orientation === "radial-h")) {
       return radialLayout(spec, ctx);
     }
+    if (spec.type === "circle" && spec.qty == null) {
+      return circleLayoutAuto(spec, ctx);
+    }
     if (spec.type === "circle" && spec.anchor &&
         (spec.anchor.mode === "edge" || spec.anchor.mode === "diameter")) {
-      return spec.qty == null ? circleLayoutAuto(spec, ctx) : circleRingLayout(spec, ctx);
+      return circleRingLayout(spec, ctx);
     }
     return gridLayout(spec, ctx);
   }
