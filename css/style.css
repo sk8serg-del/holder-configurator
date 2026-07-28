@@ -129,6 +129,12 @@ input, select {
   color: var(--text);
 }
 
+input[readonly] {
+  background: var(--row-bg);
+  color: var(--muted);
+  cursor: default;
+}
+
 input[type="checkbox"], input[type="radio"] {
   width: auto;
   margin: 0 5px 0 0;

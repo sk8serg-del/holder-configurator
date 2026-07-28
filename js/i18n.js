@@ -39,6 +39,8 @@
       "Export file from the <code>DumpHoles</code> rule. The substrate holder is added to the list and saved in this browser.",
     "Файл выгрузки (.csv)": "Export file (.csv)",
     "Название": "Name",
+    "Название формируется автоматически по составу деталей (после раскладки).":
+      "The name is generated automatically from the part composition (after layout).",
     "напр. Диск Ø320": "e.g. Disc Ø320",
     "Ø полезной зоны, мм": "Usable-zone Ø, mm",
     "Толщина, мм": "Thickness, mm",

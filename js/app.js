@@ -547,6 +547,46 @@
     return HC.t("с фаской {0}×{1}×{2}", spec.w, spec.h, spec.chamfer);
   }
 
+  // ---------- авто-название подложкодержателя (для гравировки) ----------
+  // Формат по каждому типу деталей: "d{d} (D{seatD}/CA{ca}) N{кол-во}" для
+  // круга, "{w}×{h}(×{ch}) N{кол-во}" для прямоугольника/овала/фаски; при
+  // нескольких типах деталей — через "/". Максимум 42 символа (гравировка).
+  var MAX_HOLDER_NAME = 42;
+
+  function fmtRuShort(v) {
+    return (Math.round(v * 100) / 100).toString().replace(".", ",");
+  }
+
+  function partDescriptor(spec, placedCount) {
+    var base;
+    if (spec.type === "circle") {
+      var dims = [];
+      if (spec.seatD > 0) dims.push("D" + fmtRuShort(spec.seatD));
+      if (spec.apertureCA > 0) dims.push("CA" + fmtRuShort(spec.apertureCA));
+      base = "d" + fmtRuShort(spec.d) + (dims.length ? " (" + dims.join("/") + ")" : "");
+    } else if (spec.type === "oct") {
+      base = fmtRuShort(spec.w) + "×" + fmtRuShort(spec.h) + "×" + fmtRuShort(spec.chamfer || 0);
+    } else {
+      base = fmtRuShort(spec.w) + "×" + fmtRuShort(spec.h);
+    }
+    return base + " N" + placedCount;
+  }
+
+  function autoHolderName(opts, perPart) {
+    var descs = [];
+    perPart.forEach(function (r, i) {
+      if (r.placed > 0) descs.push(partDescriptor(opts.parts[i], r.placed));
+    });
+    var name = descs.join("/");
+    if (name.length > MAX_HOLDER_NAME) {
+      // не влезает целиком — сначала убираем описания деталей с конца
+      while (descs.length > 1 && descs.join("/").length > MAX_HOLDER_NAME) descs.pop();
+      name = descs.join("/");
+      if (name.length > MAX_HOLDER_NAME) name = name.slice(0, MAX_HOLDER_NAME); // и одно не влезает целиком
+    }
+    return name;
+  }
+
   function validate() {
     var errs = [];
     var disc = currentDisc();
@@ -667,6 +707,7 @@
     });
     lines.push(HC.t("Всего отверстий под детали: {0}", res.placed.length));
     $("summary").textContent = lines.join("\n");
+    $("holderName").value = autoHolderName(opts, res.perPart);
 
     refreshView();
     setActions(res.placed.length > 0);

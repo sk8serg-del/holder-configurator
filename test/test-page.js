@@ -76,6 +76,12 @@ check("автораскладка при загрузке: сводка и SVG �
   $("summary").textContent.indexOf("размещено") !== -1 && $("svgHost").innerHTML.indexOf("<svg") !== -1,
   $("summary").textContent);
 
+// --- название подложкодержателя генерируется автоматически (d/D/CA + N-кол-во) ---
+check("поле «Название» readonly", $("holderName").hasAttribute("readonly"));
+check("название = «d25,4 (D25,6/CA24,1) N<кол-во>» для стандартной детали",
+  /^d25,4 \(D25,6\/CA24,1\) N\d+$/.test($("holderName").value), $("holderName").value);
+check("название не длиннее 42 символов", $("holderName").value.length <= 42, String($("holderName").value.length));
+
 // --- предпросмотр детали (для круга — крупная схема d/D/CA, авторасчёт) ---
 check("стандартная деталь d=25.4, авто D/CA (D25,6/CA24,1 = D−1.5)",
   d.querySelector("#partsList .part-preview.hole-diagram svg") !== null &&
@@ -240,6 +246,8 @@ check("для восьмиугольника есть селект ориент�
 check("предпросмотр восьмиугольника — полигон", d.querySelector("#partsList .part-preview polygon") !== null);
 $("packBtn").click();
 check("раскладка восьмиугольников прошла", $("summary").textContent.indexOf("размещено") !== -1, $("summary").textContent);
+check("название для восьмиугольника — «20×10×2 N<кол-во>»",
+  /^20×10×2 N\d+$/.test($("holderName").value), $("holderName").value);
 
 // --- радиальная ориентация + количество с расположением от края ---
 const orientSel = d.querySelector("#partsList .p-orient");
