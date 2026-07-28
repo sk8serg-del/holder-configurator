@@ -86,12 +86,12 @@ Sub Main()
 
 	Dim tg As TransientGeometry = ThisApplication.TransientGeometry
 	Dim mm As Double = 0.1 ' мм -> см
-	Dim T As Double = (rb.MaxPoint.Z - rb.MinPoint.Z)   ' толщина диска, см
-	Dim defDepth As Double = Math.Max(0.05, T - 0.15)   ' запасная глубина ~ T-1.5мм
+	Dim thk As Double = (rb.MaxPoint.Z - rb.MinPoint.Z) ' толщина диска, см
+	Dim defDepth As Double = Math.Max(0.05, thk - 0.15) ' запасная глубина ~ толщина-1.5мм
 
 	' --- плоскость реза = верхняя грань диска (Z макс), нормаль +Z, режем в -Z ---
 	Dim topZ As Double = rb.MaxPoint.Z
-	Dim cutPlane As Object = compDef.WorkPlanes.Item(3) ' XY
+	Dim cutPlane As WorkPlane = compDef.WorkPlanes.Item(3) ' XY
 	If Math.Abs(topZ) > 0.0001 Then
 		Dim wp As WorkPlane = compDef.WorkPlanes.AddByPlaneAndOffset(compDef.WorkPlanes.Item(3), topZ)
 		wp.Visible = False
@@ -128,7 +128,7 @@ Sub Main()
 			Dim slotW As Double = ParseNum(f(16), inv) * mm
 			Dim depth As Double = ParseNum(f(17), inv) * mm
 			If depth <= 0 Then depth = defDepth
-			If depth > T Then depth = T
+			If depth > thk Then depth = thk
 			Dim dkey As Double = Math.Round(depth, 4)
 
 			' --- посадка (глухой вырез на глубину) ---
@@ -194,14 +194,14 @@ Function ParseNum(s As String, inv As System.Globalization.CultureInfo) As Doubl
 	Return 0
 End Function
 
-Function NewSketch(compDef As PartComponentDefinition, plane As Object, prefix As String, ByRef idx As Integer) As PlanarSketch
+Function NewSketch(compDef As PartComponentDefinition, plane As WorkPlane, prefix As String, ByRef idx As Integer) As PlanarSketch
 	Dim sk As PlanarSketch = compDef.Sketches.Add(plane)
 	sk.Name = prefix & "_" & idx.ToString()
 	idx += 1
 	Return sk
 End Function
 
-Function GetSketch(compDef As PartComponentDefinition, plane As Object, dict As Dictionary(Of Double, PlanarSketch), _
+Function GetSketch(compDef As PartComponentDefinition, plane As WorkPlane, dict As Dictionary(Of Double, PlanarSketch), _
 		key As Double, prefix As String, ByRef idx As Integer) As PlanarSketch
 	If Not dict.ContainsKey(key) Then dict.Add(key, NewSketch(compDef, plane, prefix, idx))
 	Return dict(key)
