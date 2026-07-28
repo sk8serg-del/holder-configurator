@@ -319,16 +319,16 @@ var opts15 = {
   parts: [{ type: "circle", d: 90, seatD: 90.3, apertureCA: 88.8, qty: 10, anchor: { mode: "edge" } }]
 };
 var res15 = HC.pack(opts15);
-check("15: крупная деталь «от края» — не потеряли деталей (4 из 10, не 3)",
-  res15.placed.length === 4, String(res15.placed.length));
+check("15: крупная деталь «от края» — не потеряли деталей (5 из 10, не 3)",
+  res15.placed.length === 5, String(res15.placed.length));
 var angs15 = res15.placed.map(function (p) { return Math.atan2(p.cy, p.cx); }).sort(function (a, b) { return a - b; });
 var gaps15 = angs15.map(function (a, i) {
   var next = i + 1 < angs15.length ? angs15[i + 1] : angs15[0] + 2 * Math.PI;
   return (next - a) * 180 / Math.PI;
 });
-var smallGaps15 = gaps15.filter(function (g) { return g < 170; }); // все «рабочие» разрывы (не тот, что упирается в КО)
+var smallGaps15 = gaps15.filter(function (g) { return g < 100; }); // все «рабочие» разрывы (не тот, что упирается в КО)
 check("15: детали внутри свободной дуги равномерны (все малые разрывы ≈ друг другу, не скучены)",
-  smallGaps15.length === 3 && smallGaps15.every(function (g) { return Math.abs(g - smallGaps15[0]) < 1; }),
+  smallGaps15.length === 4 && smallGaps15.every(function (g) { return Math.abs(g - smallGaps15[0]) < 1; }),
   JSON.stringify(gaps15.map(function (g) { return g.toFixed(1); })));
 verifyLayout("15", opts15, res15);
 
@@ -352,8 +352,8 @@ var opts16 = {
   parts: [{ type: "circle", d: 25, seatD: 25.2, apertureCA: 23.7, qty: 22, anchor: { mode: "diameter", d: 222 } }]
 };
 var res16 = HC.pack(opts16);
-check("16: карман между свидетелем и reference вмещает 2 детали тем же шагом, что и остальное кольцо (18 из 22, не 17)",
-  res16.placed.length === 18, String(res16.placed.length));
+check("16: карман между свидетелем и reference вмещает 2 детали тем же шагом, что и остальное кольцо (19 из 22, не 17)",
+  res16.placed.length === 19, String(res16.placed.length));
 check("16: макс. угловой разрыв << прежних ~128°/55° (нет избыточного запаса у контрольных отверстий)",
   angleSpread(res16) < (55 * Math.PI) / 180,
   (angleSpread(res16) * 180 / Math.PI).toFixed(1) + "°");
