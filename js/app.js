@@ -290,7 +290,13 @@
       }
       markDirty();
     });
-    on(".c-d", "input", function (e) { h.d = parseFloat(e.target.value); syncAutoFields(); refreshPreview(); markDirty(); });
+    on(".c-d", "input", function (e) {
+      h.d = parseFloat(e.target.value);
+      // смена диаметра детали сбрасывает посадку/CA обратно на авто, даже
+      // если их правили руками — иначе они остаются от старого d
+      h.seatDAuto = true; h.apertureCAAuto = true;
+      syncAutoFields(); refreshPreview(); markDirty();
+    });
     on(".c-seat-d", "input", function (e) { h.seatD = e.target.value === "" ? null : parseFloat(e.target.value); h.seatDAuto = false; syncAutoFields(); refreshPreview(); markDirty(); });
     on(".c-ca", "input", function (e) { h.apertureCA = e.target.value === "" ? null : parseFloat(e.target.value); h.apertureCAAuto = false; refreshPreview(); markDirty(); });
     on(".c-slot-on", "change", function (e) {
@@ -487,7 +493,13 @@
       }
     }
     on(".p-type", "change", function (e) { p.type = e.target.value; renderParts(); markDirty(); });
-    on(".p-d", "input", function (e) { p.d = parseFloat(e.target.value); syncAutoFields(); refreshPreview(); markDirty(); });
+    on(".p-d", "input", function (e) {
+      p.d = parseFloat(e.target.value);
+      // смена диаметра детали сбрасывает посадку/CA обратно на авто, даже
+      // если их правили руками — иначе они остаются от старого d
+      p.seatDAuto = true; p.apertureCAAuto = true;
+      syncAutoFields(); refreshPreview(); markDirty();
+    });
     on(".p-seat-d", "input", function (e) { p.seatD = e.target.value === "" ? null : parseFloat(e.target.value); p.seatDAuto = false; syncAutoFields(); refreshPreview(); markDirty(); });
     on(".p-ca", "input", function (e) { p.apertureCA = e.target.value === "" ? null : parseFloat(e.target.value); p.apertureCAAuto = false; refreshPreview(); markDirty(); });
     on(".p-slot-on", "change", function (e) {

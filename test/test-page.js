@@ -113,22 +113,23 @@ check("при смене d авто D/CA пересчитались (D12,2/CA10,
   d.querySelector("#partsList .part-preview").innerHTML);
 check("max у поля CA обновился до авто-максимума (D−1.5)", caInput.getAttribute("max") === "10.7", caInput.getAttribute("max"));
 
-// ручная правка D — дальше не должна затираться при новом изменении d
+// ручная правка D — при следующей смене d должна сброситься обратно на авто
+// (чтобы правки не «залипали» от старого диаметра детали)
 seatInput.value = "13";
 seatInput.dispatchEvent(new w.Event("input"));
 dInput.value = "20";
 dInput.dispatchEvent(new w.Event("input"));
-check("ручной D сохранился при смене d, CA от D (D13/CA11,5 = D−1.5)",
-  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d20 (D13/CA11,5)") !== -1,
+check("ручная правка D сбрасывается на авто при смене d (D20,2/CA18,7)",
+  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d20 (D20,2/CA18,7)") !== -1,
   d.querySelector("#partsList .part-preview").innerHTML);
 
-// ручная правка CA в меньшую сторону — тоже должна сохраняться при смене d
-caInput.value = "15";
+// ручная правка CA — тоже должна сброситься на авто при смене d
+caInput.value = "5";
 caInput.dispatchEvent(new w.Event("input"));
 dInput.value = "22";
 dInput.dispatchEvent(new w.Event("input"));
-check("ручной CA сохранился при смене d (D13/CA15 — D пересчитался бы, но он тоже уже ручной)",
-  d.querySelector("#partsList .part-preview").innerHTML.indexOf("CA15") !== -1,
+check("ручная правка CA сбрасывается на авто при смене d (D22,2/CA20,7)",
+  d.querySelector("#partsList .part-preview").innerHTML.indexOf("d22 (D22,2/CA20,7)") !== -1,
   d.querySelector("#partsList .part-preview").innerHTML);
 
 // CA больше технологического максимума — ошибка валидации при раскладке
