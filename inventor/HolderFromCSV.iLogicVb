@@ -5,11 +5,17 @@
 '   * посадка (seat)          - глухой вырез на глубину depth от верхней грани;
 '   * паз под пинцет (slot)    - глухой вырез на ту же глубину (если включён);
 '   * зона напыления (CA)      - сквозной вырез меньшего контура на дне посадки.
+' Плюс обновляет гравировку (Emboss) двумя строками из формы заказа - номер и
+' название подложкодержателя, в геометрический текст (Sketch Text) внутри
+' Emboss-фич "PartNumber" и "PartDimensions" соответственно (имена фиксированы,
+' сами Emboss-фичи и их эскизы уже должны быть построены в болванке заранее).
 ' Само тело диска правило не строит.
 '
 ' Требования к болванке:
 '   - диск построен с центром в начале координат XY;
-'   - ось диска - ось Z (плоский диск). Карманы режутся от верхней грани вниз (-Z).
+'   - ось диска - ось Z (плоский диск). Карманы режутся от верхней грани вниз (-Z);
+'   - в болванке уже есть Emboss-фичи "PartNumber" и "PartDimensions" (со
+'     Sketch Text внутри) - правило только меняет их текст, не создаёт их.
 '
 ' Установка: Inventor -> Управление -> iLogic -> создать правило (или внешнее
 ' правило) и вставить этот код целиком. При запуске правило спросит CSV и,
@@ -42,6 +48,7 @@ Sub Main()
 	' --- разбор файла ---
 	Dim discDia As Double = 0
 	Dim discThk As Double = 0
+	Dim holderNo As String = "", holderName As String = ""
 	Dim rows As New List(Of String())
 	Dim dataStarted As Boolean = False
 	For Each rawLine As String In lines
@@ -53,6 +60,9 @@ Sub Main()
 		ElseIf f(0) = "disc" AndAlso f.Length >= 4 Then
 			discDia = ParseNum(f(3), inv)
 			If f.Length >= 5 Then discThk = ParseNum(f(4), inv)
+		ElseIf f(0) = "holder" AndAlso f.Length >= 3 Then
+			holderNo = f(1)
+			holderName = f(2)
 		ElseIf f(0) = "columns" Then
 			dataStarted = True
 		End If
@@ -187,9 +197,49 @@ Sub Main()
 		Return
 	End Try
 
+	' --- гравировка (Emboss): номер и название подложкодержателя из CSV.
+	' Отдельно от резов и без исключений — если гравировки не найдены/не
+	' совпали по имени, отверстия уже построены, их терять не нужно; проблема
+	' просто попадёт в итоговое сообщение.
+	Dim embossWarn As New List(Of String)
+	If holderNo <> "" Then SetEmbossText(compDef, "PartNumber", holderNo, embossWarn)
+	If holderName <> "" Then SetEmbossText(compDef, "PartDimensions", holderName, embossWarn)
+
 	doc.Update()
-	MessageBox.Show("Готово. Посадок: " & nSeat.ToString() & _
-		", зон напыления: " & nCA.ToString() & ", пазов: " & nSlot.ToString() & ".", "HolderFromCSV")
+	Dim msg As String = "Готово. Посадок: " & nSeat.ToString() & _
+		", зон напыления: " & nCA.ToString() & ", пазов: " & nSlot.ToString() & "."
+	If embossWarn.Count > 0 Then msg &= vbCrLf & vbCrLf & "Гравировка — проблемы: " & String.Join("; ", embossWarn)
+	MessageBox.Show(msg, "HolderFromCSV")
+End Sub
+
+' Обновляет текст геометрической гравировки (Emboss -> эскиз со Sketch Text)
+' по имени Emboss-фичи. Полностью защищено Try/Catch (Object, позднее
+' связывание) - при любой проблеме добавляет понятную запись в warnings и
+' не бросает исключение, чтобы не потерять уже построенные отверстия.
+Sub SetEmbossText(compDef As PartComponentDefinition, featureName As String, newText As String, warnings As List(Of String))
+	Dim feat As Object = Nothing
+	Try : feat = compDef.Features.Item(featureName) : Catch : End Try
+	If feat Is Nothing Then
+		warnings.Add("не найдена гравировка «" & featureName & "»")
+		Return
+	End If
+	Dim sk As Object = Nothing
+	Try : sk = feat.Definition.Profile.Parent : Catch : End Try
+	If sk Is Nothing Then
+		warnings.Add("не найден эскиз гравировки «" & featureName & "»")
+		Return
+	End If
+	Dim tb As Object = Nothing
+	Try : tb = sk.TextBoxes.Item(1) : Catch : End Try
+	If tb Is Nothing Then
+		warnings.Add("в эскизе «" & featureName & "» не найден текстовый объект (TextBoxes)")
+		Return
+	End If
+	Try
+		tb.Text = newText
+	Catch ex As Exception
+		warnings.Add("«" & featureName & "»: " & ex.Message)
+	End Try
 End Sub
 
 ' ---------- вспомогательные ----------
