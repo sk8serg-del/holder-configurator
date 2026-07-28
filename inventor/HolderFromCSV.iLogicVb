@@ -257,8 +257,19 @@ Function AddShape(sk As PlanarSketch, tg As TransientGeometry, typ As String, _
 	Return True
 End Function
 
-' Стадион (паз): два прямых борта + два полукруглых торца НАСТОЯЩИМИ дугами
-' (AddByThreePoints — без указания направления, устойчиво к ориентации осей эскиза).
+' Стадион (паз): два прямых борта + два НАСТОЯЩИХ полукруглых торца (SketchArc).
+'
+' Предыдущая попытка настоящих дуг создавала все 4 точки соединения как
+' независимые Point2d и потом «сшивала» их GeometricConstraints.AddCoincident —
+' этого недостаточно: ограничение совпадения делает точки геометрически
+' совпадающими, но НЕ объединяет их в одну вершину для поиска контура, поэтому
+' Profiles.AddForSolid контур не находил. Полигоны посадки режутся надёжно
+' именно потому, что AddPolyline передаёт следующей линии тот же ОБЪЕКТ
+' prevLine.EndSketchPoint, а не координаты точки — точки физически общие.
+' Здесь та же техника: каждая дуга берёт стартовой точкой фактический
+' EndSketchPoint предыдущего элемента (SketchLines/SketchArcs.AddByTwoPoints и
+' .AddByThreePoints принимают SketchPoint наравне с Point2d) — контур замкнут
+' общими вершинами без единого constraint, как и у обычных полигонов.
 Sub AddStadium(sk As PlanarSketch, tg As TransientGeometry, cx As Double, cy As Double, _
 		angleDeg As Double, L As Double, W As Double)
 	Dim r As Double = W / 2
@@ -269,22 +280,17 @@ Sub AddStadium(sk As PlanarSketch, tg As TransientGeometry, cx As Double, cy As 
 	End If
 	Dim a As Double = angleDeg * Math.PI / 180
 	Dim cosA As Double = Math.Cos(a), sinA As Double = Math.Sin(a)
-	Dim pBL As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, -hs, -r)  ' низ-лево
-	Dim pBR As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, hs, -r)   ' низ-право
-	Dim pTR As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, hs, r)    ' верх-право
-	Dim pTL As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, -hs, r)   ' верх-лево
-	Dim pR As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, hs + r, 0) ' крайняя точка правого торца
-	Dim pL As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, -hs - r, 0)' крайняя точка левого торца
-	Dim l1 As SketchLine = sk.SketchLines.AddByTwoPoints(pBL, pBR)          ' нижний борт
-	Dim a1 As SketchArc = sk.SketchArcs.AddByThreePoints(pBR, pR, pTR)      ' правый полукруг
-	Dim l2 As SketchLine = sk.SketchLines.AddByTwoPoints(pTR, pTL)          ' верхний борт
-	Dim a2 As SketchArc = sk.SketchArcs.AddByThreePoints(pTL, pL, pBL)      ' левый полукруг
-	' сшиваем концы в замкнутую петлю — иначе AddForSolid не найдёт контур
-	Dim gc As GeometricConstraints = sk.GeometricConstraints
-	gc.AddCoincident(l1.EndSketchPoint, a1.StartSketchPoint)
-	gc.AddCoincident(a1.EndSketchPoint, l2.StartSketchPoint)
-	gc.AddCoincident(l2.EndSketchPoint, a2.StartSketchPoint)
-	gc.AddCoincident(a2.EndSketchPoint, l1.StartSketchPoint)
+	Dim pBL As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, -hs, -r)   ' низ-лево
+	Dim pBR As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, hs, -r)    ' низ-право
+	Dim pR As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, hs + r, 0)  ' дальняя точка правого торца
+	Dim pTR As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, hs, r)     ' верх-право
+	Dim pTL As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, -hs, r)    ' верх-лево
+	Dim pL As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, -hs - r, 0) ' дальняя точка левого торца
+
+	Dim l1 As SketchLine = sk.SketchLines.AddByTwoPoints(pBL, pBR)                       ' нижний борт
+	Dim a1 As SketchArc = sk.SketchArcs.AddByThreePoints(l1.EndSketchPoint, pR, pTR)     ' правый торец (дуга)
+	Dim l2 As SketchLine = sk.SketchLines.AddByTwoPoints(a1.EndSketchPoint, pTL)         ' верхний борт
+	sk.SketchArcs.AddByThreePoints(l2.EndSketchPoint, pL, l1.StartSketchPoint)           ' левый торец, замыкает петлю на старт l1
 End Sub
 
 ' Локальная точка паза (lx,ly) -> точка в координатах эскиза (поворот + перенос).
