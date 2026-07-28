@@ -275,10 +275,16 @@ Sub AddStadium(sk As PlanarSketch, tg As TransientGeometry, cx As Double, cy As 
 	Dim pTL As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, -hs, r)   ' верх-лево
 	Dim pR As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, hs + r, 0) ' крайняя точка правого торца
 	Dim pL As Point2d = SlotPt(sk, tg, cx, cy, cosA, sinA, -hs - r, 0)' крайняя точка левого торца
-	sk.SketchLines.AddByTwoPoints(pBL, pBR)          ' нижний борт
-	sk.SketchArcs.AddByThreePoints(pBR, pR, pTR)     ' правый полукруг
-	sk.SketchLines.AddByTwoPoints(pTR, pTL)          ' верхний борт
-	sk.SketchArcs.AddByThreePoints(pTL, pL, pBL)     ' левый полукруг
+	Dim l1 As SketchLine = sk.SketchLines.AddByTwoPoints(pBL, pBR)          ' нижний борт
+	Dim a1 As SketchArc = sk.SketchArcs.AddByThreePoints(pBR, pR, pTR)      ' правый полукруг
+	Dim l2 As SketchLine = sk.SketchLines.AddByTwoPoints(pTR, pTL)          ' верхний борт
+	Dim a2 As SketchArc = sk.SketchArcs.AddByThreePoints(pTL, pL, pBL)      ' левый полукруг
+	' сшиваем концы в замкнутую петлю — иначе AddForSolid не найдёт контур
+	Dim gc As GeometricConstraints = sk.GeometricConstraints
+	gc.AddCoincident(l1.EndSketchPoint, a1.StartSketchPoint)
+	gc.AddCoincident(a1.EndSketchPoint, l2.StartSketchPoint)
+	gc.AddCoincident(l2.EndSketchPoint, a2.StartSketchPoint)
+	gc.AddCoincident(a2.EndSketchPoint, l1.StartSketchPoint)
 End Sub
 
 ' Локальная точка паза (lx,ly) -> точка в координатах эскиза (поворот + перенос).
