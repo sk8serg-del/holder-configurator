@@ -236,7 +236,14 @@ Sub SetEmbossText(compDef As PartComponentDefinition, sketchName As String, newT
 		Return
 	End If
 	Try
+		' Эскиз входит в редактирование и выходит из него вокруг смены текста:
+		' у Geometry Text строка меняется сразу, а кривые для Emboss (которые
+		' реально режут/выдавливают) пересчитываются только при таком явном
+		' цикле редактирования эскиза - обычного Document.Update() в конце
+		' Main() для этого недостаточно.
+		sk.Edit()
 		tb.Text = newText
+		sk.ExitEdit()
 	Catch ex As Exception
 		warnings.Add("«" & sketchName & "»: " & ex.Message)
 	End Try
