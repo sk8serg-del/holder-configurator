@@ -134,7 +134,8 @@
       var color = PART_COLORS[(p.partIndex || 0) % PART_COLORS.length];
       if (p.type === "circle") {
         var seat = p.seatD > 0 ? p.seatD : p.d;
-        var ang = Math.atan2(p.cy, p.cx);
+        // угол паза от раскладчика (гекс — по высоте треугольника); запас — радиально
+        var ang = p.slotAngle != null ? p.slotAngle * Math.PI / 180 : Math.atan2(p.cy, p.cx);
         fs.push({
           outline: seatOutline(p.cx, p.cy, seat, !!p.slotOn, ang),
           depth: defDepth,

@@ -797,7 +797,8 @@
   parts = [defaultPart()];
   renderParts();
   loadCustomer();
-  doPack(); // первая раскладка сразу при открытии, дальше — автоматически при правках
+  // первый doPack() — ниже, ПОСЛЕ HC.i18n.apply(): иначе apply() перетирает
+  // вычисленную сводку статическим плейсхолдером #summary (data-i18n)
 
   // ---------- переключение языка ----------
   // Динамическая разметка (детали, контрольные отверстия, сводка) собирается через
@@ -818,6 +819,7 @@
   $("langRu").classList.toggle("active", HC.i18n.get() === "ru");
   $("langEn").classList.toggle("active", HC.i18n.get() === "en");
   HC.i18n.apply();
+  doPack(); // первая раскладка при открытии (после apply, чтобы сводка не затёрлась); дальше — автоматически
   $("langRu").addEventListener("click", function () { setLanguage("ru"); });
   $("langEn").addEventListener("click", function () { setLanguage("en"); });
 

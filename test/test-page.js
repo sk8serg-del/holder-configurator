@@ -27,7 +27,7 @@ function check(name, cond, detail) {
 
 // подключаем модули в том же порядке, что и на странице
 // three.min.js в jsdom не грузим (нет WebGL) — viewer3d обязан жить без него
-for (const n of ["catalog", "geometry", "packer", "render", "export-csv", "report", "sheets", "viewer3d", "holder-import", "app"]) {
+for (const n of ["catalog", "i18n", "geometry", "packer", "render", "export-csv", "report", "sheets", "viewer3d", "holder-import", "app"]) {
   const src = fs.readFileSync(path.join(root, "js", n + ".js"), "utf8");
   w.eval(src);
 }

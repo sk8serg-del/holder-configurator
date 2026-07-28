@@ -284,9 +284,9 @@
     (model.placed || []).forEach(function (p, idx) {
       var col = PART_COLORS[(p.partIndex || 0) % PART_COLORS.length];
       if (p.type === "circle") {
-        // ориентация паза свободная и у каждого экземпляра своя — направляем
-        // от центра диска (радиально), а не общим углом из формы
-        var slotAngle = (Math.atan2(p.cy, p.cx) * 180) / Math.PI;
+        // угол паза задаёт раскладчик: гекс-сетка — по высоте треугольника
+        // (вертикаль), кольца — радиально; запасной вариант — радиально
+        var slotAngle = p.slotAngle != null ? p.slotAngle : (Math.atan2(p.cy, p.cx) * 180) / Math.PI;
         var swC = Math.max(sw * 1.5, (p.seatD || p.d) / 70);
         out.push(
           '<g transform="translate(' + fmt(p.cx) + "," + fmt(p.cy) + ')">' +

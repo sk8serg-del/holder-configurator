@@ -52,6 +52,20 @@ var res1 = HC.pack(opts1);
 console.log("1) круги Ø10 / диск Ø100: размещено " + res1.placed.length);
 check("1: разумное количество (30…50)", res1.placed.length >= 30 && res1.placed.length <= 50, String(res1.placed.length));
 verifyLayout("1", opts1, res1);
+check("1: паз кругов гекс-сетки направлен по высоте треугольника (90°)",
+  res1.placed.every(function (p) { return p.slotAngle === 90; }),
+  res1.placed.map(function (p) { return p.slotAngle; }).slice(0, 3).join(","));
+
+// --- 1b. Круги по краю (кольца): паз радиальный ---
+var opts1b = {
+  discDiameter: 298, controlHoles: [], clearances: { pp: 6, pe: 3, pc: 6 },
+  parts: [{ type: "circle", d: 25.4, qty: 8, orientation: "fixed", anchor: { mode: "edge" } }]
+};
+var res1b = HC.pack(opts1b);
+check("1b: паз кругов на кольцах — радиальный (slotAngle = atan2)",
+  res1b.placed.length > 0 && res1b.placed.every(function (p) {
+    return Math.abs(p.slotAngle - Math.atan2(p.cy, p.cx) * 180 / Math.PI) < 1e-6;
+  }));
 
 // --- 2. То же + контрольные отверстия 3×Ø4 на R40 ---
 var opts2 = {

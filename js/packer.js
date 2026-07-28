@@ -53,9 +53,10 @@
     if (spec.type === "circle") {
       return {
         type: "circle", cx: cx, cy: cy, d: spec.d, partIndex: partIndex, pad: spec._pad || 0,
-        // посадка/зона напыления/паз — для схемы отображения, на раскладку не влияют;
-        // угол паза у каждого экземпляра свой (см. render.js), не общий из формы
-        seatD: spec.seatD, apertureCA: spec.apertureCA, slotOn: spec.slotOn
+        // посадка/зона напыления/паз — для схемы отображения, на раскладку не влияют.
+        // Паз направлен по высоте равностороннего треугольника гекс-сетки: ряды
+        // горизонтальные, значит высота — вертикаль (90°), пазы у всех параллельны.
+        seatD: spec.seatD, apertureCA: spec.apertureCA, slotOn: spec.slotOn, slotAngle: 90
       };
     }
     var p = { type: spec.type, cx: cx, cy: cy, w: spec.w, h: spec.h, rot: rot || 0, partIndex: partIndex, pad: spec._pad || 0 };
@@ -328,7 +329,9 @@
       attempts.push(fillRings(rings, spec, ctx, function (cand) {
         return {
           type: "circle", cx: cand.cx, cy: cand.cy, d: spec.d, partIndex: spec.partIndex, pad: pad,
-          seatD: spec.seatD, apertureCA: spec.apertureCA, slotOn: spec.slotOn
+          // на кольцах паз направлен радиально (от центра диска)
+          seatD: spec.seatD, apertureCA: spec.apertureCA, slotOn: spec.slotOn,
+          slotAngle: (Math.atan2(cand.cy, cand.cx) * 180) / Math.PI
         };
       }));
     }
