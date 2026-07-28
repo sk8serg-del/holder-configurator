@@ -104,12 +104,14 @@ Sub Main()
 	Dim caSketch As PlanarSketch = Nothing
 	Dim idx As Integer = 0
 	Dim nSeat As Integer = 0, nSlot As Integer = 0, nCA As Integer = 0
+	Dim stage As String = "разбор"
 
 	Try
 		For Each f() As String In rows
 			Dim kind As String = f(0)
 			Dim typ As String = f(1)
 			If kind = "control" AndAlso Not buildControl Then Continue For
+			stage = "контур " & kind & "/" & typ & " @ " & f(2) & "," & f(3)
 
 			Dim cx As Double = ParseNum(f(2), inv) * mm
 			Dim cy As Double = ParseNum(f(3), inv) * mm
@@ -168,14 +170,19 @@ Sub Main()
 
 		' --- резы: посадки и пазы глухие (в -Z), зона напыления - насквозь ---
 		For Each kv As KeyValuePair(Of Double, PlanarSketch) In seatByDepth
+			stage = "рез посадок, глубина " & (kv.Key * 10).ToString("0.##") & " мм"
 			CutBlind(compDef, kv.Value, kv.Key)
 		Next
 		For Each kv As KeyValuePair(Of Double, PlanarSketch) In slotByDepth
+			stage = "рез пазов, глубина " & (kv.Key * 10).ToString("0.##") & " мм"
 			CutBlind(compDef, kv.Value, kv.Key)
 		Next
-		If caSketch IsNot Nothing AndAlso nCA > 0 Then CutThrough(compDef, caSketch)
+		If caSketch IsNot Nothing AndAlso nCA > 0 Then
+			stage = "рез зоны напыления"
+			CutThrough(compDef, caSketch)
+		End If
 	Catch ex As Exception
-		MessageBox.Show("Ошибка построения: " & ex.Message, "HolderFromCSV", _
+		MessageBox.Show("Ошибка построения [" & stage & "]: " & ex.Message, "HolderFromCSV", _
 			MessageBoxButtons.OK, MessageBoxIcon.Error)
 		Return
 	End Try
@@ -221,6 +228,10 @@ Function AddShape(sk As PlanarSketch, tg As TransientGeometry, typ As String, _
 		Dim majorR As Double = Math.Max(w, h) / 2
 		Dim minorR As Double = Math.Min(w, h) / 2
 		If minorR <= 0 Then Return False
+		If (majorR - minorR) < 0.00001 Then          ' оси равны -> круг (эллипс с равными осями Inventor не примет)
+			sk.SketchCircles.AddByCenterRadius(sk.ModelToSketchSpace(tg.CreatePoint(cx, cy, 0)), majorR)
+			Return True
+		End If
 		Dim axDeg As Double = rotDeg
 		If h > w Then axDeg = rotDeg + 90
 		Dim axRad As Double = axDeg * Math.PI / 180
@@ -307,11 +318,11 @@ Sub CutBlind(compDef As PartComponentDefinition, sk As PlanarSketch, depthCm As 
 	compDef.Features.ExtrudeFeatures.Add(exDef)
 End Sub
 
-' Сквозной вырез (в направлении -нормаль эскиза).
+' Сквозной вырез (симметрично - через всю толщину независимо от ориентации).
 Sub CutThrough(compDef As PartComponentDefinition, sk As PlanarSketch)
 	Dim prof As Profile = sk.Profiles.AddForSolid
 	Dim exDef As ExtrudeDefinition = compDef.Features.ExtrudeFeatures.CreateExtrudeDefinition( _
 		prof, PartFeatureOperationEnum.kCutOperation)
-	exDef.SetThroughAllExtent(PartFeatureExtentDirectionEnum.kNegativeExtentDirection)
+	exDef.SetThroughAllExtent(PartFeatureExtentDirectionEnum.kSymmetricExtentDirection)
 	compDef.Features.ExtrudeFeatures.Add(exDef)
 End Sub
