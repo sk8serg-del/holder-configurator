@@ -38,8 +38,14 @@
     if (!f.slotOn) return { angle: "", len: "", wid: "" };
     if (f.type === "circle") {
       var D = f.seatD > 0 ? f.seatD : f.d;
+      // Угол берём из фактической раскладки (f.slotAngle) — в гекс-сетке он
+      // фиксированный (90°, по высоте треугольника), не радиальный. Радиально
+      // (atan2) — только запасной вариант для контрольных отверстий, у которых
+      // угол в самой раскладке не хранится (см. render.js). Раньше здесь всегда
+      // пересчитывался atan2, из-за чего Inventor резал пазы не туда же, куда
+      // показывала страница для деталей гекс-сетки.
       return {
-        angle: Math.atan2(f.cy, f.cx) * 180 / Math.PI,
+        angle: f.slotAngle != null ? f.slotAngle : Math.atan2(f.cy, f.cx) * 180 / Math.PI,
         len: D + 5,
         wid: Math.min(9, D * 0.75)
       };

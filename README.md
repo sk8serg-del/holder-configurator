@@ -200,5 +200,6 @@ test/test-packer.js              — численные тесты раскла�
 test/test-page.js                — сквозной smoke-тест страницы (jsdom)
 test/test-viewer3d.js            — тест 3D-построителя (node, без WebGL)
 test/test-import-holes.js        — тест конвертера DumpHoles → каталог
+test/test-export-csv.js          — угол паза в CSV совпадает с раскладкой (не пересчитывается радиально)
 tools/build-single-file.js       — сборка index.html в один файл (dist/)
 ```
