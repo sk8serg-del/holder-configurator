@@ -211,7 +211,15 @@ Sub Main()
 	If holderNo <> "" Then SetEmbossText(compDef, "Sketch9", holderNo, embossWarn)
 	If holderName <> "" Then SetEmbossText(compDef, "Sketch10", holderName, embossWarn)
 
-	doc.Update()
+	' Update() пересчитывает только фичи, помеченные "грязными" - раз индикатор
+	' обновления на Emboss не появляется, значит смена .Text геометрию кривых
+	' грязной не помечает вовсе. Rebuild() пересчитывает дерево целиком, без
+	' оглядки на эти флаги - пробуем его как более сильное средство.
+	Try
+		doc.Rebuild()
+	Catch
+		doc.Update()
+	End Try
 	Dim msg As String = "Готово. Посадок: " & nSeat.ToString() & _
 		", зон напыления: " & nCA.ToString() & ", пазов: " & nSlot.ToString() & "."
 	If embossWarn.Count > 0 Then msg &= vbCrLf & vbCrLf & "Гравировка — проблемы: " & String.Join("; ", embossWarn)
