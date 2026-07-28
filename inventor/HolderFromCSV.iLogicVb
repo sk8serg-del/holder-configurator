@@ -236,13 +236,32 @@ Sub SetEmbossText(compDef As PartComponentDefinition, sketchName As String, newT
 		Return
 	End If
 	Try
-		' Эскиз входит в редактирование и выходит из него вокруг смены текста:
-		' у Geometry Text строка меняется сразу, а кривые для Emboss (которые
-		' реально режут/выдавливают) пересчитываются только при таком явном
-		' цикле редактирования эскиза - обычного Document.Update() в конце
-		' Main() для этого недостаточно.
+		' Мало войти в редактирование ЭСКИЗА - кривые Geometry Text (по которым
+		' режет Emboss) пересчитываются только когда закрывается редактирование
+		' САМОГО текстового объекта (как если вручную открыть его двойным
+		' кликом и нажать OK в диалоге). Пробуем это по нарастающей: сначала
+		' TextBox.Edit()/ExitEdit() (аналог диалога), если такого метода нет -
+		' переключение Geometric «моргает» и инвалидирует закэшированные кривые,
+		' плюс пишем и FormattedText (иногда именно оно - ведущее поле).
 		sk.Edit()
-		tb.Text = newText
+		Dim tbEdited As Boolean = False
+		Try
+			tb.Edit()
+			tb.Text = newText
+			tb.ExitEdit()
+			tbEdited = True
+		Catch
+		End Try
+		If Not tbEdited Then
+			tb.Text = newText
+			Try : tb.FormattedText = newText : Catch : End Try
+			Try
+				Dim wasGeom As Boolean = tb.Geometric
+				tb.Geometric = Not wasGeom
+				tb.Geometric = wasGeom
+			Catch
+			End Try
+		End If
 		sk.ExitEdit()
 	Catch ex As Exception
 		warnings.Add("«" & sketchName & "»: " & ex.Message)
