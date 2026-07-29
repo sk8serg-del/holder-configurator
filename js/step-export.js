@@ -17,10 +17,12 @@
   var HC = (g.HC = g.HC || {});
 
   // --- версия и адреса движка (правится в одном месте) ---
+  // replicad — через jsdelivr /+esm; OpenCascade (Emscripten-модуль, CJS) — через
+  // esm.sh (конвертит в ESM с default-экспортом фабрики); сам wasm — с jsdelivr.
   var REP_VER = "0.19.1";
-  var OC_VER = "0.1.20";
+  var OC_VER = "0.19.0"; // соответствует replicad-opencascadejs, требуемому replicad@0.19.x
   var REP_URL = "https://cdn.jsdelivr.net/npm/replicad@" + REP_VER + "/+esm";
-  var OC_JS = "https://cdn.jsdelivr.net/npm/replicad-opencascadejs@" + OC_VER + "/src/replicad_single.js/+esm";
+  var OC_JS = "https://esm.sh/replicad-opencascadejs@" + OC_VER + "/src/replicad_single.js";
   var OC_WASM = "https://cdn.jsdelivr.net/npm/replicad-opencascadejs@" + OC_VER + "/src/replicad_single.wasm";
 
   var TOP = 0.5; // насколько резак выступает над верхней гранью (чистый рез)
