@@ -41,13 +41,15 @@
     return repPromise;
   }
 
-  // ---- геометрия паза (угол/длина/ширина) — та же логика, что в export-csv ----
+  // ---- геометрия паза (угол/длина/ширина/точка метки) — как в export-csv ----
   function slotGeom(f) {
     if (!f.slotOn) return null;
     if (f.type === "circle") {
       var D = f.seatD > 0 ? f.seatD : f.d;
       var angle = f.slotAngle != null ? f.slotAngle : Math.atan2(f.cy, f.cx) * 180 / Math.PI;
-      return { angle: angle, len: D + 5, wid: Math.min(9, D * 0.75) };
+      var halfW = Math.min(9, D * 0.75) / 2;
+      var mark = f.mark ? HC.geom.slotMarkPoint(f.cx, f.cy, D / 2, halfW, angle * Math.PI / 180, HC.MARK_OFF, HC.MARK_SIDE) : null;
+      return { angle: angle, len: D + 5, wid: Math.min(9, D * 0.75), mark: mark };
     }
     var gap = f.seatGap > 0 ? f.seatGap : 0;
     var ch = f.type === "oct" ? (f.chamfer || 0) : 0;
@@ -56,8 +58,9 @@
     var seat = HC.geom.shapePoly(f.type, 0, 0, f.w + 2 * gap, f.h + 2 * gap, ch, f.rot || 0);
     var halfExt = 0;
     seat.forEach(function (q) { var pr = Math.abs(q.x * ux + q.y * uy); if (pr > halfExt) halfExt = pr; });
-    var minSeat = Math.min(f.w, f.h) + 2 * gap;
-    return { angle: ang, len: 2 * halfExt + 5, wid: Math.min(9, minSeat * 0.75) };
+    var wid = Math.min(9, (Math.min(f.w, f.h) + 2 * gap) * 0.75);
+    var mark2 = f.mark ? HC.geom.slotMarkPoint(f.cx, f.cy, halfExt, wid / 2, ar, HC.MARK_OFF, HC.MARK_SIDE) : null;
+    return { angle: ang, len: 2 * halfExt + 5, wid: wid, mark: mark2 };
   }
 
   // Список элементов (деталь/КО) с посадкой/CA/пазом и глубиной.
@@ -69,7 +72,8 @@
       out.push({
         type: "circle", cx: h.x, cy: h.y, d: h.d,
         seatD: h.seatD != null ? h.seatD : h.d, caDia: h.apertureCA,
-        slotOn: !!h.slotOn, slotAngle: null, depth: h.depth > 0 ? h.depth : partDepth
+        slotOn: !!h.slotOn, slotAngle: null, depth: h.depth > 0 ? h.depth : partDepth,
+        mark: false // метка-ориентир — только у деталей, не у контрольных отверстий
       });
     });
     (order.placed || []).forEach(function (p) {
@@ -80,7 +84,7 @@
         chamfer: p.type === "oct" ? (p.chamfer || 0) : 0, rot: isC ? 0 : (p.rot || 0),
         seatD: isC ? p.seatD : 0, caDia: isC ? p.apertureCA : 0,
         seatGap: isC ? 0 : p.seatGap, caInset: isC ? 0 : p.caInset,
-        slotOn: !!p.slotOn, slotAngle: p.slotAngle, depth: partDepth
+        slotOn: !!p.slotOn, slotAngle: p.slotAngle, depth: partDepth, mark: true
       });
     });
     return out;
@@ -117,6 +121,20 @@
     function blind(draw, depth) { cutters.push(draw.sketchOnPlane("XY", TOP).extrude(-(depth + TOP))); }
     function through(draw) { cutters.push(draw.sketchOnPlane("XY", TOP).extrude(-(thickness + 2 * TOP))); }
 
+    // Коническая зенковка-метка Ø MARK_D под углом MARK_ANGLE (полный), остриём вниз.
+    // Строим лофтом от круга у поверхности к почти-точке на глубине; конус выступает
+    // на TOP над верхней гранью (чистый рез). tan(полугла) задаёт наклон стенки.
+    function countersink(mx, my) {
+      var t = Math.tan((HC.MARK_ANGLE / 2) * Math.PI / 180);
+      if (!(t > 0)) return;
+      var rSurf = HC.MARK_D / 2;
+      var rTop = rSurf + TOP * t;              // радиус на уровне z=+TOP
+      var zApex = -(rSurf / t);                // где радиус обращается в 0
+      var top = rep.drawCircle(rTop).translate([mx, my]).sketchOnPlane("XY", TOP);
+      var bot = rep.drawCircle(0.02).translate([mx, my]).sketchOnPlane("XY", zApex);
+      cutters.push(top.loftWith(bot, { ruled: true }));
+    }
+
     features(order).forEach(function (f) {
       var isC = f.type === "circle";
       // посадка
@@ -129,6 +147,7 @@
       var s = slotGeom(f);
       if (s && s.len > 0 && s.wid > 0) {
         blind(place(rep.drawRoundedRectangle(s.len, s.wid, s.wid / 2), f.cx, f.cy, s.angle), f.depth);
+        if (s.mark) countersink(s.mark.x, s.mark.y); // метка-ориентир
       }
       // зона напыления — насквозь
       if (isC) {
