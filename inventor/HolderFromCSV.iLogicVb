@@ -1,16 +1,23 @@
-' HolderFromCSV - правило iLogic для Autodesk Inventor (формат CSV v2).
+' HolderFromCSV - правило iLogic для Autodesk Inventor (формат CSV v3).
 '
 ' Читает CSV из веб-конфигуратора и вырезает в ОТКРЫТОЙ детали (болванке диска)
 ' реальные карманы под детали и контрольные отверстия:
 '   * посадка (seat)          - глухой вырез на глубину depth от верхней грани;
 '   * паз под пинцет (slot)    - глухой вырез на ту же глубину (если включён);
-'   * зона напыления (CA)      - сквозной вырез меньшего контура на дне посадки.
+'   * зона напыления (CA)      - сквозной вырез меньшего контура на дне посадки;
+'   * метка-ориентир (mark)    - маленькая коническая зенковка Ø/угол из строки
+'     "mark" CSV, только у ДЕТАЛЕЙ с пазом (не у контрольных отверстий), в
+'     точке (markX, markY) - нужна, чтобы отличать похожие по размеру детали
+'     и метить ориентацию у форм, где это важно (см. export-csv.js).
 ' Плюс обновляет гравировку (Emboss) двумя строками из формы заказа - номер и
 ' название подложкодержателя, в геометрический текст (Sketch Text) внутри
 ' эскизов "Sketch9" (вложен в Emboss "PartNumber") и "Sketch10" (вложен в
 ' Emboss "PartDimensions") - имена эскизов зашиты строками в вызовах
 ' SetEmbossText в конце Main(); при переименовании в Inventor поправьте их.
 ' Само тело диска правило не строит.
+'
+' CSV v2 (18 колонок, без markX/markY и без строки "mark") тоже читается -
+' метки просто не строятся, остальное без изменений.
 '
 ' Требования к болванке:
 '   - диск построен с центром в начале координат XY;
@@ -51,6 +58,7 @@ Sub Main()
 	Dim discDia As Double = 0
 	Dim discThk As Double = 0
 	Dim holderNo As String = "", holderName As String = ""
+	Dim markD As Double = 2, markAngle As Double = 90 ' по умолчанию - на случай CSV v2 без строки "mark"
 	Dim rows As New List(Of String())
 	Dim dataStarted As Boolean = False
 	For Each rawLine As String In lines
@@ -65,6 +73,9 @@ Sub Main()
 		ElseIf f(0) = "holder" AndAlso f.Length >= 3 Then
 			holderNo = f(1)
 			holderName = f(2)
+		ElseIf f(0) = "mark" AndAlso f.Length >= 3 Then
+			markD = ParseNum(f(1), inv)
+			markAngle = ParseNum(f(2), inv)
 		ElseIf f(0) = "columns" Then
 			dataStarted = True
 		End If
@@ -114,8 +125,9 @@ Sub Main()
 	Dim seatByDepth As New Dictionary(Of Double, PlanarSketch)
 	Dim slotByDepth As New Dictionary(Of Double, PlanarSketch)
 	Dim caSketch As PlanarSketch = Nothing
+	Dim markSketch As PlanarSketch = Nothing
 	Dim idx As Integer = 0
-	Dim nSeat As Integer = 0, nSlot As Integer = 0, nCA As Integer = 0
+	Dim nSeat As Integer = 0, nSlot As Integer = 0, nCA As Integer = 0, nMark As Integer = 0
 	Dim stage As String = "разбор"
 
 	Try
@@ -144,6 +156,8 @@ Sub Main()
 			If depth <= 0 Then depth = defDepth
 			If depth > thk Then depth = thk
 			Dim dkey As Double = Math.Round(depth, 4)
+			Dim markXs As String = If(f.Length > 18, f(18), "")
+			Dim markYs As String = If(f.Length > 19, f(19), "")
 
 			' --- посадка (глухой вырез на глубину) ---
 			Dim seatSk As PlanarSketch = GetSketch(compDef, cutPlane, seatByDepth, dkey, "HFC_seat", idx)
@@ -158,6 +172,13 @@ Sub Main()
 				Dim slotSk As PlanarSketch = GetSketch(compDef, cutPlane, slotByDepth, dkey, "HFC_slot", idx)
 				AddStadium(slotSk, tg, cx, cy, slotAngle, slotL, slotW)
 				nSlot += 1
+			End If
+
+			' --- метка-ориентир (маленькая коническая зенковка), только у деталей ---
+			If kind = "part" AndAlso markXs <> "" AndAlso markYs <> "" Then
+				If markSketch Is Nothing Then markSketch = NewSketch(compDef, cutPlane, "HFC_mark", idx)
+				AddCircle(markSketch, tg, ParseNum(markXs, inv) * mm, ParseNum(markYs, inv) * mm, markD * mm / 2)
+				nMark += 1
 			End If
 
 			' --- зона напыления (сквозной вырез меньшего контура) ---
@@ -193,6 +214,10 @@ Sub Main()
 			stage = "рез зоны напыления"
 			CutThrough(compDef, caSketch)
 		End If
+		If markSketch IsNot Nothing AndAlso nMark > 0 Then
+			stage = "рез меток-ориентиров"
+			CutCountersink(compDef, markSketch, markD * mm, markAngle)
+		End If
 	Catch ex As Exception
 		MessageBox.Show("Ошибка построения [" & stage & "]: " & ex.Message, "HolderFromCSV", _
 			MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -221,7 +246,8 @@ Sub Main()
 		doc.Update()
 	End Try
 	Dim msg As String = "Готово. Посадок: " & nSeat.ToString() & _
-		", зон напыления: " & nCA.ToString() & ", пазов: " & nSlot.ToString() & "."
+		", зон напыления: " & nCA.ToString() & ", пазов: " & nSlot.ToString() & _
+		", меток: " & nMark.ToString() & "."
 	If embossWarn.Count > 0 Then msg &= vbCrLf & vbCrLf & "Гравировка — проблемы: " & String.Join("; ", embossWarn)
 	MessageBox.Show(msg, "HolderFromCSV")
 End Sub
@@ -420,5 +446,25 @@ Sub CutThrough(compDef As PartComponentDefinition, sk As PlanarSketch)
 	Dim exDef As ExtrudeDefinition = compDef.Features.ExtrudeFeatures.CreateExtrudeDefinition( _
 		prof, PartFeatureOperationEnum.kCutOperation)
 	exDef.SetThroughAllExtent(PartFeatureExtentDirectionEnum.kSymmetricExtentDirection)
+	compDef.Features.ExtrudeFeatures.Add(exDef)
+End Sub
+
+' Метки-ориентиры: конус, сужающийся от диаметра markDiaCm в точке до нуля на
+' глубине r/tan(угол/2) - т.е. коническая зенковка заданного угла (90° по
+' умолчанию) без цилиндрической части. sk уже содержит по одной окружности
+' Ø markDiaCm на каждую метку (см. Main) - режем их ОДНИМ тейпер-экструдом.
+'
+' ВНИМАНИЕ: знак TaperAngle (сужение внутрь тела, а не расширение наружу) не
+' проверен на реальном Inventor - при первом запуске проверьте, что зенковки
+' получаются сходящимися конусами, а не растущими проёмами; если наоборот,
+' поменяйте знак на противоположный в строке exDef.TaperAngle ниже.
+Sub CutCountersink(compDef As PartComponentDefinition, sk As PlanarSketch, markDiaCm As Double, angleDeg As Double)
+	Dim halfAngleRad As Double = (angleDeg / 2) * Math.PI / 180
+	Dim depthCm As Double = (markDiaCm / 2) / Math.Tan(halfAngleRad)
+	Dim prof As Profile = sk.Profiles.AddForSolid
+	Dim exDef As ExtrudeDefinition = compDef.Features.ExtrudeFeatures.CreateExtrudeDefinition( _
+		prof, PartFeatureOperationEnum.kCutOperation)
+	exDef.SetDistanceExtent(depthCm, PartFeatureExtentDirectionEnum.kNegativeExtentDirection)
+	exDef.TaperAngle = -halfAngleRad
 	compDef.Features.ExtrudeFeatures.Add(exDef)
 End Sub

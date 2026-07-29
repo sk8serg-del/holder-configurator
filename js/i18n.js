@@ -58,6 +58,8 @@
     "Левая кнопка — поворот · правая (или Shift+левая) — перетаскивание · колесо — масштаб · двойной клик — сброс. На тач: один палец — поворот, два — масштаб и перетаскивание.":
       "Left button — rotate · right (or Shift+left) — pan · wheel — zoom · double-click — reset. Touch: one finger — rotate, two — zoom and pan.",
     "Скачать CSV для Inventor": "Download CSV for Inventor",
+    "Скачать STEP": "Download STEP",
+    "Не удалось построить STEP: {0}": "Failed to build STEP: {0}",
     "Отчёт / PDF": "Report / PDF",
     "Отправить заказ": "Send order",
     "Координаты отверстий — от центра диска, единицы — мм. Контрольные отверстия фиксированы и изменению не подлежат.":

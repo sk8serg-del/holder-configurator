@@ -90,6 +90,44 @@
     return pts;
   }
 
+  // Метка-ориентир: маленькая зенковка Ø2мм угол 90° у детали с пазом — чтобы
+  // отличать похожие по размеру детали и метить ориентацию у форм, где это
+  // важно (сама метка везде одна и та же, важны факт и место). MARK_OFF —
+  // отступ (мм) и от посадки, и от паза; MARK_SIDE — какая из двух
+  // симметричных сторон паза используется (всегда одна и та же).
+  HC.MARK_D = 2;
+  HC.MARK_ANGLE = 90;
+  HC.MARK_OFF = 2;
+  HC.MARK_SIDE = 1;
+
+  // Точка метки (маленькая зенковка-ориентир рядом с пазом): всегда с ОДНОЙ и
+  // той же стороны от оси паза (side), на пересечении двух офсетных кривых —
+  // offset+off от посадки (halfExt — её проекция на ось паза; для круга это
+  // просто радиус, для rect/oct/oval — та же проекция, что используется для
+  // длины паза, см. export-csv.js: slotGeom) и offset+off от торца паза
+  // (halfW — половина его ширины). Точка получается на пересечении окружности
+  // радиуса halfExt+off (посадка) и либо прямой y=halfW+off (если пересечение
+  // приходится на прямой участок паза, |x|<=hs), либо окружности радиуса
+  // halfW+off с центром в торце паза (если пересечение — на скруглении).
+  // Для rect/oct/oval посадка не окружность — приближение (по проекции)
+  // достаточно точное для вспомогательной, не несущей метки.
+  function slotMarkPoint(cx, cy, halfExt, halfW, angleRad, off, side) {
+    var hs = Math.max(0, halfExt + 2.5 - halfW);
+    var r1 = halfExt + off, r2 = halfW + off;
+    var lx, ly;
+    var yLine = halfW + off;
+    var xLineSq = r1 * r1 - yLine * yLine;
+    if (xLineSq >= 0 && Math.sqrt(xLineSq) <= hs + EPS) {
+      lx = Math.sqrt(xLineSq); ly = yLine;
+    } else {
+      var a = hs > EPS ? (hs * hs + r1 * r1 - r2 * r2) / (2 * hs) : 0;
+      lx = a; ly = Math.sqrt(Math.max(0, r1 * r1 - a * a));
+    }
+    ly *= side < 0 ? -1 : 1;
+    var cosA = Math.cos(angleRad), sinA = Math.sin(angleRad);
+    return { x: cx + lx * cosA - ly * sinA, y: cy + lx * sinA + ly * cosA };
+  }
+
   // Контур фигуры заданного типа по габаритам w×h (для посадки/зоны напыления —
   // тот же тип, но увеличенный/уменьшенный габарит). Круг здесь не обрабатывается.
   function shapePoly(type, cx, cy, w, h, chamfer, rot) {
@@ -221,6 +259,7 @@
     octPoly: octPoly,
     slotWidth: slotWidth,
     seatOutline: seatOutline,
+    slotMarkPoint: slotMarkPoint,
     ellipsePoly: ellipsePoly,
     shapePoly: shapePoly,
     placementPoly: placementPoly,

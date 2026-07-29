@@ -18,8 +18,8 @@ function parseRow(csv, cx) {
   var line = csv.split(/\r?\n/).find(function (l) { return l.indexOf(";" + cx + ";") !== -1; });
   if (!line) return null;
   var f = line.split(";");
-  // columns: kind;type;cx;cy;d;w;h;chamfer;rot;seatD;caDia;seatGap;caInset;slot;slotAngle;slotL;slotW;depth
-  return { cx: f[2], cy: f[3], slot: f[13], slotAngle: f[14] };
+  // columns: kind;type;cx;cy;d;w;h;chamfer;rot;seatD;caDia;seatGap;caInset;slot;slotAngle;slotL;slotW;depth;markX;markY
+  return { cx: f[2], cy: f[3], slot: f[13], slotAngle: f[14], markX: f[18], markY: f[19] };
 }
 
 // деталь из обычной гекс-сетки: slotAngle=90 (вертикаль), НЕ радиально
@@ -71,6 +71,34 @@ var expectedCtrl = Math.atan2(110.173, -13.527) * 180 / Math.PI;
 check("угол паза контрольного отверстия — радиально (нет своего slotAngle)",
   rowCtrl && Math.abs(parseFloat(rowCtrl.slotAngle) - expectedCtrl) < 1e-3,
   rowCtrl && rowCtrl.slotAngle + " vs " + expectedCtrl);
+
+// --- метка-ориентир (markX/markY): только у ДЕТАЛЕЙ с пазом, в 2мм от
+// посадки и в 2мм от паза; у контрольных отверстий и у деталей без паза —
+// пусто (метка не режется) ---
+check("метка-ориентир: у детали гекс-сетки задана и ровно в 2мм от посадки",
+  row && row.markX !== "" && row.markY !== "" &&
+  Math.abs(Math.hypot(parseFloat(row.markX) - (-13.527), parseFloat(row.markY) - 110.173) - (25.6 / 2 + 2)) < 1e-3,
+  row && row.markX + "," + row.markY);
+
+check("метка-ориентир: у детали кольцевой раскладки тоже задана",
+  rowRing && rowRing.markX !== "" && rowRing.markY !== "",
+  rowRing && rowRing.markX + "," + rowRing.markY);
+
+check("метка-ориентир: у контрольного отверстия НЕ ставится (даже если есть паз)",
+  rowCtrl && rowCtrl.markX === "" && rowCtrl.markY === "",
+  rowCtrl && rowCtrl.markX + "," + rowCtrl.markY);
+
+var orderNoSlot = {
+  id: "T4", date: "2026-01-01", customer: { name: "T", org: "" },
+  disc: { id: "d", name: "Диск", diameter: 298, thickness: 6 },
+  clearances: { pp: 6, pe: 3, pc: 6 },
+  controlHoles: [],
+  placed: [{ type: "circle", cx: 50, cy: 0, d: 25.4, seatD: 25.6, apertureCA: 22.6, slotOn: false }]
+};
+var rowNoSlot = parseRow(HC.buildCSV(orderNoSlot), 50);
+check("метка-ориентир: у детали без паза — пусто",
+  rowNoSlot && rowNoSlot.markX === "" && rowNoSlot.markY === "",
+  rowNoSlot && rowNoSlot.markX + "," + rowNoSlot.markY);
 
 console.log(failures ? "\nПРОВАЛЕНО: " + failures : "\nТест экспорта CSV пройден.");
 process.exit(failures ? 1 : 0);

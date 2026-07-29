@@ -533,6 +533,7 @@
 
   function setActions(enabled) {
     $("csvBtn").disabled = !enabled;
+    $("stepBtn").disabled = !enabled;
     $("reportBtn").disabled = !enabled;
     $("sendBtn").disabled = !enabled;
   }
@@ -930,6 +931,19 @@
 
   $("csvBtn").addEventListener("click", function () {
     if (lastResult) HC.downloadCSV(assembleOrder());
+  });
+
+  $("stepBtn").addEventListener("click", function () {
+    if (!lastResult || !HC.downloadSTEP) return;
+    var btn = $("stepBtn");
+    btn.disabled = true;
+    HC.downloadSTEP(assembleOrder(), function (t) { setSendMsg(t); }).then(function () {
+      btn.disabled = false;
+    }).catch(function (err) {
+      setSendMsg(HC.t("Не удалось построить STEP: {0}", (err && err.message) || err), "error");
+      if (g.console) console.error(err);
+      btn.disabled = false;
+    });
   });
 
   $("reportBtn").addEventListener("click", function () {
