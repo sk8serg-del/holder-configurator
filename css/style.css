@@ -258,8 +258,18 @@ input[type="checkbox"], input[type="radio"] {
 .slot-line label:first-child { flex: 1; margin: 0; display: inline-flex; align-items: center; }
 .slot-line label:last-child { margin: 0; width: 90px; }
 
-.clearances { display: flex; gap: 8px; }
-.clearances label { flex: 1; }
+/* Сетка вместо flex: подписи разной длины (одна-две строки) больше не сдвигают
+   поля ввода друг относительно друга — все три поля начинаются на одном уровне,
+   т.к. это отдельная строка грида, общая для всех трёх колонок. */
+.clearances {
+  display: grid;
+  grid-template-rows: auto auto;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  column-gap: 8px;
+  align-items: end;
+}
+.clearances label { display: contents; }
 
 .upload-disc { margin-top: 12px; border: 1px dashed var(--border); border-radius: 8px; padding: 8px 10px; }
 .upload-disc summary { cursor: pointer; font-size: 13px; color: var(--accent); user-select: none; }

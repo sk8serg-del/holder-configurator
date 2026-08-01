@@ -42,29 +42,29 @@
       </div>
 
       <section>
-        <h2 data-i18n="2. Подложкодержатель">2. Подложкодержатель</h2>
-        <div class="dims">
-          <label><span data-i18n="Номер">Номер</span><input type="text" id="holderNo"></label>
-        </div>
+        <h2 data-i18n="Подложкодержатель">Подложкодержатель</h2>
         <label><span data-i18n="Диск">Диск</span>
           <select id="discSelect"></select>
         </label>
+        <div class="dims">
+          <label><span data-i18n="Номер">Номер</span><input type="text" id="holderNo"></label>
+        </div>
       </section>
 
       <section>
-        <h2 data-i18n="3. Детали">3. Детали</h2>
-        <div id="partsList"></div>
-        <button type="button" id="addPart" class="secondary" data-i18n="+ Добавить деталь">+ Добавить деталь</button>
-      </section>
-
-      <section>
-        <h2 data-i18n="4. Минимальные зазоры, мм">4. Минимальные зазоры, мм</h2>
+        <h2 data-i18n="1. Минимальные зазоры, мм">1. Минимальные зазоры, мм</h2>
         <div class="clearances">
           <label><span data-i18n="деталь–деталь">деталь–деталь</span><input id="clPP" type="number" min="0" step="0.1"></label>
           <label><span data-i18n="деталь–край">деталь–край</span><input id="clPE" type="number" min="0" step="0.1"></label>
           <label><span data-i18n="деталь–контр. отв.">деталь–контр. отв.</span><input id="clPC" type="number" min="0" step="0.1"></label>
         </div>
         <button type="button" id="clReset" class="link" data-i18n="сбросить к значениям по умолчанию">сбросить к значениям по умолчанию</button>
+      </section>
+
+      <section>
+        <h2 data-i18n="2. Детали">2. Детали</h2>
+        <div id="partsList"></div>
+        <button type="button" id="addPart" class="secondary" data-i18n="+ Добавить деталь">+ Добавить деталь</button>
       </section>
 
       <button type="button" id="packBtn" class="primary" data-i18n="Разложить">Разложить</button>
