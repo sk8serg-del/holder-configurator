@@ -16,7 +16,7 @@ const root = path.join(__dirname, "..");
 const outDir = path.join(root, "dist");
 const outFile = path.join(outDir, "holder-configurator.html");
 
-const SCRIPTS = ["catalog", "i18n", "geometry", "packer", "render", "export-csv", "report", "sheets", "vendor/three.min", "viewer3d", "holder-import", "app"];
+const SCRIPTS = ["catalog", "i18n", "geometry", "packer", "render", "export-csv", "step-export", "step-import", "report", "sheets", "viewer3d", "holder-import", "app"];
 
 function readIndex() {
   return fs.readFileSync(path.join(root, "index.html"), "utf8");
@@ -32,6 +32,20 @@ function build() {
     function () {
       var css = fs.readFileSync(path.join(root, "css", "style.css"), "utf8");
       return "<style>\n" + css + "\n</style>";
+    }
+  );
+
+  // Three.js грузится динамически (js/vendor/three.min.js через createElement,
+  // см. index.html) — для собранного файла это ссылка на несуществующую рядом
+  // папку js/, поэтому инлайним его как data:-URI прямо в s.src, чтобы файл
+  // остался самодостаточным, но загрузка by-design осталась динамической/после
+  // оболочки, а не статичным тегом.
+  html = html.replace(
+    /s\.src = "js\/vendor\/three\.min\.js(\?v=\d+)?";/,
+    function () {
+      var js = fs.readFileSync(path.join(root, "js", "vendor", "three.min.js"), "utf8");
+      var b64 = Buffer.from(js, "utf8").toString("base64");
+      return 's.src = "data:text/javascript;base64,' + b64 + '";';
     }
   );
 

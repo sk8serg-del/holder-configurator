@@ -72,7 +72,7 @@ body {
   color: var(--text);
 }
 
-.app { max-width: 1200px; margin: 0 auto; padding: 12px 16px; }
+.app { max-width: none; width: 100%; margin: 0; padding: 12px 20px; }
 
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 header h1 { font-size: 22px; margin: 8px 0 16px; }
@@ -85,6 +85,25 @@ header h1 { font-size: 22px; margin: 8px 0 16px; }
 .lang-switch .lang + .lang { border-left: 1px solid #c4ccd6; }
 .lang-switch .lang.active { background: #2b6cb0; color: #fff; }
 
+/* Три раздела приложения (Конфигуратор/Болванки/База) — простые кнопки-вкладки,
+   без роутинга: показываем/скрываем .tab-panel по data-tab, см. js/app.js. */
+.tabs {
+  display: flex; gap: 4px; margin: 4px 0 16px; border-bottom: 1px solid var(--border);
+}
+.tab-btn {
+  padding: 10px 18px; border: 0; background: none; color: var(--muted);
+  font: inherit; font-size: 14px; cursor: pointer; border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.tab-panel[hidden] { display: none; }
+.stub-panel {
+  background: var(--panel); border-radius: 10px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  padding: 32px; color: var(--muted);
+}
+.stub-panel h2 { color: var(--text); margin-top: 0; }
+
 main { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 
 .panel {
@@ -94,7 +113,27 @@ main { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
   padding: 16px;
 }
 
-.form-panel { flex: 0 0 390px; max-width: 100%; }
+.form-panel { flex: 0 0 33.333%; max-width: 100%; min-width: 320px; }
+.blanks-panel { max-width: 480px; }
+
+/* ---------- заглушка входа (вместо логина/пароля) ---------- */
+.login-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(15, 20, 26, 0.35);
+}
+.login-overlay[hidden] { display: none; }
+.login-box {
+  background: var(--panel); border-radius: 12px; padding: 24px 28px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  display: flex; flex-direction: column; gap: 12px; min-width: 280px;
+}
+.login-box h2 { margin: 0; }
+.login-box input {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+  font: inherit; background: var(--panel); color: var(--text);
+}
+.app.blurred { filter: blur(6px); pointer-events: none; user-select: none; }
 
 /* Раскладка всегда на виду: панель липнет к верху окна, форма слева
    скроллится как обычно. Если панель выше окна — скролл внутри неё. */

@@ -128,9 +128,11 @@
         '" stroke-dasharray="' + fmt(sw * 2.5) + " " + fmt(sw * 1.8) + '"/>'
       );
     }
-    if (showSlot && spec.mark) {
-      var mk = HC.geom.slotMarkPoint(0, 0, D / 2, slotWidth(D) / 2, ((spec.slotAngle || 0) * Math.PI) / 180, HC.MARK_OFF, HC.MARK_SIDE);
-      out.push('<circle cx="' + fmt(mk.x) + '" cy="' + fmt(mk.y) + '" r="' + fmt(HC.MARK_D / 2) + '" fill="#c0392b" stroke="none"/>');
+    if (showSlot && spec.markCount > 0) {
+      var mks = HC.geom.slotMarkPoints(0, 0, D / 2, slotWidth(D) / 2, ((spec.slotAngle || 0) * Math.PI) / 180, HC.MARK_OFF, HC.MARK_SIDE, spec.markCount, HC.MARK_PITCH);
+      mks.forEach(function (mk) {
+        out.push('<circle cx="' + fmt(mk.x) + '" cy="' + fmt(mk.y) + '" r="' + fmt(HC.MARK_D / 2) + '" fill="#c0392b" stroke="none"/>');
+      });
     }
     return out.join("");
   }
@@ -168,9 +170,11 @@
         '<g transform="translate(' + fmt(cx) + "," + fmt(cy) + ") rotate(" + fmt(ang) + ')">' +
         '<path d="' + stadiumPath(slotL, slotW) + '" fill="none" stroke="#000" stroke-width="' + fmt(sw) + '"/></g>'
       );
-      if (spec.mark) {
-        var mk = HC.geom.slotMarkPoint(cx, cy, halfExt, slotW / 2, ar, HC.MARK_OFF, HC.MARK_SIDE);
-        out.push('<circle cx="' + fmt(mk.x) + '" cy="' + fmt(mk.y) + '" r="' + fmt(HC.MARK_D / 2) + '" fill="#c0392b" stroke="none"/>');
+      if (spec.markCount > 0) {
+        var mks = HC.geom.slotMarkPoints(cx, cy, halfExt, slotW / 2, ar, HC.MARK_OFF, HC.MARK_SIDE, spec.markCount, HC.MARK_PITCH);
+        mks.forEach(function (mk) {
+          out.push('<circle cx="' + fmt(mk.x) + '" cy="' + fmt(mk.y) + '" r="' + fmt(HC.MARK_D / 2) + '" fill="#c0392b" stroke="none"/>');
+        });
       }
     }
     if (gap > 0) {
@@ -298,13 +302,13 @@
         var swC = Math.max(sw * 1.5, (p.seatD || p.d) / 70);
         out.push(
           '<g transform="translate(' + fmt(p.cx) + "," + fmt(p.cy) + ')">' +
-          circleFeatureSVG({ d: p.d, seatD: p.seatD, apertureCA: p.apertureCA, slotOn: p.slotOn, slotAngle: slotAngle, mark: true }, swC) +
+          circleFeatureSVG({ d: p.d, seatD: p.seatD, apertureCA: p.apertureCA, slotOn: p.slotOn, slotAngle: slotAngle, markCount: (p.partIndex || 0) + 1 }, swC) +
           "</g>"
         );
       } else {
         out.push(polyFeatureSVG({
           type: p.type, cx: p.cx, cy: p.cy, w: p.w, h: p.h, chamfer: p.chamfer, rot: p.rot,
-          seatGap: p.seatGap, caInset: p.caInset, slotOn: p.slotOn, slotAngle: p.slotAngle, mark: true,
+          seatGap: p.seatGap, caInset: p.caInset, slotOn: p.slotOn, slotAngle: p.slotAngle, markCount: (p.partIndex || 0) + 1,
           fill: col.fill, stroke: col.stroke
         }, sw * 1.5));
       }

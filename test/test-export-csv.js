@@ -18,8 +18,8 @@ function parseRow(csv, cx) {
   var line = csv.split(/\r?\n/).find(function (l) { return l.indexOf(";" + cx + ";") !== -1; });
   if (!line) return null;
   var f = line.split(";");
-  // columns: kind;type;cx;cy;d;w;h;chamfer;rot;seatD;caDia;seatGap;caInset;slot;slotAngle;slotL;slotW;depth;markX;markY
-  return { cx: f[2], cy: f[3], slot: f[13], slotAngle: f[14], markX: f[18], markY: f[19] };
+  // columns: kind;type;cx;cy;d;w;h;chamfer;rot;seatD;caDia;seatGap;caInset;slot;slotAngle;slotL;slotW;depth;markX;markY;markCount
+  return { cx: f[2], cy: f[3], slot: f[13], slotAngle: f[14], markX: f[18], markY: f[19], markCount: f[20] };
 }
 
 // деталь из обычной гекс-сетки: slotAngle=90 (вертикаль), НЕ радиально
@@ -99,6 +99,31 @@ var rowNoSlot = parseRow(HC.buildCSV(orderNoSlot), 50);
 check("метка-ориентир: у детали без паза — пусто",
   rowNoSlot && rowNoSlot.markX === "" && rowNoSlot.markY === "",
   rowNoSlot && rowNoSlot.markX + "," + rowNoSlot.markY);
+
+// --- markCount = номер разновидности детали (partIndex+1): 1-я деталь в
+// заказе — 1 метка, 2-я — 2, 3-я — 3. Контрольные отверстия — всегда 0/пусто. ---
+var orderMulti = {
+  id: "T5", date: "2026-01-01", customer: { name: "T", org: "" },
+  disc: { id: "d", name: "Диск", diameter: 298, thickness: 6 },
+  clearances: { pp: 6, pe: 3, pc: 6 },
+  controlHoles: [{ x: -13.527, y: 110.173, d: 25.4, seatD: 25.6, apertureCA: 22.6, slotOn: true }],
+  placed: [
+    { type: "circle", cx: 0, cy: 0, d: 10, seatD: 10.2, apertureCA: 9, slotOn: true, slotAngle: 0, partIndex: 0 },
+    { type: "circle", cx: 40, cy: 0, d: 12, seatD: 12.2, apertureCA: 11, slotOn: true, slotAngle: 0, partIndex: 1 },
+    { type: "circle", cx: 80, cy: 0, d: 14, seatD: 14.2, apertureCA: 13, slotOn: true, slotAngle: 0, partIndex: 2 }
+  ]
+};
+var csvMulti = HC.buildCSV(orderMulti);
+var r1 = parseRow(csvMulti, 0), r2 = parseRow(csvMulti, 40), r3 = parseRow(csvMulti, 80);
+var rCtrlMulti = parseRow(csvMulti, -13.527);
+check("markCount: 1-я разновидность детали — 1 метка", r1 && r1.markCount === "1", r1 && r1.markCount);
+check("markCount: 2-я разновидность детали — 2 метки", r2 && r2.markCount === "2", r2 && r2.markCount);
+check("markCount: 3-я разновидность детали — 3 метки", r3 && r3.markCount === "3", r3 && r3.markCount);
+check("markCount: у контрольного отверстия — пусто (0)", rCtrlMulti && rCtrlMulti.markCount === "", rCtrlMulti && rCtrlMulti.markCount);
+
+check("строка mark в заголовке несёт шаг между метками (3-е значение)",
+  csvMulti.split(/\r?\n/).some(function (l) { return /^mark;[\d.]+;[\d.]+;[\d.]+$/.test(l); }),
+  csvMulti.split(/\r?\n/).find(function (l) { return l.indexOf("mark;") === 0; }));
 
 console.log(failures ? "\nПРОВАЛЕНО: " + failures : "\nТест экспорта CSV пройден.");
 process.exit(failures ? 1 : 0);

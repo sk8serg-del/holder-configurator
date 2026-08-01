@@ -17,8 +17,8 @@ $root = Split-Path -Parent $PSScriptRoot            # project root (.../holder-c
 $ver  = Get-Date -Format "yyyyMMddHHmm"
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
-$scripts = @("catalog","i18n","geometry","packer","render","export-csv","report",
-             "sheets","vendor/three.min","viewer3d","holder-import","app")
+$scripts = @("catalog","i18n","geometry","packer","render","export-csv","step-export","step-import","report",
+             "sheets","viewer3d","holder-import","app")
 
 # --- 1) cache versions on index.html assets ---
 $idxPath = Join-Path $root "index.html"
@@ -31,6 +31,15 @@ $idx = [regex]::Replace($idx, 'src="js/([^"?]+)\.js(\?v=\d+)?"', { param($m) 'sr
 $html = $idx
 $css = Get-Content -Raw -Encoding UTF8 (Join-Path $root "css/style.css")
 $html = [regex]::Replace($html, '<link rel="stylesheet" href="css/style\.css(\?v=\d+)?">', { param($m) "<style>`n$css`n</style>" })
+
+# Three.js grузится динамически (createElement, см. index.html) - ссылка на
+# js/vendor/three.min.js внутри inline-скрипта не найдёт файл в собранном
+# HTML (нет соседней папки js/), поэтому инлайним его как data:-URI прямо в
+# s.src, как и в tools/build-single-file.js.
+$threeJs = Get-Content -Raw -Encoding UTF8 (Join-Path $root "js/vendor/three.min.js")
+$threeB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($threeJs))
+$html = [regex]::Replace($html, 's\.src = "js/vendor/three\.min\.js(\?v=\d+)?";', 's.src = "data:text/javascript;base64,' + $threeB64 + '";')
+
 foreach ($name in $scripts) {
   $js = Get-Content -Raw -Encoding UTF8 (Join-Path $root ("js/" + $name + ".js"))
   $pat = '<script src="js/' + [regex]::Escape($name) + '\.js(\?v=\d+)?"></script>'

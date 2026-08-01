@@ -22,6 +22,18 @@
   var DICT_EN = {
     // ---------- шапка / заголовки ----------
     "Конфигуратор подложкодержателей": "Substrate Holder Configurator",
+    "Конфигуратор": "Configurator",
+    "Вход": "Sign in",
+    "ФИО технолога": "Engineer's full name",
+    "Войти": "Sign in",
+    "Таблица/поиск по сохранённым болванкам — в разработке. Пока — редактирование текущей выбранной (см. вкладку «Конфигуратор») и загрузка новых.":
+      "Table/search over saved blanks — under construction. For now — editing the currently selected one (see the “Configurator” tab) and uploading new ones.",
+    "Болванки": "Blanks",
+    "База подложкодержателей": "Holder database",
+    "Библиотека болванок (загрузка/конструктор, редактирование, поиск) — в разработке.":
+      "Blank library (upload/builder, editing, search) — under construction.",
+    "Реестр готовых заказов (поиск по столбцам, карточка с чертежом и 3D, история правок) — в разработке.":
+      "Finished-order registry (per-column search, drawing + 3D card, edit history) — under construction.",
     "1. Заказчик": "1. Customer",
     "Технолог (ФИО)": "Engineer (full name)",
     "Иванов И. И.": "John A. Doe",
@@ -45,6 +57,16 @@
     "Ø полезной зоны, мм": "Usable-zone Ø, mm",
     "Толщина, мм": "Thickness, mm",
     "Добавить в каталог": "Add to catalog",
+    "＋ Загрузить STEP болванки": "＋ Upload blank STEP",
+    "Твердотельный STEP заготовки диска (без деталей). Отверстия находятся автоматически по геометрии — круглые посадки и сквозные отверстия; фигурные вырезы и канавки так не распознаются, их нужно поправить в каталоге вручную.":
+      "Solid STEP of the blank disc (no parts). Holes are found automatically from the geometry — round seats and through-holes; shaped cutouts and grooves aren't recognized this way and need manual adjustment in the catalog.",
+    "Файл болванки (.step/.stp)": "Blank file (.step/.stp)",
+    "Разобрать и добавить в каталог": "Parse and add to catalog",
+    "Выберите STEP-файл болванки.": "Choose a blank STEP file.",
+    "Модуль импорта STEP не загружен.": "STEP import module is not loaded.",
+    "Подложкодержатель «{0}» добавлен: найдено отверстий {1}, крепежа на фланце {2}.":
+      "Substrate holder “{0}” added: {1} holes found, {2} flange fasteners.",
+    "Ошибка разбора STEP: {0}": "STEP parsing error: {0}",
     "3. Детали": "3. Parts",
     "+ Добавить деталь": "+ Add part",
     "4. Минимальные зазоры, мм": "4. Minimum clearances, mm",
@@ -58,6 +80,8 @@
     "Левая кнопка — поворот · правая (или Shift+левая) — перетаскивание · колесо — масштаб · двойной клик — сброс. На тач: один палец — поворот, два — масштаб и перетаскивание.":
       "Left button — rotate · right (or Shift+left) — pan · wheel — zoom · double-click — reset. Touch: one finger — rotate, two — zoom and pan.",
     "Скачать CSV для Inventor": "Download CSV for Inventor",
+    "Скачать STEP": "Download STEP",
+    "Не удалось построить STEP: {0}": "Failed to build STEP: {0}",
     "Отчёт / PDF": "Report / PDF",
     "Отправить заказ": "Send order",
     "Координаты отверстий — от центра диска, единицы — мм. Контрольные отверстия фиксированы и изменению не подлежат.":
@@ -181,6 +205,7 @@
     // ---------- 3D ----------
     "3D-вид недоступен в этом браузере (нет WebGL).": "3D view is unavailable in this browser (no WebGL).",
     "3D-вид недоступен: библиотека Three.js не загрузилась.": "3D view unavailable: Three.js failed to load.",
+    "3D-вид загружается…": "3D view is loading…",
 
     // ---------- отчёт ----------
     "Подложкодержатель — заказ {0}": "Substrate holder — order {0}",

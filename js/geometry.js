@@ -99,19 +99,23 @@
   HC.MARK_ANGLE = 90;
   HC.MARK_OFF = 2;
   HC.MARK_SIDE = 1;
+  // Шаг между несколькими метками на одной детали (см. slotMarkPoints) — метки
+  // считаются по разновидности детали (1-я — одна метка, 2-я — две, и т.д.),
+  // раскладываются в ряд вдоль паза, чтобы количество читалось с одного взгляда.
+  HC.MARK_PITCH = 4;
 
-  // Точка метки (маленькая зенковка-ориентир рядом с пазом): всегда с ОДНОЙ и
-  // той же стороны от оси паза (side), на пересечении двух офсетных кривых —
-  // offset+off от посадки (halfExt — её проекция на ось паза; для круга это
-  // просто радиус, для rect/oct/oval — та же проекция, что используется для
-  // длины паза, см. export-csv.js: slotGeom) и offset+off от торца паза
-  // (halfW — половина его ширины). Точка получается на пересечении окружности
-  // радиуса halfExt+off (посадка) и либо прямой y=halfW+off (если пересечение
-  // приходится на прямой участок паза, |x|<=hs), либо окружности радиуса
-  // halfW+off с центром в торце паза (если пересечение — на скруглении).
-  // Для rect/oct/oval посадка не окружность — приближение (по проекции)
-  // достаточно точное для вспомогательной, не несущей метки.
-  function slotMarkPoint(cx, cy, halfExt, halfW, angleRad, off, side) {
+  // Точка метки в МЕСТНЫХ координатах (до поворота/переноса детали): всегда с
+  // ОДНОЙ и той же стороны от оси паза (side), на пересечении двух офсетных
+  // кривых — offset+off от посадки (halfExt — её проекция на ось паза; для
+  // круга это просто радиус, для rect/oct/oval — та же проекция, что
+  // используется для длины паза, см. export-csv.js: slotGeom) и offset+off от
+  // торца паза (halfW — половина его ширины). Точка — на пересечении
+  // окружности радиуса halfExt+off (посадка) и либо прямой y=halfW+off (если
+  // пересечение приходится на прямой участок паза, |x|<=hs), либо окружности
+  // радиуса halfW+off с центром в торце паза (если пересечение — на
+  // скруглении). Для rect/oct/oval посадка не окружность — приближение (по
+  // проекции) достаточно точное для вспомогательной, не несущей метки.
+  function slotMarkLocal(halfExt, halfW, off) {
     var hs = Math.max(0, halfExt + 2.5 - halfW);
     var r1 = halfExt + off, r2 = halfW + off;
     var lx, ly;
@@ -123,9 +127,30 @@
       var a = hs > EPS ? (hs * hs + r1 * r1 - r2 * r2) / (2 * hs) : 0;
       lx = a; ly = Math.sqrt(Math.max(0, r1 * r1 - a * a));
     }
-    ly *= side < 0 ? -1 : 1;
+    return { lx: lx, ly: ly };
+  }
+
+  function slotMarkPoint(cx, cy, halfExt, halfW, angleRad, off, side) {
+    var p = slotMarkLocal(halfExt, halfW, off);
+    var ly = p.ly * (side < 0 ? -1 : 1);
     var cosA = Math.cos(angleRad), sinA = Math.sin(angleRad);
-    return { x: cx + lx * cosA - ly * sinA, y: cy + lx * sinA + ly * cosA };
+    return { x: cx + p.lx * cosA - ly * sinA, y: cy + p.lx * sinA + ly * cosA };
+  }
+
+  // count меток в ряд вдоль паза (шаг pitch, местное +x — «наружу» от центра
+  // детали), начиная с той же точки, что и slotMarkPoint. Используется, когда
+  // одной метки мало (для разновидностей деталей 2, 3, …) — считаем один раз
+  // базовую точку (offset от посадки/паза), дальше просто идём вдоль паза.
+  function slotMarkPoints(cx, cy, halfExt, halfW, angleRad, off, side, count, pitch) {
+    var base = slotMarkLocal(halfExt, halfW, off);
+    var ly = base.ly * (side < 0 ? -1 : 1);
+    var cosA = Math.cos(angleRad), sinA = Math.sin(angleRad);
+    var out = [];
+    for (var k = 0; k < count; k++) {
+      var lx = base.lx + k * pitch;
+      out.push({ x: cx + lx * cosA - ly * sinA, y: cy + lx * sinA + ly * cosA });
+    }
+    return out;
   }
 
   // Контур фигуры заданного типа по габаритам w×h (для посадки/зоны напыления —
@@ -260,6 +285,7 @@
     slotWidth: slotWidth,
     seatOutline: seatOutline,
     slotMarkPoint: slotMarkPoint,
+    slotMarkPoints: slotMarkPoints,
     ellipsePoly: ellipsePoly,
     shapePoly: shapePoly,
     placementPoly: placementPoly,

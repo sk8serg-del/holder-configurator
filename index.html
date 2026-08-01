@@ -4,10 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Конфигуратор подложкодержателей</title>
-<link rel="stylesheet" href="css/style.css?v=202607281401">
+<link rel="stylesheet" href="css/style.css?v=202607291827">
 </head>
 <body>
-<div class="app">
+<div id="loginOverlay" class="login-overlay">
+  <div class="login-box">
+    <h2 data-i18n="Вход">Вход</h2>
+    <label><span data-i18n="ФИО технолога">ФИО технолога</span>
+      <input type="text" id="loginInput" placeholder="Иванов И. И." data-i18n-ph="Иванов И. И.">
+    </label>
+    <button type="button" id="loginBtn" class="primary" data-i18n="Войти">Войти</button>
+  </div>
+</div>
+<div class="app" id="app">
   <header>
     <h1 data-i18n="Конфигуратор подложкодержателей">Конфигуратор подложкодержателей</h1>
     <div class="lang-switch">
@@ -15,54 +24,31 @@
       <button type="button" id="langEn" class="lang">EN</button>
     </div>
   </header>
+  <nav class="tabs" role="tablist">
+    <button type="button" class="tab-btn active" data-tab="tabConfigurator" role="tab" aria-selected="true" data-i18n="Конфигуратор">Конфигуратор</button>
+    <button type="button" class="tab-btn" data-tab="tabBlanks" role="tab" aria-selected="false" data-i18n="Болванки">Болванки</button>
+    <button type="button" class="tab-btn" data-tab="tabOrders" role="tab" aria-selected="false" data-i18n="База подложкодержателей">База подложкодержателей</button>
+  </nav>
+
+  <section id="tabConfigurator" class="tab-panel" role="tabpanel">
   <main>
     <form class="panel form-panel" id="orderForm" autocomplete="on" onsubmit="return false">
-      <section>
-        <h2 data-i18n="1. Заказчик">1. Заказчик</h2>
-        <label><span data-i18n="Технолог (ФИО)">Технолог (ФИО)</span>
-          <input id="custName" name="name" autocomplete="name" placeholder="Иванов И. И." data-i18n-ph="Иванов И. И." required>
-        </label>
-        <label><span data-i18n="Организация">Организация</span>
-          <input id="custOrg" name="organization" autocomplete="organization">
-        </label>
-        <label><span data-i18n="Контакт (e-mail / телефон)">Контакт (e-mail / телефон)</span>
-          <input id="custContact" name="email" autocomplete="email">
-        </label>
-      </section>
+      <div hidden>
+        <!-- временно скрыто — заменено окном входа (#loginOverlay), которое
+             пишет ФИО сюда же; поля организации/контакта пока не собираются -->
+        <input id="custName" name="name" autocomplete="name">
+        <input id="custOrg" name="organization" autocomplete="organization">
+        <input id="custContact" name="email" autocomplete="email">
+      </div>
 
       <section>
         <h2 data-i18n="2. Подложкодержатель">2. Подложкодержатель</h2>
         <div class="dims">
           <label><span data-i18n="Номер">Номер</span><input type="text" id="holderNo"></label>
-          <label><span data-i18n="Название">Название</span><input type="text" id="holderName" readonly></label>
         </div>
-        <div class="hint" data-i18n="Название формируется автоматически по составу деталей (после раскладки).">Название формируется автоматически по составу деталей (после раскладки).</div>
         <label><span data-i18n="Диск">Диск</span>
           <select id="discSelect"></select>
         </label>
-        <label id="customDiscWrap" hidden><span data-i18n="Ø кастомного подложкодержителя, мм">Ø кастомного подложкодержителя, мм</span>
-          <input type="number" id="customDiscDia" min="1" step="0.1" value="200">
-        </label>
-        <label><span data-i18n="Контрольные отверстия">Контрольные отверстия</span>
-          <select id="controlSelect"></select>
-        </label>
-        <div id="controlList"></div>
-        <div class="hint" data-i18n="Позиции контрольных отверстий фиксированы; наличие и диаметр — задаются здесь.">Позиции контрольных отверстий фиксированы; наличие и диаметр — задаются здесь.</div>
-        <div class="hint" id="discInfo"></div>
-        <button type="button" id="discDelBtn" class="link" hidden data-i18n="удалить этот подложкодержатель">удалить этот подложкодержатель</button>
-
-        <details class="upload-disc">
-          <summary data-i18n="＋ Загрузить свой подложкодержатель (CSV из Inventor)">＋ Загрузить свой подложкодержатель (CSV из Inventor)</summary>
-          <div class="hint" style="margin-bottom:8px" data-i18n-html="Файл выгрузки правила <code>DumpHoles</code>. Подложкодержатель добавится в список и сохранится в этом браузере.">Файл выгрузки правила <code>DumpHoles</code>. Подложкодержатель добавится в список и сохранится в этом браузере.</div>
-          <label><span data-i18n="Файл выгрузки (.csv)">Файл выгрузки (.csv)</span><input type="file" id="discFile" accept=".csv,text/csv"></label>
-          <label><span data-i18n="Название">Название</span><input id="discName" placeholder="напр. Диск Ø320" data-i18n-ph="напр. Диск Ø320"></label>
-          <div class="dims">
-            <label><span data-i18n="Ø полезной зоны, мм">Ø полезной зоны, мм</span><input type="number" id="discZone" min="1" step="0.1" value="298"></label>
-            <label><span data-i18n="Толщина, мм">Толщина, мм</span><input type="number" id="discThk" min="0.1" step="0.1" value="6"></label>
-          </div>
-          <button type="button" id="discLoadBtn" class="secondary" data-i18n="Добавить в каталог">Добавить в каталог</button>
-          <div id="discLoadMsg" class="status"></div>
-        </details>
       </section>
 
       <section>
@@ -101,6 +87,7 @@
       <div id="view3dHint" class="hint view3d-hint" hidden data-i18n="Левая кнопка — поворот · правая (или Shift+левая) — перетаскивание · колесо — масштаб · двойной клик — сброс. На тач: один палец — поворот, два — масштаб и перетаскивание.">Левая кнопка — поворот · правая (или Shift+левая) — перетаскивание · колесо — масштаб · двойной клик — сброс. На тач: один палец — поворот, два — масштаб и перетаскивание.</div>
       <div class="actions">
         <button type="button" id="csvBtn" disabled data-i18n="Скачать CSV для Inventor">Скачать CSV для Inventor</button>
+        <button type="button" id="stepBtn" disabled data-i18n="Скачать STEP">Скачать STEP</button>
         <button type="button" id="reportBtn" disabled data-i18n="Отчёт / PDF">Отчёт / PDF</button>
         <button type="button" id="sendBtn" class="primary" disabled data-i18n="Отправить заказ">Отправить заказ</button>
       </div>
@@ -108,21 +95,95 @@
     </div>
   </main>
   <footer data-i18n="Координаты отверстий — от центра диска, единицы — мм. Контрольные отверстия фиксированы и изменению не подлежат.">Координаты отверстий — от центра диска, единицы — мм. Контрольные отверстия фиксированы и изменению не подлежат.</footer>
+  </section>
+
+  <section id="tabBlanks" class="tab-panel" role="tabpanel" hidden>
+    <div class="panel blanks-panel">
+      <h2 data-i18n="Болванки">Болванки</h2>
+      <p class="hint" data-i18n="Таблица/поиск по сохранённым болванкам — в разработке. Пока — редактирование текущей выбранной (см. вкладку «Конфигуратор») и загрузка новых.">Таблица/поиск по сохранённым болванкам — в разработке. Пока — редактирование текущей выбранной (см. вкладку «Конфигуратор») и загрузка новых.</p>
+
+      <div class="dims">
+        <label><span data-i18n="Название">Название</span><input type="text" id="holderName" readonly></label>
+      </div>
+      <div class="hint" data-i18n="Название формируется автоматически по составу деталей (после раскладки).">Название формируется автоматически по составу деталей (после раскладки).</div>
+
+      <label id="customDiscWrap" hidden><span data-i18n="Ø кастомного подложкодержителя, мм">Ø кастомного подложкодержителя, мм</span>
+        <input type="number" id="customDiscDia" min="1" step="0.1" value="200">
+      </label>
+      <label><span data-i18n="Контрольные отверстия">Контрольные отверстия</span>
+        <select id="controlSelect"></select>
+      </label>
+      <div id="controlList"></div>
+      <div class="hint" data-i18n="Позиции контрольных отверстий фиксированы; наличие и диаметр — задаются здесь.">Позиции контрольных отверстий фиксированы; наличие и диаметр — задаются здесь.</div>
+      <div class="hint" id="discInfo"></div>
+      <button type="button" id="discDelBtn" class="link" hidden data-i18n="удалить этот подложкодержатель">удалить этот подложкодержатель</button>
+
+      <details class="upload-disc">
+        <summary data-i18n="＋ Загрузить свой подложкодержатель (CSV из Inventor)">＋ Загрузить свой подложкодержатель (CSV из Inventor)</summary>
+        <div class="hint" style="margin-bottom:8px" data-i18n-html="Файл выгрузки правила <code>DumpHoles</code>. Подложкодержатель добавится в список и сохранится в этом браузере.">Файл выгрузки правила <code>DumpHoles</code>. Подложкодержатель добавится в список и сохранится в этом браузере.</div>
+        <label><span data-i18n="Файл выгрузки (.csv)">Файл выгрузки (.csv)</span><input type="file" id="discFile" accept=".csv,text/csv"></label>
+        <label><span data-i18n="Название">Название</span><input id="discName" placeholder="напр. Диск Ø320" data-i18n-ph="напр. Диск Ø320"></label>
+        <div class="dims">
+          <label><span data-i18n="Ø полезной зоны, мм">Ø полезной зоны, мм</span><input type="number" id="discZone" min="1" step="0.1" value="298"></label>
+          <label><span data-i18n="Толщина, мм">Толщина, мм</span><input type="number" id="discThk" min="0.1" step="0.1" value="6"></label>
+        </div>
+        <button type="button" id="discLoadBtn" class="secondary" data-i18n="Добавить в каталог">Добавить в каталог</button>
+        <div id="discLoadMsg" class="status"></div>
+      </details>
+
+      <details class="upload-disc">
+        <summary data-i18n="＋ Загрузить STEP болванки">＋ Загрузить STEP болванки</summary>
+        <div class="hint" style="margin-bottom:8px" data-i18n="Твердотельный STEP заготовки диска (без деталей). Отверстия находятся автоматически по геометрии — круглые посадки и сквозные отверстия; фигурные вырезы и канавки так не распознаются, их нужно поправить в каталоге вручную.">Твердотельный STEP заготовки диска (без деталей). Отверстия находятся автоматически по геометрии — круглые посадки и сквозные отверстия; фигурные вырезы и канавки так не распознаются, их нужно поправить в каталоге вручную.</div>
+        <label><span data-i18n="Файл болванки (.step/.stp)">Файл болванки (.step/.stp)</span><input type="file" id="discStepFile" accept=".step,.stp"></label>
+        <label><span data-i18n="Название">Название</span><input id="discStepName" placeholder="напр. Диск Ø320" data-i18n-ph="напр. Диск Ø320"></label>
+        <div class="dims">
+          <label><span data-i18n="Ø полезной зоны, мм">Ø полезной зоны, мм</span><input type="number" id="discStepZone" min="1" step="0.1" value="298"></label>
+        </div>
+        <button type="button" id="discStepLoadBtn" class="secondary" data-i18n="Разобрать и добавить в каталог">Разобрать и добавить в каталог</button>
+        <div id="discStepLoadMsg" class="status"></div>
+      </details>
+    </div>
+  </section>
+
+  <section id="tabOrders" class="tab-panel" role="tabpanel" hidden>
+    <div class="stub-panel">
+      <h2 data-i18n="База подложкодержателей">База подложкодержателей</h2>
+      <p class="hint" data-i18n="Реестр готовых заказов (поиск по столбцам, карточка с чертежом и 3D, история правок) — в разработке.">Реестр готовых заказов (поиск по столбцам, карточка с чертежом и 3D, история правок) — в разработке.</p>
+    </div>
+  </section>
 </div>
 
 <div id="report"></div>
 
-<script src="js/catalog.js?v=202607281401"></script>
-<script src="js/i18n.js?v=202607281401"></script>
-<script src="js/geometry.js?v=202607281401"></script>
-<script src="js/packer.js?v=202607281401"></script>
-<script src="js/render.js?v=202607281401"></script>
-<script src="js/export-csv.js?v=202607281401"></script>
-<script src="js/report.js?v=202607281401"></script>
-<script src="js/sheets.js?v=202607281401"></script>
-<script src="js/vendor/three.min.js?v=202607281401"></script>
-<script src="js/viewer3d.js?v=202607281401"></script>
-<script src="js/holder-import.js?v=202607281401"></script>
-<script src="js/app.js?v=202607281401"></script>
+<script>
+// Three.js (596КБ) грузится динамически СРАЗУ после оболочки, параллельно с
+// остальными (маленькими) скриптами — не блокирует первую отрисовку статичным
+// тегом посреди цепочки. HC.threeReady — промис (true/false), viewer3d.js сам
+// ничего не ждёт (обращается к THREE только внутри вызовов available()/update(),
+// не при загрузке), поэтому его порядок в цепочке ниже не важен.
+(function () {
+  var HC = window.HC = window.HC || {};
+  var s = document.createElement("script");
+  s.src = "js/vendor/three.min.js?v=202607291827";
+  HC.threeReady = new Promise(function (resolve) {
+    s.onload = function () { resolve(true); };
+    s.onerror = function () { resolve(false); };
+  });
+  document.head.appendChild(s);
+})();
+</script>
+<script src="js/catalog.js?v=202607291827"></script>
+<script src="js/i18n.js?v=202607291827"></script>
+<script src="js/geometry.js?v=202607291827"></script>
+<script src="js/packer.js?v=202607291827"></script>
+<script src="js/render.js?v=202607291827"></script>
+<script src="js/export-csv.js?v=202607291827"></script>
+<script src="js/step-export.js?v=202607291827"></script>
+<script src="js/step-import.js?v=202607291827"></script>
+<script src="js/report.js?v=202607291827"></script>
+<script src="js/sheets.js?v=202607291827"></script>
+<script src="js/viewer3d.js?v=202607291827"></script>
+<script src="js/holder-import.js?v=202607291827"></script>
+<script src="js/app.js?v=202607291827"></script>
 </body>
 </html>

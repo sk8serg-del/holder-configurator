@@ -116,6 +116,42 @@
     reader.readAsText(file);
   }
 
+  // Импорт STEP-болванки: отверстия находятся геометрически (см. js/step-import.js),
+  // без Inventor. Асинхронно — грузит CAD-движок (WASM) при первом использовании.
+  function loadDiscFromStepFile() {
+    var input = $("discStepFile");
+    var msgEl = $("discStepLoadMsg");
+    var btn = $("discStepLoadBtn");
+    function msg(t, cls) { msgEl.textContent = t || ""; msgEl.className = "status" + (cls ? " " + cls : ""); }
+    var file = input.files && input.files[0];
+    if (!file) { msg(HC.t("Выберите STEP-файл болванки."), "error"); return; }
+    var zone = parseFloat($("discStepZone").value);
+    if (!(zone > 0)) { msg(HC.t("Укажите Ø полезной зоны."), "error"); return; }
+    if (!HC.stepImport) { msg(HC.t("Модуль импорта STEP не загружен."), "error"); return; }
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      btn.disabled = true;
+      var name = $("discStepName").value.trim() || file.name.replace(/\.(step|stp)$/i, "") || HC.t("Подложкодержатель");
+      HC.stepImport.fromFile(reader.result, { id: "user-" + Date.now(), name: name, discDiameter: zone }, function (t) { msg(t); })
+        .then(function (entry) {
+          HC.CATALOG.discs.push(entry);
+          saveCustomDiscs();
+          fillDiscSelect();
+          $("discSelect").value = entry.id;
+          onDiscChange();
+          var n = entry.controlVariants[0].holes.length, f = entry.fixtures.holes.length;
+          msg(HC.t("Подложкодержатель «{0}» добавлен: найдено отверстий {1}, крепежа на фланце {2}.", entry.name, n, f), "ok");
+        })
+        .catch(function (err) {
+          msg(HC.t("Ошибка разбора STEP: {0}", (err && err.message) || err), "error");
+        })
+        .then(function () { btn.disabled = false; });
+    };
+    reader.onerror = function () { msg(HC.t("Не удалось прочитать файл."), "error"); };
+    reader.readAsArrayBuffer(file);
+  }
+
   function deleteCurrentDisc() {
     var d = currentDisc();
     if (!isUserDisc(d)) return;
@@ -354,6 +390,11 @@
     var m = Math.min(w || 0, h || 0);
     return m > 1.6 ? 0.6 : Math.max(0, Math.round((m / 2 - 0.2) * 100) / 100);
   }
+  // Паз под пинцет у некруглых деталей по умолчанию — вдоль ДЛИННОЙ стороны
+  // (больше места на сам паз): 0° — вдоль w, 90° — вдоль h, если h больше.
+  function autoSlotAngle(w, h) {
+    return (w || 0) >= (h || 0) ? 0 : 90;
+  }
 
   // Диаметр по умолчанию для расположения «по диаметру» — как у Ø свидетеля
   // (кольцо, на котором стоят «Свидетель»/«Свидетель Центр»), если он есть у
@@ -381,7 +422,9 @@
       // посадка/зона напыления некруглых — отступами от контура (авто)
       seatGap: autoSeatGap(20, 10), seatGapAuto: true,
       caInset: autoCaInset(20, 10), caInsetAuto: true,
-      slotOn: false, slotAngle: 0, // паз под пинцет — у всех типов деталей
+      // паз под пинцет — у всех типов деталей; угол для некруглых — авто по
+      // длинной стороне, пока пользователь не поправит вручную (slotAngleAuto)
+      slotOn: false, slotAngle: autoSlotAngle(20, 10), slotAngleAuto: true,
       qtyMode: "max", qty: 10,
       orientation: "grid",                     // fixed | grid | radial-w | radial-h
       anchor: "center", anchorD: defaultAnchorD() // расположение при неполном заполнении
@@ -437,7 +480,7 @@
       '<div class="qty-line">' +
       '<label><input type="radio" name="qty' + i + '" value="max"' + (p.qtyMode === "max" ? " checked" : "") + "> " + HC.t("максимум") + "</label>" +
       '<label><input type="radio" name="qty' + i + '" value="qty"' + (p.qtyMode === "qty" ? " checked" : "") + "> " + HC.t("количество:") + "</label>" +
-      '<input type="number" class="p-qty" min="1" step="1" value="' + p.qty + '"' + (p.qtyMode === "max" ? " disabled" : "") + ">" +
+      '<input type="number" class="p-qty" min="1" step="1" value="' + p.qty + '">' +
       "</div>" +
       (p.qtyMode === "qty"
         ? '<div class="place-line">' +
@@ -474,6 +517,10 @@
           p.caInset = autoCaInset(p.w, p.h);
           var ciEl = div.querySelector(".p-ca-inset"); if (ciEl) ciEl.value = p.caInset == null ? "" : p.caInset;
         }
+        if (p.slotAngleAuto) {
+          p.slotAngle = autoSlotAngle(p.w, p.h);
+          var saEl = div.querySelector(".p-slot-angle"); if (saEl) saEl.value = p.slotAngle;
+        }
         return;
       }
       var seatEl = div.querySelector(".p-seat-d");
@@ -508,13 +555,23 @@
       if (angleEl) angleEl.disabled = !p.slotOn;
       refreshPreview(); markDirty();
     });
-    on(".p-slot-angle", "input", function (e) { p.slotAngle = parseFloat(e.target.value); refreshPreview(); markDirty(); });
+    on(".p-slot-angle", "input", function (e) { p.slotAngle = parseFloat(e.target.value); p.slotAngleAuto = false; refreshPreview(); markDirty(); });
     on(".p-w", "input", function (e) { p.w = parseFloat(e.target.value); syncAutoFields(); refreshPreview(); markDirty(); });
     on(".p-h", "input", function (e) { p.h = parseFloat(e.target.value); syncAutoFields(); refreshPreview(); markDirty(); });
     on(".p-seat-gap", "input", function (e) { p.seatGap = e.target.value === "" ? null : parseFloat(e.target.value); p.seatGapAuto = false; refreshPreview(); markDirty(); });
     on(".p-ca-inset", "input", function (e) { p.caInset = e.target.value === "" ? null : parseFloat(e.target.value); p.caInsetAuto = false; refreshPreview(); markDirty(); });
     on(".p-ch", "input", function (e) { p.chamfer = parseFloat(e.target.value); refreshPreview(); markDirty(); });
-    on(".p-qty", "input", function (e) { p.qty = parseInt(e.target.value, 10); markDirty(); });
+    on(".p-qty", "input", function (e) {
+      p.qty = parseInt(e.target.value, 10);
+      markDirty();
+      // редактирование количества явно значит «хочу конкретное число», а не
+      // максимум — переключаем режим сами, не заставляя отдельно щёлкать
+      // радиокнопку (раньше поле вообще было disabled в режиме «максимум»)
+      if (p.qtyMode !== "qty") {
+        p.qtyMode = "qty";
+        renderParts(); // показать радиокнопку/строку «Расположение» в новом состоянии
+      }
+    });
     on(".p-orient", "change", function (e) { p.orientation = e.target.value; markDirty(); });
     on(".p-anchor", "change", function (e) { p.anchor = e.target.value; renderParts(); markDirty(); });
     on(".p-anchor-d", "input", function (e) { p.anchorD = parseFloat(e.target.value); markDirty(); });
@@ -533,6 +590,7 @@
 
   function setActions(enabled) {
     $("csvBtn").disabled = !enabled;
+    $("stepBtn").disabled = !enabled;
     $("reportBtn").disabled = !enabled;
     $("sendBtn").disabled = !enabled;
   }
@@ -759,6 +817,9 @@
       setStatus(HC.t("Ни одна деталь не поместилась: проверьте размеры и зазоры."), "error");
     } else {
       setStatus(warn ? HC.t("Поместились не все детали — уменьшите количество, зазоры или размеры.") : HC.t("Готово."), warn ? "error" : "ok");
+      // раз есть готовая раскладка — скорее всего, дойдут и до «Скачать STEP»;
+      // начинаем тихо тянуть CAD-движок (WASM) в фоне заранее, а не ждать клика
+      if (HC.preloadSTEP) HC.preloadSTEP();
     }
   }
 
@@ -803,7 +864,21 @@
 
   function setViewMode(is3d) {
     if (is3d && !(HC.viewer3d && HC.viewer3d.available())) {
-      setSendMsg(HC.t("3D-вид недоступен: библиотека Three.js не загрузилась."), "error");
+      // Three.js грузится динамически (см. index.html) — обычно к этому моменту
+      // уже готов, но если нет, ждём HC.threeReady вместо мгновенной ошибки.
+      if (HC.threeReady) {
+        setSendMsg(HC.t("3D-вид загружается…"));
+        HC.threeReady.then(function (ok) {
+          if (ok && HC.viewer3d && HC.viewer3d.available()) {
+            setSendMsg("");
+            setViewMode(true);
+          } else {
+            setSendMsg(HC.t("3D-вид недоступен: библиотека Three.js не загрузилась."), "error");
+          }
+        });
+      } else {
+        setSendMsg(HC.t("3D-вид недоступен: библиотека Three.js не загрузилась."), "error");
+      }
       return;
     }
     mode3d = is3d;
@@ -908,12 +983,50 @@
   $("langRu").addEventListener("click", function () { setLanguage("ru"); });
   $("langEn").addEventListener("click", function () { setLanguage("en"); });
 
+  // ---------- вкладки (Конфигуратор / Болванки / База) ----------
+  // Без роутинга — просто показ/скрытие .tab-panel по data-tab кнопки.
+  document.querySelectorAll(".tab-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".tab-btn").forEach(function (b) {
+        b.classList.toggle("active", b === btn);
+        b.setAttribute("aria-selected", b === btn ? "true" : "false");
+      });
+      document.querySelectorAll(".tab-panel").forEach(function (panel) {
+        panel.hidden = panel.id !== btn.dataset.tab;
+      });
+    });
+  });
+
+  // ---------- заглушка входа (вместо логина/пароля) ----------
+  // ВРЕМЕННО: настоящей проверки нет — заготовка под будущую авторизацию
+  // (Supabase Auth и т.п.). При каждой загрузке страницы весь контент размыт
+  // и недоступен, пока не нажать «Войти»; поле — то же ФИО технолога, что
+  // раньше вводилось в разделе «Заказчик» (см. #custName, скрыт, но по-прежнему
+  // используется при сборке заказа/CSV/отчёта — здесь только меняется способ
+  // его заполнения).
+  (function () {
+    var overlay = $("loginOverlay"), input = $("loginInput"), appEl = $("app");
+    appEl.classList.add("blurred");
+    input.value = $("custName").value || ""; // подсказать прошлое имя, но всё равно спросить
+    function login() {
+      var name = input.value.trim();
+      if (!name) { input.focus(); return; }
+      $("custName").value = name;
+      saveCustomer();
+      appEl.classList.remove("blurred");
+      overlay.hidden = true;
+    }
+    $("loginBtn").addEventListener("click", login);
+    input.addEventListener("keydown", function (e) { if (e.key === "Enter") login(); });
+  })();
+
   $("discSelect").addEventListener("change", onDiscChange);
   $("customDiscDia").addEventListener("input", function () {
     $("discInfo").textContent = HC.t("Диаметр диска: {0} мм", currentDisc().diameter || "?");
     markDirty();
   });
   $("discLoadBtn").addEventListener("click", loadDiscFromFile);
+  $("discStepLoadBtn").addEventListener("click", loadDiscFromStepFile);
   $("discDelBtn").addEventListener("click", deleteCurrentDisc);
   $("controlSelect").addEventListener("change", function () {
     rebuildControlHoles();
@@ -930,6 +1043,19 @@
 
   $("csvBtn").addEventListener("click", function () {
     if (lastResult) HC.downloadCSV(assembleOrder());
+  });
+
+  $("stepBtn").addEventListener("click", function () {
+    if (!lastResult || !HC.downloadSTEP) return;
+    var btn = $("stepBtn");
+    btn.disabled = true;
+    HC.downloadSTEP(assembleOrder(), function (t) { setSendMsg(t); }).then(function () {
+      btn.disabled = false;
+    }).catch(function (err) {
+      setSendMsg(HC.t("Не удалось построить STEP: {0}", (err && err.message) || err), "error");
+      if (g.console) console.error(err);
+      btn.disabled = false;
+    });
   });
 
   $("reportBtn").addEventListener("click", function () {

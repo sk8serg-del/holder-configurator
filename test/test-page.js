@@ -35,6 +35,18 @@ for (const n of ["catalog", "i18n", "geometry", "packer", "render", "export-csv"
 const d = w.document;
 const $ = (id) => d.getElementById(id);
 
+// --- заглушка входа: при загрузке страница размыта и закрыта оверлеем;
+// «Войти» с пустым именем ничего не делает, с именем — снимает размытие,
+// прячет оверлей и пишет имя в скрытое поле custName (заказ им подписывается) ---
+check("вход: оверлей виден, страница размыта при загрузке", !$("loginOverlay").hidden && $("app").classList.contains("blurred"));
+$("loginBtn").click();
+check("вход: клик с пустым именем не снимает размытие/оверлей", $("app").classList.contains("blurred") && !$("loginOverlay").hidden);
+$("loginInput").value = "Петров П.П.";
+$("loginBtn").click();
+check("вход: клик с именем снимает размытие", !$("app").classList.contains("blurred"));
+check("вход: оверлей скрыт после входа", $("loginOverlay").hidden);
+check("вход: имя ушло в скрытое поле custName", $("custName").value === "Петров П.П.", $("custName").value);
+
 // --- инициализация ---
 check("список дисков заполнен", $("discSelect").options.length >= 3, String($("discSelect").options.length));
 check("диск по умолчанию — Ø298", $("discSelect").value === "disc-298", $("discSelect").value);
@@ -293,6 +305,17 @@ $("packBtn").click(); // после правок формы раскладыва
 $("sendBtn").click();
 setTimeout(() => {
   check("отправка без URL — понятное сообщение", $("sendMsg").textContent.indexOf("не настроена") !== -1, $("sendMsg").textContent);
+
+  // --- вкладки: Конфигуратор активна по умолчанию, переключение показывает/скрывает панели ---
+  check("вкладка «Конфигуратор» активна по умолчанию, остальные скрыты",
+    !$("tabConfigurator").hidden && $("tabBlanks").hidden && $("tabOrders").hidden);
+  d.querySelector('.tab-btn[data-tab="tabBlanks"]').click();
+  check("клик по «Болванки» показывает её панель и скрывает остальные",
+    $("tabConfigurator").hidden && !$("tabBlanks").hidden && $("tabOrders").hidden);
+  check("активная вкладка получает класс active", d.querySelector('.tab-btn[data-tab="tabBlanks"]').classList.contains("active"));
+  d.querySelector('.tab-btn[data-tab="tabConfigurator"]').click(); // вернуть исходное состояние для остальных тестов
+  check("возврат на «Конфигуратор» скрывает остальные панели снова",
+    !$("tabConfigurator").hidden && $("tabBlanks").hidden && $("tabOrders").hidden);
 
   // --- загрузка своей подложки из CSV (FileReader → buildDiscEntry → каталог) ---
   const uploadCsv = [

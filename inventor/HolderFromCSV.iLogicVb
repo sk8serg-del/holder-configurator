@@ -1,14 +1,17 @@
-' HolderFromCSV - правило iLogic для Autodesk Inventor (формат CSV v3).
+' HolderFromCSV - правило iLogic для Autodesk Inventor (формат CSV v4).
 '
 ' Читает CSV из веб-конфигуратора и вырезает в ОТКРЫТОЙ детали (болванке диска)
 ' реальные карманы под детали и контрольные отверстия:
 '   * посадка (seat)          - глухой вырез на глубину depth от верхней грани;
 '   * паз под пинцет (slot)    - глухой вырез на ту же глубину (если включён);
 '   * зона напыления (CA)      - сквозной вырез меньшего контура на дне посадки;
-'   * метка-ориентир (mark)    - маленькая коническая зенковка Ø/угол из строки
-'     "mark" CSV, только у ДЕТАЛЕЙ с пазом (не у контрольных отверстий), в
-'     точке (markX, markY) - нужна, чтобы отличать похожие по размеру детали
-'     и метить ориентацию у форм, где это важно (см. export-csv.js).
+'   * метки-ориентиры (mark)   - маленькие конические зенковки Ø/угол из строки
+'     "mark" CSV, только у ДЕТАЛЕЙ с пазом (не у контрольных отверстий).
+'     Количество меток = markCount = номер разновидности детали в заказе
+'     (1-я деталь - одна метка, 2-я - две, и т.д.) - нужно отличать похожие по
+'     размеру детали и метить ориентацию у форм, где это важно. Первая метка -
+'     в точке (markX, markY), остальные - дальше вдоль паза с шагом markPitch
+'     (см. export-csv.js).
 ' Плюс обновляет гравировку (Emboss) двумя строками из формы заказа - номер и
 ' название подложкодержателя, в геометрический текст (Sketch Text) внутри
 ' эскизов "Sketch9" (вложен в Emboss "PartNumber") и "Sketch10" (вложен в
@@ -16,8 +19,9 @@
 ' SetEmbossText в конце Main(); при переименовании в Inventor поправьте их.
 ' Само тело диска правило не строит.
 '
-' CSV v2 (18 колонок, без markX/markY и без строки "mark") тоже читается -
-' метки просто не строятся, остальное без изменений.
+' CSV v2 (18 колонок, без markX/markY/markCount и без строки "mark") и v3
+' (markX/markY есть, но без markCount и без шага в строке "mark") тоже
+' читаются - для v2 метки не строятся, для v3 везде считается ровно 1 метка.
 '
 ' Требования к болванке:
 '   - диск построен с центром в начале координат XY;
@@ -58,7 +62,7 @@ Sub Main()
 	Dim discDia As Double = 0
 	Dim discThk As Double = 0
 	Dim holderNo As String = "", holderName As String = ""
-	Dim markD As Double = 2, markAngle As Double = 90 ' по умолчанию - на случай CSV v2 без строки "mark"
+	Dim markD As Double = 2, markAngle As Double = 90, markPitch As Double = 4 ' по умолчанию - на случай CSV v2/v3
 	Dim rows As New List(Of String())
 	Dim dataStarted As Boolean = False
 	For Each rawLine As String In lines
@@ -76,6 +80,7 @@ Sub Main()
 		ElseIf f(0) = "mark" AndAlso f.Length >= 3 Then
 			markD = ParseNum(f(1), inv)
 			markAngle = ParseNum(f(2), inv)
+			If f.Length >= 4 Then markPitch = ParseNum(f(3), inv)
 		ElseIf f(0) = "columns" Then
 			dataStarted = True
 		End If
@@ -158,6 +163,14 @@ Sub Main()
 			Dim dkey As Double = Math.Round(depth, 4)
 			Dim markXs As String = If(f.Length > 18, f(18), "")
 			Dim markYs As String = If(f.Length > 19, f(19), "")
+			' markCount: если колонки нет (CSV v3), но точка метки есть - считаем
+			' 1 метку (как раньше); нет точки - 0.
+			Dim markCount As Integer = 0
+			If f.Length > 20 AndAlso f(20) <> "" Then
+				markCount = CInt(ParseNum(f(20), inv))
+			ElseIf markXs <> "" AndAlso markYs <> "" Then
+				markCount = 1
+			End If
 
 			' --- посадка (глухой вырез на глубину) ---
 			Dim seatSk As PlanarSketch = GetSketch(compDef, cutPlane, seatByDepth, dkey, "HFC_seat", idx)
@@ -174,11 +187,20 @@ Sub Main()
 				nSlot += 1
 			End If
 
-			' --- метка-ориентир (маленькая коническая зенковка), только у деталей ---
-			If kind = "part" AndAlso markXs <> "" AndAlso markYs <> "" Then
+			' --- метки-ориентиры (маленькие конические зенковки), только у деталей.
+			' Первая - в (markX, markY), остальные - дальше вдоль паза (slotAngle)
+			' с шагом markPitch, той же техникой поворота, что и SlotPt/AddStadium. ---
+			If kind = "part" AndAlso markCount > 0 AndAlso markXs <> "" AndAlso markYs <> "" Then
 				If markSketch Is Nothing Then markSketch = NewSketch(compDef, cutPlane, "HFC_mark", idx)
-				AddCircle(markSketch, tg, ParseNum(markXs, inv) * mm, ParseNum(markYs, inv) * mm, markD * mm / 2)
-				nMark += 1
+				Dim mx0 As Double = ParseNum(markXs, inv) * mm
+				Dim my0 As Double = ParseNum(markYs, inv) * mm
+				Dim mAr As Double = slotAngle * Math.PI / 180
+				Dim mCos As Double = Math.Cos(mAr), mSin As Double = Math.Sin(mAr)
+				Dim mPitchCm As Double = markPitch * mm
+				For mk As Integer = 0 To markCount - 1
+					AddCircle(markSketch, tg, mx0 + mk * mPitchCm * mCos, my0 + mk * mPitchCm * mSin, markD * mm / 2)
+					nMark += 1
+				Next
 			End If
 
 			' --- зона напыления (сквозной вырез меньшего контура) ---
