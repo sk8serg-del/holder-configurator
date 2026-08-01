@@ -13,65 +13,59 @@
 
   // ---------- каталог ----------
 
-  // Кастомный подложкодержитель: обычный круглый диск, диаметр которого
-  // технолог задаёт на странице. Контрольных отверстий и элементов болванки нет.
-  function customDisc() {
-    var dia = parseFloat($("customDiscDia").value);
-    return {
-      id: "custom",
-      name: HC.t("Кастомный подложкодержитель"),
-      diameter: dia > 0 ? dia : 0,
-      thickness: 6,
-      controlVariants: [{ id: "none", name: HC.t("Без контрольных отверстий"), holes: [] }],
-      defaults: { partPart: 6, partEdge: 3, partControl: 6 }
-    };
-  }
-
   function currentDisc() {
     var id = $("discSelect").value;
-    if (id === "custom") return customDisc();
     for (var i = 0; i < HC.CATALOG.discs.length; i++) {
       if (HC.CATALOG.discs[i].id === id) return HC.CATALOG.discs[i];
     }
     return HC.CATALOG.discs[0];
   }
 
+  // Вариант контрольных отверстий всегда один — первый из каталога; наличие
+  // каждого отверстия задаётся его галочкой (выпадающего списка вариантов нет).
   function currentControl() {
     var d = currentDisc();
-    var id = $("controlSelect").value;
-    for (var i = 0; i < d.controlVariants.length; i++) {
-      if (d.controlVariants[i].id === id) return d.controlVariants[i];
-    }
-    return d.controlVariants[0];
+    return (d.controlVariants && d.controlVariants[0]) || { holes: [] };
   }
 
   function fillDiscSelect() {
-    var opts = HC.CATALOG.discs.map(function (d) {
+    $("discSelect").innerHTML = HC.CATALOG.discs.map(function (d) {
       return '<option value="' + d.id + '">' + HC.t(d.name) + "</option>";
     }).join("");
-    opts += '<option value="custom">' + HC.t("Кастомный подложкодержитель (задать Ø)") + "</option>";
-    $("discSelect").innerHTML = opts;
   }
 
-  function fillControlSelect() {
+  function updateDiscInfo() {
     var d = currentDisc();
-    $("controlSelect").innerHTML = d.controlVariants.map(function (v) {
-      return '<option value="' + v.id + '">' + HC.t(v.name) + "</option>";
-    }).join("");
     $("discInfo").textContent = HC.t("Диаметр диска: {0} мм", d.diameter);
-    // кнопка удаления — только для загруженных пользователем подложек
-    $("discDelBtn").hidden = String(d.id).indexOf("user-") !== 0;
   }
 
   // ---------- пользовательские подложки (загрузка из CSV, localStorage) ----------
 
   function isUserDisc(d) { return String(d.id).indexOf("user-") === 0; }
 
+  // Сохраняются: подложки пользователя (user-*) целиком и ПРАВКИ встроенных
+  // (флаг _edited — запись хранится полной копией и при загрузке замещает
+  // каталожную по id). Удаление встроенной — список id в hc-hidden-discs.
   function saveCustomDiscs() {
     try {
-      var custom = HC.CATALOG.discs.filter(isUserDisc);
+      var custom = HC.CATALOG.discs.filter(function (d) { return isUserDisc(d) || d._edited; });
       localStorage.setItem("hc-custom-discs", JSON.stringify(custom));
     } catch (e) { /* localStorage недоступен — не критично */ }
+  }
+
+  function hiddenDiscIds() {
+    try {
+      var arr = JSON.parse(localStorage.getItem("hc-hidden-discs") || "[]");
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) { return []; }
+  }
+
+  function hideDiscId(id) {
+    try {
+      var arr = hiddenDiscIds();
+      if (arr.indexOf(id) === -1) arr.push(id);
+      localStorage.setItem("hc-hidden-discs", JSON.stringify(arr));
+    } catch (e) { /* не критично */ }
   }
 
   function loadCustomDiscs() {
@@ -79,11 +73,24 @@
       var arr = JSON.parse(localStorage.getItem("hc-custom-discs") || "[]");
       if (Array.isArray(arr)) {
         arr.forEach(function (d) {
-          if (d && d.id && !HC.CATALOG.discs.some(function (x) { return x.id === d.id; })) HC.CATALOG.discs.push(d);
+          if (!d || !d.id) return;
+          var idx = -1;
+          HC.CATALOG.discs.forEach(function (x, i) { if (x.id === d.id) idx = i; });
+          if (idx >= 0) HC.CATALOG.discs[idx] = d; // правленая встроенная — замещает
+          else HC.CATALOG.discs.push(d);
         });
+      }
+      var hidden = hiddenDiscIds();
+      if (hidden.length) {
+        HC.CATALOG.discs = HC.CATALOG.discs.filter(function (d) { return hidden.indexOf(d.id) === -1; });
       }
     } catch (e) { /* игнорируем битый кэш */ }
   }
+
+  // Все три способа добавления (CSV/STEP/конструктор) только СОБИРАЮТ запись
+  // (pendingBlankEntry) и обновляют превью в модальном окне «Добавить болванку» —
+  // название/установка/описание общие (см. saveAddBlankModal), окончательное
+  // попадание в каталог происходит только по кнопке «Сохранить» этого окна.
 
   function loadDiscFromFile() {
     var input = $("discFile");
@@ -96,18 +103,14 @@
     var reader = new FileReader();
     reader.onload = function () {
       try {
-        var name = $("discName").value.trim() || file.name.replace(/-holes\.csv$/i, "").replace(/\.csv$/i, "") || HC.t("Подложкодержатель");
         var entry = HC.holderImport.buildDiscEntry(reader.result, {
-          id: "user-" + Date.now(), name: name, discDiameter: zone, thickness: thk > 0 ? thk : 6
+          id: "user-" + Date.now(), name: HC.t("Подложкодержатель"), discDiameter: zone, thickness: thk > 0 ? thk : 6
         });
         if (!entry) { msg(HC.t("В файле не найдено геометрии — это выгрузка DumpHoles?"), "error"); return; }
-        HC.CATALOG.discs.push(entry);
-        saveCustomDiscs();
-        fillDiscSelect();
-        $("discSelect").value = entry.id;
-        onDiscChange();
+        pendingBlankEntry = entry;
+        renderAddBlankPreview();
         var extra = entry._threadPoints && entry._threadPoints.length ? HC.t(" Резьбовых отверстий без Ø: {0} (уточните в модели).", entry._threadPoints.length) : "";
-        msg(HC.t("Подложкодержатель «{0}» добавлен и сохранён.{1}", entry.name, extra), "ok");
+        msg(HC.t("Разобрано.{0} Заполните название вверху и нажмите «Сохранить».", extra), "ok");
       } catch (e) {
         msg(HC.t("Ошибка разбора: {0}", e.message), "error");
       }
@@ -132,16 +135,12 @@
     var reader = new FileReader();
     reader.onload = function () {
       btn.disabled = true;
-      var name = $("discStepName").value.trim() || file.name.replace(/\.(step|stp)$/i, "") || HC.t("Подложкодержатель");
-      HC.stepImport.fromFile(reader.result, { id: "user-" + Date.now(), name: name, discDiameter: zone }, function (t) { msg(t); })
+      HC.stepImport.fromFile(reader.result, { id: "user-" + Date.now(), name: HC.t("Подложкодержатель"), discDiameter: zone }, function (t) { msg(t); })
         .then(function (entry) {
-          HC.CATALOG.discs.push(entry);
-          saveCustomDiscs();
-          fillDiscSelect();
-          $("discSelect").value = entry.id;
-          onDiscChange();
+          pendingBlankEntry = entry;
+          renderAddBlankPreview();
           var n = entry.controlVariants[0].holes.length, f = entry.fixtures.holes.length;
-          msg(HC.t("Подложкодержатель «{0}» добавлен: найдено отверстий {1}, крепежа на фланце {2}.", entry.name, n, f), "ok");
+          msg(HC.t("Разобрано: найдено отверстий {0}, крепежа на фланце {1}. Заполните название вверху и нажмите «Сохранить».", n, f), "ok");
         })
         .catch(function (err) {
           msg(HC.t("Ошибка разбора STEP: {0}", (err && err.message) || err), "error");
@@ -154,8 +153,17 @@
 
   function deleteCurrentDisc() {
     var d = currentDisc();
-    if (!isUserDisc(d)) return;
+    if (HC.CATALOG.discs.length <= 1) {
+      var msgEl = $("blankSaveMsg");
+      msgEl.textContent = HC.t("В каталоге должна остаться хотя бы одна болванка.");
+      msgEl.className = "status error";
+      return;
+    }
+    if (!g.confirm(HC.t("Удалить болванку «{0}»? Это действие нельзя отменить.", HC.t(d.name)))) return;
     HC.CATALOG.discs = HC.CATALOG.discs.filter(function (x) { return x.id !== d.id; });
+    // встроенная (не user-*) вернулась бы из catalog.js при следующей загрузке —
+    // запоминаем её id как скрытый
+    if (!isUserDisc(d)) hideDiscId(d.id);
     saveCustomDiscs();
     fillDiscSelect();
     $("discSelect").value = HC.CATALOG.discs[0].id;
@@ -163,10 +171,10 @@
   }
 
   function onDiscChange() {
-    $("customDiscWrap").hidden = $("discSelect").value !== "custom";
-    fillControlSelect();
+    updateDiscInfo();
     rebuildControlHoles();
     applyDefaultClearances();
+    fillBlankFields();
     markDirty();
   }
 
@@ -179,7 +187,8 @@
 
   // ---------- контрольные отверстия ----------
   // У каждого те же поля, что у круглой детали (d/D/CA/depth/паз) — позиции
-  // фиксированы каталогом, но размеры и наличие паза можно поправить на странице.
+  // фиксированы каталогом, наличие/размеры правятся на вкладке «Болванки» и
+  // сохраняются в саму запись каталога (см. saveBlankEdits/serializeControlHoles).
 
   function rebuildControlHoles() {
     ctrlHoles = currentControl().holes.map(function (h) {
@@ -195,12 +204,15 @@
         apertureCAAuto: h.apertureCA == null && seatD != null,
         depth: h.depth != null ? h.depth : null,
         slotAvailable: !!h.slotAvailable,
-        slotOn: !!h.slotAvailable, slotAngle: 0, // паз по умолчанию включён там, где доступен
+        // паз по умолчанию включён там, где доступен; угол — сохранённый в
+        // каталоге дефолт для этого отверстия (задаётся в конструкторе/при
+        // сохранении карточки), если не задан — 0
+        slotOn: !!h.slotAvailable, slotAngle: h.slotAngle != null ? h.slotAngle : 0,
         // отверстие, привязанное к другому (по имени): показывается только когда
         // опорное выключено (shownWhenOff) или включено (shownWhenOn)
         shownWhenOff: h.shownWhenOff || null,
         shownWhenOn: h.shownWhenOn || null,
-        on: true
+        on: h.on !== false // наличие — из каталога (по умолчанию есть, если не сохранено иное)
       };
     });
     renderControlHoles();
@@ -617,6 +629,8 @@
     setActions(false);
     setStatus("");
     setSendMsg("");
+    // вкладка «Болванки» не зависит от результата раскладки — обновляем сразу
+    refreshBlanksTab();
     // авторазложение: пересчитываем сами, с небольшой паузой, чтобы не
     // дёргать раскладку на каждый символ при вводе числа
     if (autoPackTimer) clearTimeout(autoPackTimer);
@@ -692,7 +706,6 @@
   function validate() {
     var errs = [];
     var disc = currentDisc();
-    if (disc.id === "custom" && !(disc.diameter > 0)) errs.push(HC.t("Укажите диаметр кастомного подложкодержителя (мм)."));
     if (!parts.length) errs.push(HC.t("Добавьте хотя бы одну деталь."));
     parts.forEach(function (p, i) {
       var n = HC.t("Деталь {0}: ", i + 1);
@@ -829,6 +842,7 @@
       discDiameter: lastResult.disc.diameter,
       blankDiameter: lastResult.disc.blankDiameter,
       fixtures: lastResult.disc.fixtures,
+      edgeRecess: lastResult.disc.edgeRecess,
       edgeClearance: lastResult.opts.clearances.pe,
       controlHoles: lastResult.opts.controlHoles,
       placed: lastResult.placed,
@@ -846,6 +860,7 @@
       discDiameter: lastResult.disc.diameter,
       blankDiameter: lastResult.disc.blankDiameter,
       fixtures: lastResult.disc.fixtures,
+      edgeRecess: lastResult.disc.edgeRecess,
       thickness: lastResult.disc.thickness || 6,
       controlHoles: lastResult.opts.controlHoles,
       placed: lastResult.placed,
@@ -890,6 +905,559 @@
     if (is3d) refresh3D(); // контейнер уже показан — размеры известны
   }
 
+  // ---------- вкладка «Болванки»: таблица + предпросмотр ----------
+  // Таблица — весь каталог (HC.CATALOG.discs); клик по строке выбирает ту же
+  // подложку, что и #discSelect (вкладка «Конфигуратор») — единый источник
+  // истины, редактирование контрольных отверстий ниже относится к ней же.
+  // Предпросмотр — без раскладки деталей (placed:[]), только геометрия болванки.
+  // По умолчанию ничего не выбрано (blanksExpanded=false) — превью/карточка
+  // скрыты, пока не кликнуть строку; «Отмена» прячет их обратно.
+
+  var blanksExpanded = false;
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function blankHasHole(d, name) {
+    return (d.controlVariants || []).some(function (v) {
+      return (v.holes || []).some(function (h) { return h.name === name && h.on !== false; });
+    });
+  }
+
+  function renderBlanksTable() {
+    var host = $("blanksTableBody");
+    if (!host) return;
+    var curId = $("discSelect").value;
+    function yn(b) { return b ? HC.t("есть") : HC.t("нет"); }
+    host.innerHTML = HC.CATALOG.discs.map(function (d) {
+      var active = blanksExpanded && d.id === curId;
+      return '<tr data-id="' + escHtml(d.id) + '"' + (active ? ' class="active"' : "") + ">" +
+        "<td>" + escHtml(HC.t(d.name)) + "</td>" +
+        "<td>" + (d.installation ? escHtml(d.installation) : "—") + "</td>" +
+        "<td>" + (d.description ? escHtml(d.description) : "—") + "</td>" +
+        "<td>" + d.diameter + "</td>" +
+        "<td>" + yn(blankHasHole(d, "Reference")) + "</td>" +
+        "<td>" + yn(blankHasHole(d, "Свидетель")) + "</td>" +
+        "<td>" + yn(blankHasHole(d, "Свидетель Центр")) + "</td>" +
+        "</tr>";
+    }).join("");
+    host.querySelectorAll("tr").forEach(function (tr) {
+      tr.addEventListener("click", function () {
+        if (blanksExpanded && tr.dataset.id === $("discSelect").value) return;
+        blanksSelectRow(tr.dataset.id);
+      });
+    });
+  }
+
+  function blanksSelectRow(id) {
+    $("discSelect").value = id;
+    onDiscChange();
+    blanksExpanded = true;
+    $("blanksMain").hidden = false;
+    // всегда сбрасываем на 2D: иначе если превью было в 3D и курсор уже
+    // оказался над ним (после скролла/повторного клика), колесо мыши крутит
+    // зум модели вместо прокрутки страницы
+    setBlanksViewMode(false);
+    fillBlankFields();
+    refreshBlanksPreview();
+    renderBlanksTable();
+    if ($("blanksMain").scrollIntoView) {
+      $("blanksMain").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  function blanksCancelSelection() {
+    blanksExpanded = false;
+    $("blanksMain").hidden = true;
+    renderBlanksTable();
+  }
+
+  // ---------- карточка болванки: название/установка, сохранение, история ----------
+  // «Название» и «Установка» — ручные поля записи каталога (пишутся в таблицу),
+  // НЕ авто-название по составу деталей (то — скрытое #holderName в заказе).
+
+  function fillBlankFields() {
+    var d = currentDisc();
+    $("blankName").value = d.name;
+    $("blankInstall").value = d.installation || "";
+    $("blankDesc").value = d.description || "";
+    $("blankSaveMsg").textContent = "";
+    renderBlankHistory();
+  }
+
+  function renderBlankHistory() {
+    var host = $("blankHistory");
+    if (!host) return;
+    var d = currentDisc();
+    var hist = (d.history || []).slice().reverse(); // свежие сверху
+    host.innerHTML = hist.length
+      ? hist.map(function (h) {
+          return "<div>" + escHtml(h.date) + (h.user ? " — " + escHtml(h.user) : "") + (h.note ? ": " + escHtml(h.note) : "") + "</div>";
+        }).join("")
+      : "<div>" + HC.t("Изменений пока нет.") + "</div>";
+  }
+
+  // Собирает текущее состояние ctrlHoles (наличие/размеры контрольных
+  // отверстий) обратно в формат каталога — позиции/имена/привязки не
+  // трогаются, правится только то, что реально доступно в форме.
+  function serializeControlHoles() {
+    return ctrlHoles.map(function (h) {
+      var o = { x: h.x, y: h.y, name: h.name };
+      if (h.on === false) o.on = false;
+      if (h.d != null) o.d = h.d;
+      if (h.seatD != null) o.seatD = h.seatD;
+      if (h.apertureCA != null) o.apertureCA = h.apertureCA;
+      if (h.depth != null) o.depth = h.depth;
+      if (h.slotAvailable) { o.slotAvailable = true; o.slotAngle = h.slotAngle; }
+      if (h.shownWhenOff) o.shownWhenOff = h.shownWhenOff;
+      if (h.shownWhenOn) o.shownWhenOn = h.shownWhenOn;
+      return o;
+    });
+  }
+
+  function saveBlankEdits() {
+    var d = currentDisc();
+    var msgEl = $("blankSaveMsg");
+    function msg(t, cls) { msgEl.textContent = t || ""; msgEl.className = "status" + (cls ? " " + cls : ""); }
+    var name = $("blankName").value.trim();
+    var install = $("blankInstall").value.trim();
+    var desc = $("blankDesc").value.trim();
+    if (!name) { msg(HC.t("Укажите название болванки."), "error"); $("blankName").focus(); return; }
+
+    var changes = [];
+    if (name !== d.name) changes.push(HC.t("название: «{0}» → «{1}»", d.name, name));
+    if (install !== (d.installation || "")) changes.push(HC.t("установка: «{0}» → «{1}»", d.installation || "—", install || "—"));
+    if (desc !== (d.description || "")) changes.push(HC.t("описание изменено"));
+    d.name = name;
+    d.installation = install;
+    d.description = desc;
+
+    // контрольные отверстия: наличие (галочка) и размеры — из текущей формы
+    if (d.controlVariants && d.controlVariants[0]) {
+      var oldHoles = d.controlVariants[0].holes || [];
+      var newHoles = serializeControlHoles();
+      newHoles.forEach(function (nh, i) {
+        var oh = oldHoles[i];
+        if (!oh) return;
+        var oldOn = oh.on !== false, newOn = nh.on !== false;
+        if (oldOn !== newOn) {
+          changes.push(HC.t(newOn ? "«{0}»: включено" : "«{0}»: выключено", HC.t(oh.name)));
+        } else if (newOn && (oh.seatD !== nh.seatD || oh.apertureCA !== nh.apertureCA || oh.depth !== nh.depth || oh.d !== nh.d || oh.slotAngle !== nh.slotAngle)) {
+          changes.push(HC.t("«{0}»: изменены размеры", HC.t(oh.name)));
+        }
+      });
+      d.controlVariants[0].holes = newHoles;
+    }
+
+    var now = new Date();
+    function p2(x) { return (x < 10 ? "0" : "") + x; }
+    d.history = d.history || [];
+    d.history.push({
+      date: p2(now.getDate()) + "." + p2(now.getMonth() + 1) + "." + now.getFullYear() + " " + p2(now.getHours()) + ":" + p2(now.getMinutes()),
+      user: $("custName").value.trim(),
+      note: changes.length ? changes.join("; ") : HC.t("правка параметров")
+    });
+
+    if (!isUserDisc(d)) d._edited = true; // встроенная — сохраняем полную копию поверх каталога
+    saveCustomDiscs();
+
+    var keep = d.id;
+    fillDiscSelect();
+    $("discSelect").value = keep;
+    renderBlanksTable();
+    renderBlankHistory();
+    refreshBlanksPreview();
+    msg(HC.t("Сохранено."), "ok");
+  }
+
+  var blanksMode3d = false;
+
+  function setBlanksMsg(text, cls) {
+    var el = $("blanksMsg");
+    if (!el) return;
+    el.textContent = text || "";
+    el.className = "status" + (cls ? " " + cls : "");
+  }
+
+  function refreshBlanksSVG() {
+    var d = currentDisc();
+    $("blanksSvgHost").innerHTML = HC.renderSVG({
+      discDiameter: d.diameter,
+      blankDiameter: d.blankDiameter,
+      fixtures: d.fixtures,
+      edgeRecess: d.edgeRecess,
+      controlHoles: activeControlHoles(),
+      placed: [],
+      showNumbers: false
+    });
+  }
+
+  function refreshBlanks3D() {
+    if (!blanksMode3d) return;
+    var d = currentDisc();
+    var ok = HC.viewer3d && HC.viewer3d.available() && HC.viewer3d.update($("blanksView3dHost"), {
+      discDiameter: d.diameter,
+      blankDiameter: d.blankDiameter,
+      fixtures: d.fixtures,
+      edgeRecess: d.edgeRecess,
+      thickness: d.thickness || 6,
+      controlHoles: activeControlHoles(),
+      placed: [],
+      showNumbers: false
+    });
+    if (!ok) {
+      setBlanksViewMode(false);
+      setBlanksMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
+    }
+  }
+
+  function refreshBlanksPreview() {
+    var d = currentDisc();
+    $("blanksSummary").textContent = HC.t(d.name) + " · Ø" + d.diameter;
+    refreshBlanksSVG();
+    refreshBlanks3D();
+  }
+
+  function setBlanksViewMode(is3d) {
+    if (is3d && !(HC.viewer3d && HC.viewer3d.available())) {
+      if (HC.threeReady) {
+        setBlanksMsg(HC.t("3D-вид загружается…"));
+        HC.threeReady.then(function (ok) {
+          if (ok && HC.viewer3d && HC.viewer3d.available()) {
+            setBlanksMsg("");
+            setBlanksViewMode(true);
+          } else {
+            setBlanksMsg(HC.t("3D-вид недоступен: библиотека Three.js не загрузилась."), "error");
+          }
+        });
+      } else {
+        setBlanksMsg(HC.t("3D-вид недоступен: библиотека Three.js не загрузилась."), "error");
+      }
+      return;
+    }
+    blanksMode3d = is3d;
+    $("blanksView2dBtn").classList.toggle("active", !is3d);
+    $("blanksView3dBtn").classList.toggle("active", is3d);
+    $("blanksSvgHost").hidden = is3d;
+    $("blanksView3dHost").hidden = !is3d;
+    if (is3d) refreshBlanks3D();
+  }
+
+  function refreshBlanksTab() {
+    renderBlanksTable();
+    if (blanksExpanded) refreshBlanksPreview();
+  }
+
+  // ---------- ручной конструктор болванки ----------
+  // Состояние формы «Создать самому»: списки свидетелей/Reference и крепёжных
+  // групп; геометрия/каталожная запись собирается в js/blank-builder.js.
+
+  var mbWitnesses = []; // [{name, mode, r, angle, x, y, seatD, apertureCA, depth, slotAvailable, slotAngle}]
+  var mbFixtures = [];  // [{label, d, mode, r, count, rotation, x, y}]
+
+  function defaultWitness() {
+    return {
+      name: "Свидетель", mode: "polar", r: 150, angle: 0, x: 0, y: 0,
+      d: 25.4, seatD: 25.6, apertureCA: 22.6, depth: 4.5,
+      slotAvailable: true, slotAngle: 0
+    };
+  }
+  function defaultFixture() {
+    return { label: "Крепёж", d: 3.3, mode: "diameter", r: 160, count: 3, rotation: 0, x: 0, y: 0 };
+  }
+
+  function mbWitnessRow(wit, i) {
+    var div = document.createElement("div");
+    div.className = "mb-row";
+    var isPolar = wit.mode !== "xy";
+    div.innerHTML =
+      '<div class="row-head"><label style="margin:0">' + HC.t("Имя") + ' <input type="text" class="w-name" style="width:150px" value="' + escHtml(wit.name) + '"></label>' +
+      '<button type="button" class="w-del p-del" title="' + HC.t("Удалить") + '">✕</button></div>' +
+      '<label>' + HC.t("Позиция") + '<select class="w-mode">' +
+      '<option value="polar"' + (isPolar ? " selected" : "") + ">" + HC.t("по диаметру и углу") + "</option>" +
+      '<option value="xy"' + (!isPolar ? " selected" : "") + ">" + HC.t("точные координаты X,Y") + "</option>" +
+      "</select></label>" +
+      (isPolar
+        ? '<div class="dims">' +
+          "<label>" + HC.t("Ø расположения, мм") + '<input type="number" class="w-r" step="0.1" value="' + (wit.r * 2) + '"></label>' +
+          "<label>" + HC.t("Угол, °") + '<input type="number" class="w-angle" step="1" value="' + wit.angle + '"></label>' +
+          "</div>"
+        : '<div class="dims">' +
+          "<label>X, " + HC.t("мм") + '<input type="number" class="w-x" step="0.01" value="' + wit.x + '"></label>' +
+          "<label>Y, " + HC.t("мм") + '<input type="number" class="w-y" step="0.01" value="' + wit.y + '"></label>' +
+          "</div>") +
+      '<div class="dims">' +
+      "<label>" + HC.t("Деталь d, мм") + '<input type="number" class="w-d" min="0" step="0.1" value="' + (wit.d == null ? "" : wit.d) + '"></label>' +
+      "<label>" + HC.t("Ø посадки D, мм") + '<input type="number" class="w-seat-d" min="0" step="0.1" value="' + (wit.seatD == null ? "" : wit.seatD) + '"></label>' +
+      "<label>" + HC.t("Зона CA, мм") + '<input type="number" class="w-ca" min="0" step="0.1" value="' + (wit.apertureCA == null ? "" : wit.apertureCA) + '"></label>' +
+      "<label>" + HC.t("Глубина, мм") + '<input type="number" class="w-depth" min="0" step="0.1" value="' + (wit.depth == null ? "" : wit.depth) + '"></label>' +
+      "</div>" +
+      '<div class="slot-line">' +
+      '<label><input type="checkbox" class="w-slot-on"' + (wit.slotAvailable ? " checked" : "") + "> " + HC.t("паз под пинцет") + "</label>" +
+      "<label>" + HC.t("Угол, °") + '<input type="number" class="w-slot-angle" min="0" max="359" step="1" value="' + wit.slotAngle + '"' + (wit.slotAvailable ? "" : " disabled") + "></label>" +
+      "</div>";
+    function on(sel, ev, fn) { var el = div.querySelector(sel); if (el) el.addEventListener(ev, fn); }
+    function num(v) { var x = parseFloat(v); return isNaN(x) ? null : x; }
+    on(".w-name", "input", function (e) { wit.name = e.target.value; scheduleConstructorPreview(); });
+    on(".w-mode", "change", function (e) { wit.mode = e.target.value; renderMbWitnesses(); scheduleConstructorPreview(); });
+    on(".w-r", "input", function (e) { wit.r = (num(e.target.value) || 0) / 2; scheduleConstructorPreview(); });
+    on(".w-angle", "input", function (e) { wit.angle = num(e.target.value) || 0; scheduleConstructorPreview(); });
+    on(".w-x", "input", function (e) { wit.x = num(e.target.value) || 0; scheduleConstructorPreview(); });
+    on(".w-y", "input", function (e) { wit.y = num(e.target.value) || 0; scheduleConstructorPreview(); });
+    on(".w-d", "input", function (e) { wit.d = num(e.target.value); scheduleConstructorPreview(); });
+    on(".w-seat-d", "input", function (e) { wit.seatD = num(e.target.value); scheduleConstructorPreview(); });
+    on(".w-ca", "input", function (e) { wit.apertureCA = num(e.target.value); scheduleConstructorPreview(); });
+    on(".w-depth", "input", function (e) { wit.depth = num(e.target.value); scheduleConstructorPreview(); });
+    on(".w-slot-on", "change", function (e) {
+      wit.slotAvailable = e.target.checked;
+      var angleEl = div.querySelector(".w-slot-angle");
+      if (angleEl) angleEl.disabled = !wit.slotAvailable;
+      scheduleConstructorPreview();
+    });
+    on(".w-slot-angle", "input", function (e) { wit.slotAngle = num(e.target.value) || 0; scheduleConstructorPreview(); });
+    on(".w-del", "click", function () { mbWitnesses.splice(i, 1); renderMbWitnesses(); scheduleConstructorPreview(); });
+    return div;
+  }
+
+  function mbFixtureRow(fx, i) {
+    var div = document.createElement("div");
+    div.className = "mb-row";
+    var byDia = fx.mode !== "xy";
+    div.innerHTML =
+      '<div class="row-head"><label style="margin:0">' + HC.t("Метка") + ' <input type="text" class="f-label" style="width:150px" value="' + escHtml(fx.label) + '"></label>' +
+      '<button type="button" class="f-del p-del" title="' + HC.t("Удалить") + '">✕</button></div>' +
+      '<div class="dims">' +
+      "<label>" + HC.t("Ø отверстия, мм") + '<input type="number" class="f-d" min="0.1" step="0.1" value="' + fx.d + '"></label>' +
+      "<label>" + HC.t("Позиция") + '<select class="f-mode">' +
+      '<option value="diameter"' + (byDia ? " selected" : "") + ">" + HC.t("по диаметру, N штук") + "</option>" +
+      '<option value="xy"' + (!byDia ? " selected" : "") + ">" + HC.t("точные координаты X,Y") + "</option>" +
+      "</select></label>" +
+      "</div>" +
+      (byDia
+        ? '<div class="dims">' +
+          "<label>" + HC.t("Ø расположения, мм") + '<input type="number" class="f-r" step="0.1" value="' + (fx.r * 2) + '"></label>' +
+          "<label>" + HC.t("Количество") + '<input type="number" class="f-count" min="1" step="1" value="' + fx.count + '"></label>' +
+          "<label>" + HC.t("Поворот, °") + '<input type="number" class="f-rotation" step="1" value="' + (fx.rotation || 0) + '"></label>' +
+          "</div>"
+        : '<div class="dims">' +
+          "<label>X, " + HC.t("мм") + '<input type="number" class="f-x" step="0.01" value="' + (fx.x || 0) + '"></label>' +
+          "<label>Y, " + HC.t("мм") + '<input type="number" class="f-y" step="0.01" value="' + (fx.y || 0) + '"></label>' +
+          "</div>");
+    function on(sel, ev, fn) { var el = div.querySelector(sel); if (el) el.addEventListener(ev, fn); }
+    function num(v) { var x = parseFloat(v); return isNaN(x) ? null : x; }
+    on(".f-label", "input", function (e) { fx.label = e.target.value; scheduleConstructorPreview(); });
+    on(".f-d", "input", function (e) { fx.d = num(e.target.value); scheduleConstructorPreview(); });
+    on(".f-mode", "change", function (e) { fx.mode = e.target.value; renderMbFixtures(); scheduleConstructorPreview(); });
+    on(".f-r", "input", function (e) { fx.r = (num(e.target.value) || 0) / 2; scheduleConstructorPreview(); });
+    on(".f-count", "input", function (e) { fx.count = parseInt(e.target.value, 10) || 1; scheduleConstructorPreview(); });
+    on(".f-rotation", "input", function (e) { fx.rotation = num(e.target.value) || 0; scheduleConstructorPreview(); });
+    on(".f-x", "input", function (e) { fx.x = num(e.target.value) || 0; scheduleConstructorPreview(); });
+    on(".f-y", "input", function (e) { fx.y = num(e.target.value) || 0; scheduleConstructorPreview(); });
+    on(".f-del", "click", function () { mbFixtures.splice(i, 1); renderMbFixtures(); scheduleConstructorPreview(); });
+    return div;
+  }
+
+  function renderMbWitnesses() {
+    var host = $("mbWitnessList");
+    if (!host) return;
+    host.innerHTML = "";
+    mbWitnesses.forEach(function (w, i) { host.appendChild(mbWitnessRow(w, i)); });
+  }
+
+  function renderMbFixtures() {
+    var host = $("mbFixtureList");
+    if (!host) return;
+    host.innerHTML = "";
+    mbFixtures.forEach(function (f, i) { host.appendChild(mbFixtureRow(f, i)); });
+  }
+
+  // Живой предпросмотр конструктора: пересобирает pendingBlankEntry и
+  // обновляет превью в модальном окне на каждое изменение поля, без ожидания
+  // клика «Собрать» — молча ничего не делает, пока введённые данные не
+  // складываются в валidную геометрию (это черновой ввод, а не отправка формы).
+  var mbPreviewTimer = null;
+  function scheduleConstructorPreview() {
+    if (mbPreviewTimer) clearTimeout(mbPreviewTimer);
+    mbPreviewTimer = setTimeout(updateConstructorPreviewLive, 200);
+  }
+  function updateConstructorPreviewLive() {
+    var dia = parseFloat($("mbDia").value);
+    var thk = parseFloat($("mbThk").value);
+    if (!(dia > 0) || !(thk > 0)) return;
+
+    var recess = null;
+    if ($("mbRecessOn").checked) {
+      var rDia = parseFloat($("mbRecessDia").value), rDepth = parseFloat($("mbRecessDepth").value);
+      if (rDia > 0 && rDepth > 0 && rDia < dia && rDepth < thk) {
+        recess = { side: $("mbRecessSide").value, diameter: rDia, depth: rDepth };
+      }
+    }
+
+    pendingBlankEntry = HC.blankBuilder.buildManualDiscEntry({
+      id: pendingBlankEntry ? pendingBlankEntry.id : undefined, name: HC.t("Болванка"), diameter: dia, thickness: thk,
+      edgeRecess: recess, witnesses: mbWitnesses, fixtureGroups: mbFixtures
+    });
+    renderAddBlankPreview();
+  }
+
+  function createManualBlank() {
+    var msgEl = $("mbMsg");
+    function msg(t, cls) { msgEl.textContent = t || ""; msgEl.className = "status" + (cls ? " " + cls : ""); }
+    var dia = parseFloat($("mbDia").value);
+    var thk = parseFloat($("mbThk").value);
+    if (!(dia > 0)) { msg(HC.t("Укажите диаметр болванки."), "error"); return; }
+    if (!(thk > 0)) { msg(HC.t("Укажите толщину болванки."), "error"); return; }
+
+    var recess = null;
+    if ($("mbRecessOn").checked) {
+      recess = {
+        side: $("mbRecessSide").value,
+        diameter: parseFloat($("mbRecessDia").value),
+        depth: parseFloat($("mbRecessDepth").value)
+      };
+      if (!(recess.diameter > 0) || !(recess.depth > 0)) { msg(HC.t("Занижение по краю: укажите Ø границы и глубину."), "error"); return; }
+      if (recess.diameter >= dia) { msg(HC.t("Ø границы занижения должен быть меньше диаметра болванки."), "error"); return; }
+      if (recess.depth >= thk) { msg(HC.t("Глубина занижения должна быть меньше толщины."), "error"); return; }
+    }
+
+    var entry = HC.blankBuilder.buildManualDiscEntry({
+      id: "user-" + Date.now(), name: HC.t("Болванка"), diameter: dia, thickness: thk,
+      edgeRecess: recess, witnesses: mbWitnesses, fixtureGroups: mbFixtures
+    });
+    pendingBlankEntry = entry;
+    renderAddBlankPreview();
+    msg(HC.t("Собрано. Заполните название вверху и нажмите «Сохранить»."), "ok");
+  }
+
+  // ---------- модальное окно «Добавить болванку» ----------
+  // Общие поля (название/установка/описание) — сверху; ниже — три способа
+  // получить геометрию (CSV/STEP/конструктор), каждый только СОБИРАЕТ запись
+  // (pendingBlankEntry) и обновляет превью здесь же; «Сохранить» применяет
+  // общие поля и добавляет запись в каталог, «Отмена» просто закрывает окно.
+
+  var pendingBlankEntry = null;
+  var addBlankMode3d = false;
+
+  function addBlankPreviewHoles(d) {
+    return (d.controlVariants && d.controlVariants[0] && d.controlVariants[0].holes) || [];
+  }
+
+  function refreshAddBlankSVG() {
+    var host = $("addBlankPreviewHost");
+    if (!pendingBlankEntry) { host.innerHTML = ""; return; }
+    var d = pendingBlankEntry;
+    host.innerHTML = HC.renderSVG({
+      discDiameter: d.diameter,
+      blankDiameter: d.blankDiameter,
+      fixtures: d.fixtures,
+      edgeRecess: d.edgeRecess,
+      controlHoles: addBlankPreviewHoles(d),
+      placed: [],
+      showNumbers: false
+    });
+  }
+
+  function refreshAddBlank3D() {
+    if (!addBlankMode3d) return;
+    var host = $("addBlankView3dHost");
+    if (!pendingBlankEntry) { return; }
+    var d = pendingBlankEntry;
+    var ok = HC.viewer3d && HC.viewer3d.available() && HC.viewer3d.update(host, {
+      discDiameter: d.diameter,
+      blankDiameter: d.blankDiameter,
+      fixtures: d.fixtures,
+      edgeRecess: d.edgeRecess,
+      thickness: d.thickness || 6,
+      controlHoles: addBlankPreviewHoles(d),
+      placed: [],
+      showNumbers: false
+    });
+    if (!ok) {
+      setAddBlankViewMode(false);
+      setAddBlankMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
+    }
+  }
+
+  function setAddBlankMsg(text, cls) {
+    var el = $("addBlankMsg");
+    el.textContent = text || "";
+    el.className = "status" + (cls ? " " + cls : "");
+  }
+
+  function setAddBlankViewMode(is3d) {
+    if (is3d && !(HC.viewer3d && HC.viewer3d.available())) {
+      if (HC.threeReady) {
+        setAddBlankMsg(HC.t("3D-вид загружается…"));
+        HC.threeReady.then(function (ok) {
+          if (ok && HC.viewer3d && HC.viewer3d.available()) {
+            renderAddBlankPreview();
+            setAddBlankViewMode(true);
+          } else {
+            setAddBlankMsg(HC.t("3D-вид недоступен: библиотека Three.js не загрузилась."), "error");
+          }
+        });
+      } else {
+        setAddBlankMsg(HC.t("3D-вид недоступен: библиотека Three.js не загрузилась."), "error");
+      }
+      return;
+    }
+    addBlankMode3d = is3d;
+    $("addBlankView2dBtn").classList.toggle("active", !is3d);
+    $("addBlankView3dBtn").classList.toggle("active", is3d);
+    $("addBlankPreviewHost").hidden = is3d;
+    $("addBlankView3dHost").hidden = !is3d;
+    if (is3d) refreshAddBlank3D();
+  }
+
+  function renderAddBlankPreview() {
+    if (!pendingBlankEntry) {
+      $("addBlankPreviewHost").innerHTML = "";
+      setAddBlankMsg(HC.t("Загрузите CSV/STEP или соберите болванку конструктором ниже."));
+      return;
+    }
+    var d = pendingBlankEntry;
+    refreshAddBlankSVG();
+    refreshAddBlank3D();
+    setAddBlankMsg(HC.t("Готово к сохранению: Ø{0}, толщина {1} мм.", d.diameter, d.thickness), "ok");
+  }
+
+  function openAddBlankModal() {
+    pendingBlankEntry = null;
+    $("nbName").value = "";
+    $("nbInstall").value = "";
+    $("nbDesc").value = "";
+    setAddBlankViewMode(false);
+    renderAddBlankPreview();
+    $("addBlankModal").hidden = false;
+  }
+
+  function closeAddBlankModal() {
+    $("addBlankModal").hidden = true;
+    pendingBlankEntry = null;
+  }
+
+  function saveAddBlankModal() {
+    var msgEl = $("addBlankModalMsg");
+    function msg(t, cls) { msgEl.textContent = t || ""; msgEl.className = "status" + (cls ? " " + cls : ""); }
+    if (!pendingBlankEntry) {
+      msg(HC.t("Сначала загрузите CSV/STEP или соберите болванку одним из способов ниже."), "error");
+      return;
+    }
+    var name = $("nbName").value.trim();
+    if (!name) { msg(HC.t("Укажите название болванки."), "error"); $("nbName").focus(); return; }
+    var entry = pendingBlankEntry;
+    entry.name = name;
+    entry.installation = $("nbInstall").value.trim();
+    entry.description = $("nbDesc").value.trim();
+    if (!entry.id) entry.id = "user-" + Date.now();
+    HC.CATALOG.discs.push(entry);
+    saveCustomDiscs();
+    fillDiscSelect();
+    closeAddBlankModal();
+    blanksSelectRow(entry.id);
+  }
+
   // ---------- заказ ----------
 
   function assembleOrder() {
@@ -905,7 +1473,10 @@
       },
       holderNo: $("holderNo").value.trim(),
       holderName: $("holderName").value.trim(),
-      disc: { id: lr.disc.id, name: lr.disc.name, diameter: lr.disc.diameter, thickness: lr.disc.thickness },
+      disc: {
+        id: lr.disc.id, name: lr.disc.name, diameter: lr.disc.diameter, blankDiameter: lr.disc.blankDiameter,
+        thickness: lr.disc.thickness, edgeRecess: lr.disc.edgeRecess, fixtures: lr.disc.fixtures
+      },
       controlName: lr.controlName,
       controlHoles: lr.opts.controlHoles,
       clearances: lr.opts.clearances,
@@ -924,6 +1495,173 @@
         };
       })
     };
+  }
+
+  // ---------- вкладка «База подложкодержателей»: локальный реестр заказов ----------
+  // Каждый отправленный заказ (см. sendBtn) сохраняется в localStorage целиком
+  // (assembleOrder() уже даёт всё нужное для CSV/STEP/отчёта — те же функции,
+  // что и в Конфигураторе, просто вызываются повторно с сохранённой записью).
+  // По умолчанию ничего не выбрано — таблица + превью/карточка по клику, как
+  // и на вкладке «Болванки» (тот же UX-паттерн: Отмена, автопрокрутка, 2D/3D).
+
+  var ordersExpanded = false;
+  var currentOrderId = null;
+  var ordersMode3d = false;
+
+  function loadOrderRegistry() {
+    try {
+      var arr = JSON.parse(localStorage.getItem("hc-orders") || "[]");
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) { return []; }
+  }
+
+  function saveOrderRegistryArr(arr) {
+    try { localStorage.setItem("hc-orders", JSON.stringify(arr)); } catch (e) { /* localStorage недоступен — не критично */ }
+  }
+
+  function addOrderToRegistry(order) {
+    var arr = loadOrderRegistry();
+    var saved = JSON.parse(JSON.stringify(order)); // независимая копия на момент отправки
+    saved.sentOk = null; // ещё не известно — обновится после ответа submitOrder
+    arr.push(saved);
+    saveOrderRegistryArr(arr);
+    renderOrdersTable();
+  }
+
+  function updateOrderSentStatus(orderId, sentOk) {
+    var arr = loadOrderRegistry();
+    arr.forEach(function (o) { if (o.id === orderId) o.sentOk = sentOk; });
+    saveOrderRegistryArr(arr);
+    renderOrdersTable();
+  }
+
+  function currentOrderFromRegistry() {
+    var found = null;
+    loadOrderRegistry().forEach(function (o) { if (o.id === currentOrderId) found = o; });
+    return found;
+  }
+
+  function renderOrdersTable() {
+    var host = $("ordersTableBody");
+    if (!host) return;
+    var arr = loadOrderRegistry();
+    function yn(v) { return v === true ? HC.t("да") : v === false ? HC.t("нет") : "—"; }
+    host.innerHTML = arr.slice().reverse().map(function (o) { // свежие сверху
+      var active = ordersExpanded && o.id === currentOrderId;
+      return '<tr data-id="' + escHtml(o.id) + '"' + (active ? ' class="active"' : "") + ">" +
+        "<td>" + escHtml(o.dateHuman || "") + "</td>" +
+        "<td>" + (o.holderNo ? escHtml(o.holderNo) : "—") + "</td>" +
+        "<td>" + (o.holderName ? escHtml(o.holderName) : "—") + "</td>" +
+        "<td>" + escHtml((o.customer && o.customer.name) || "—") + "</td>" +
+        "<td>" + escHtml(o.disc.name) + " (Ø" + o.disc.diameter + ")</td>" +
+        "<td>" + ((o.placed && o.placed.length) || 0) + "</td>" +
+        "<td>" + yn(o.sentOk) + "</td>" +
+        "</tr>";
+    }).join("");
+    var emptyHint = $("ordersEmptyHint");
+    if (emptyHint) emptyHint.hidden = arr.length > 0;
+    host.querySelectorAll("tr").forEach(function (tr) {
+      tr.addEventListener("click", function () {
+        if (ordersExpanded && tr.dataset.id === currentOrderId) return;
+        ordersSelectRow(tr.dataset.id);
+      });
+    });
+  }
+
+  function renderOrderInfo(o) {
+    function row(label, val) { return "<div><b>" + escHtml(label) + ":</b> " + escHtml(val) + "</div>"; }
+    var lines = [];
+    lines.push(row(HC.t("Номер"), o.holderNo || "—"));
+    lines.push(row(HC.t("Технолог"), (o.customer && o.customer.name) || "—"));
+    if (o.customer && o.customer.org) lines.push(row(HC.t("Организация"), o.customer.org));
+    if (o.customer && o.customer.contact) lines.push(row(HC.t("Контакт"), o.customer.contact));
+    lines.push(row(HC.t("Подложка"), o.disc.name + " (Ø" + o.disc.diameter + ")"));
+    lines.push(row(HC.t("Контрольные отверстия"), o.controlName));
+    lines.push(row(HC.t("Зазоры, мм"), HC.t("деталь–деталь {0}; деталь–край {1}; деталь–контр. отв. {2}", o.clearances.pp, o.clearances.pe, o.clearances.pc)));
+    (o.partsSummary || []).forEach(function (r, i) {
+      lines.push(row(HC.t("Деталь {0}", i + 1),
+        r.size + " — " + r.placed + (r.requested == null ? " " + HC.t("(макс.)") : HC.t(" из {0}", r.requested))));
+    });
+    return lines.join("");
+  }
+
+  function setOrdersMsg(text, cls) {
+    var el = $("ordersMsg");
+    el.textContent = text || "";
+    el.className = "status" + (cls ? " " + cls : "");
+  }
+
+  function refreshOrdersSVG() {
+    var o = currentOrderFromRegistry();
+    if (!o) return;
+    $("ordersSvgHost").innerHTML = HC.renderSVG({
+      discDiameter: o.disc.diameter, blankDiameter: o.disc.blankDiameter, fixtures: o.disc.fixtures,
+      edgeRecess: o.disc.edgeRecess, edgeClearance: o.clearances.pe,
+      controlHoles: o.controlHoles, placed: o.placed, showNumbers: false
+    });
+  }
+
+  function refreshOrders3D() {
+    if (!ordersMode3d) return;
+    var o = currentOrderFromRegistry();
+    if (!o) return;
+    var ok = HC.viewer3d && HC.viewer3d.available() && HC.viewer3d.update($("ordersView3dHost"), {
+      discDiameter: o.disc.diameter, blankDiameter: o.disc.blankDiameter, fixtures: o.disc.fixtures,
+      edgeRecess: o.disc.edgeRecess, thickness: o.disc.thickness || 6,
+      controlHoles: o.controlHoles, placed: o.placed, showNumbers: false
+    });
+    if (!ok) {
+      setOrdersViewMode(false);
+      setOrdersMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
+    }
+  }
+
+  function setOrdersViewMode(is3d) {
+    if (is3d && !(HC.viewer3d && HC.viewer3d.available())) {
+      if (HC.threeReady) {
+        setOrdersMsg(HC.t("3D-вид загружается…"));
+        HC.threeReady.then(function (ok) {
+          if (ok && HC.viewer3d && HC.viewer3d.available()) { setOrdersMsg(""); setOrdersViewMode(true); }
+          else setOrdersMsg(HC.t("3D-вид недоступен: библиотека Three.js не загрузилась."), "error");
+        });
+      } else {
+        setOrdersMsg(HC.t("3D-вид недоступен: библиотека Three.js не загрузилась."), "error");
+      }
+      return;
+    }
+    ordersMode3d = is3d;
+    $("ordersView2dBtn").classList.toggle("active", !is3d);
+    $("ordersView3dBtn").classList.toggle("active", is3d);
+    $("ordersSvgHost").hidden = is3d;
+    $("ordersView3dHost").hidden = !is3d;
+    if (is3d) refreshOrders3D();
+  }
+
+  function refreshOrderCard() {
+    var o = currentOrderFromRegistry();
+    if (!o) return;
+    $("ordersSummary").textContent = (o.holderName || o.id) + " · " + o.dateHuman;
+    $("orderInfo").innerHTML = renderOrderInfo(o);
+    $("orderActionMsg").textContent = "";
+    refreshOrdersSVG();
+    refreshOrders3D();
+  }
+
+  function ordersSelectRow(id) {
+    currentOrderId = id;
+    ordersExpanded = true;
+    $("ordersMain").hidden = false;
+    setOrdersViewMode(false); // см. blanksSelectRow — иначе колесо мыши над 3D крутит зум вместо скролла
+    renderOrdersTable();
+    refreshOrderCard();
+    if ($("ordersMain").scrollIntoView) $("ordersMain").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function ordersCancelSelection() {
+    ordersExpanded = false;
+    currentOrderId = null;
+    $("ordersMain").hidden = true;
+    renderOrdersTable();
   }
 
   // ---------- заказчик: запоминание полей ----------
@@ -951,7 +1689,7 @@
 
   loadCustomDiscs(); // ранее загруженные пользователем подложки из localStorage
   fillDiscSelect();
-  fillControlSelect();
+  updateDiscInfo();
   rebuildControlHoles();
   applyDefaultClearances();
   parts = [defaultPart()];
@@ -964,12 +1702,12 @@
   // Динамическая разметка (детали, контрольные отверстия, сводка) собирается через
   // HC.t на месте, поэтому её нужно перерисовать; состояние формы при этом сохраняется.
   function setLanguage(lang) {
-    var discVal = $("discSelect").value, ctrlVal = $("controlSelect").value;
+    var discVal = $("discSelect").value;
     HC.i18n.set(lang); // сохраняет выбор, переводит статическую разметку
     $("langRu").classList.toggle("active", lang === "ru");
     $("langEn").classList.toggle("active", lang === "en");
     fillDiscSelect(); $("discSelect").value = discVal;
-    fillControlSelect(); if (ctrlVal) $("controlSelect").value = ctrlVal;
+    updateDiscInfo();
     renderControlHoles();
     renderParts();
     doPack(); // сводка и статусы — на новом языке
@@ -1021,17 +1759,9 @@
   })();
 
   $("discSelect").addEventListener("change", onDiscChange);
-  $("customDiscDia").addEventListener("input", function () {
-    $("discInfo").textContent = HC.t("Диаметр диска: {0} мм", currentDisc().diameter || "?");
-    markDirty();
-  });
   $("discLoadBtn").addEventListener("click", loadDiscFromFile);
   $("discStepLoadBtn").addEventListener("click", loadDiscFromStepFile);
   $("discDelBtn").addEventListener("click", deleteCurrentDisc);
-  $("controlSelect").addEventListener("change", function () {
-    rebuildControlHoles();
-    markDirty();
-  });
   ["clPP", "clPE", "clPC"].forEach(function (id) { $(id).addEventListener("input", markDirty); });
   $("clReset").addEventListener("click", function () { applyDefaultClearances(); markDirty(); });
   $("addPart").addEventListener("click", function () { parts.push(defaultPart()); renderParts(); markDirty(); });
@@ -1039,6 +1769,25 @@
   $("showNumbers").addEventListener("change", refreshView);
   $("view2dBtn").addEventListener("click", function () { setViewMode(false); });
   $("view3dBtn").addEventListener("click", function () { setViewMode(true); });
+  $("blanksView2dBtn").addEventListener("click", function () { setBlanksViewMode(false); });
+  $("blanksView3dBtn").addEventListener("click", function () { setBlanksViewMode(true); });
+  $("blankSaveBtn").addEventListener("click", saveBlankEdits);
+  $("addBlankBtn").addEventListener("click", openAddBlankModal);
+  $("addBlankModalSaveBtn").addEventListener("click", saveAddBlankModal);
+  $("addBlankModalCancelBtn").addEventListener("click", closeAddBlankModal);
+  $("addBlankView2dBtn").addEventListener("click", function () { setAddBlankViewMode(false); });
+  $("addBlankView3dBtn").addEventListener("click", function () { setAddBlankViewMode(true); });
+  $("mbDia").addEventListener("input", scheduleConstructorPreview);
+  $("mbThk").addEventListener("input", scheduleConstructorPreview);
+  $("mbRecessOn").addEventListener("change", function (e) { $("mbRecessFields").hidden = !e.target.checked; scheduleConstructorPreview(); });
+  $("mbRecessSide").addEventListener("change", scheduleConstructorPreview);
+  $("mbRecessDia").addEventListener("input", scheduleConstructorPreview);
+  $("mbRecessDepth").addEventListener("input", scheduleConstructorPreview);
+  $("mbAddWitness").addEventListener("click", function () { mbWitnesses.push(defaultWitness()); renderMbWitnesses(); scheduleConstructorPreview(); });
+  $("mbAddFixture").addEventListener("click", function () { mbFixtures.push(defaultFixture()); renderMbFixtures(); scheduleConstructorPreview(); });
+  $("mbCreateBtn").addEventListener("click", createManualBlank);
+  $("blanksCancelBtn").addEventListener("click", blanksCancelSelection);
+  renderBlanksTable(); // таблица болванок; превью/карточка — только после клика по строке
   ["custName", "custOrg", "custContact"].forEach(function (id) { $(id).addEventListener("change", saveCustomer); });
 
   $("csvBtn").addEventListener("click", function () {
@@ -1080,6 +1829,7 @@
       return;
     }
     saveCustomer();
+    addOrderToRegistry(order); // в «Базу подложкодержателей» — сразу, независимо от исхода отправки в таблицу
     var typeLabel = { circle: HC.t("круг"), rect: HC.t("прямоуг."), oct: HC.t("с фаской"), oval: HC.t("овал") };
     var payload = {
       id: order.id,
@@ -1104,9 +1854,49 @@
     HC.submitOrder(payload).then(function () {
       setSendMsg(HC.t("Заказ {0} отправлен и записан в таблицу.", order.id), "ok");
       $("sendBtn").disabled = false;
+      updateOrderSentStatus(order.id, true);
     }).catch(function (err) {
       setSendMsg(HC.t("Не удалось отправить: {0}", err.message), "error");
       $("sendBtn").disabled = false;
+      updateOrderSentStatus(order.id, false);
     });
   });
+
+  $("ordersCancelBtn").addEventListener("click", ordersCancelSelection);
+  $("ordersView2dBtn").addEventListener("click", function () { setOrdersViewMode(false); });
+  $("ordersView3dBtn").addEventListener("click", function () { setOrdersViewMode(true); });
+  $("orderCsvBtn").addEventListener("click", function () {
+    var o = currentOrderFromRegistry();
+    if (o) HC.downloadCSV(o);
+  });
+  $("orderStepBtn").addEventListener("click", function () {
+    var o = currentOrderFromRegistry();
+    if (!o || !HC.downloadSTEP) return;
+    var btn = $("orderStepBtn");
+    function msg(t, cls) { var el = $("orderActionMsg"); el.textContent = t || ""; el.className = "status" + (cls ? " " + cls : ""); }
+    btn.disabled = true;
+    HC.downloadSTEP(o, function (t) { msg(t); }).then(function () {
+      btn.disabled = false;
+    }).catch(function (err) {
+      msg(HC.t("Не удалось построить STEP: {0}", (err && err.message) || err), "error");
+      btn.disabled = false;
+    });
+  });
+  $("orderReportBtn").addEventListener("click", function () {
+    var o = currentOrderFromRegistry();
+    if (!o) return;
+    var svg = HC.renderSVG({
+      discDiameter: o.disc.diameter, edgeClearance: o.clearances.pe,
+      controlHoles: o.controlHoles, placed: o.placed, showNumbers: true
+    });
+    HC.showReport(o, svg);
+  });
+  $("orderDelBtn").addEventListener("click", function () {
+    var o = currentOrderFromRegistry();
+    if (!o) return;
+    if (!g.confirm(HC.t("Удалить заказ «{0}» из базы? Это действие нельзя отменить.", o.holderName || o.id))) return;
+    saveOrderRegistryArr(loadOrderRegistry().filter(function (x) { return x.id !== o.id; }));
+    ordersCancelSelection();
+  });
+  renderOrdersTable(); // первичная отрисовка (таблица; превью/карточка — только после клика по строке)
 })(typeof globalThis !== "undefined" ? globalThis : window);

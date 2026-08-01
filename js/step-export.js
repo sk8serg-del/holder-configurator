@@ -174,6 +174,40 @@
       cutters.push(top.loftWith(bot, { ruled: true }));
     }
 
+    // Занижение по краю болванки (order.disc.edgeRecess): кольцо СНАРУЖИ
+    // edgeRecess.diameter (до самого края диска R) занижено на depth от
+    // указанной грани (top — по умолчанию, или bottom). Внутри diameter —
+    // полная толщина, без изменений.
+    if (order.disc.edgeRecess && order.disc.edgeRecess.diameter > 0 && order.disc.edgeRecess.depth > 0) {
+      try {
+        var er = order.disc.edgeRecess;
+        var erInnerR = er.diameter / 2;
+        if (erInnerR < R) {
+          var erRing = rep.drawCircle(R).cut(rep.drawCircle(erInnerR));
+          if (er.side === "bottom") {
+            cutters.push(erRing.sketchOnPlane("XY", -thickness - TOP).extrude(er.depth + TOP));
+          } else {
+            cutters.push(erRing.sketchOnPlane("XY", TOP).extrude(-(er.depth + TOP)));
+          }
+        }
+      } catch (e) {
+        warnings.push("занижение по краю: " + ((e && e.message) || e));
+      }
+    }
+
+    // Крепёжные/технологические отверстия болванки (order.disc.fixtures.holes) —
+    // простые сквозные вырезы; раньше только рисовались в 2D/3D, в STEP не резались.
+    ((order.disc.fixtures && order.disc.fixtures.holes) || []).forEach(function (grp, gi) {
+      if (!(grp.d > 0)) return;
+      (grp.points || []).forEach(function (p, pi) {
+        try {
+          through(place(rep.drawCircle(grp.d / 2), p[0], p[1], 0));
+        } catch (e) {
+          warnings.push("крепёж «" + (grp.label || gi) + "» #" + (pi + 1) + ": " + ((e && e.message) || e));
+        }
+      });
+    });
+
     features(order).forEach(function (f, idx) {
       try {
         var isC = f.type === "circle";

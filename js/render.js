@@ -241,8 +241,22 @@
     );
     out.push('<g transform="scale(1,-1)">');
 
-    // болванка (полный физический диск)
-    out.push('<circle cx="0" cy="0" r="' + fmt(R) + '" fill="#f1f0ec" stroke="#444" stroke-width="' + fmt(sw * 2) + '"/>');
+    // болванка (полный физический диск) — если крепёжное/тех. отверстие стоит
+    // прямо на краю, контур получает реальную выемку (circleMinusCircles),
+    // а не рисуется целым кругом с отверстием поверх (STEP это всегда резал
+    // верно — см. step-export.js, тут дело было только в превью)
+    var edgeHoles = [];
+    ((model.fixtures && model.fixtures.holes) || []).forEach(function (grp) {
+      if (!(grp.d > 0)) return;
+      (grp.points || []).forEach(function (p) { edgeHoles.push({ x: p[0], y: p[1], r: grp.d / 2 }); });
+    });
+    var boundaryPoly = HC.geom && HC.geom.circleMinusCircles ? HC.geom.circleMinusCircles(R, edgeHoles) : null;
+    if (boundaryPoly) {
+      var bd = boundaryPoly.map(function (pt, i) { return (i ? "L" : "M") + fmt(pt.x) + "," + fmt(pt.y); }).join(" ") + " Z";
+      out.push('<path d="' + bd + '" fill="#f1f0ec" stroke="#444" stroke-width="' + fmt(sw * 2) + '"/>');
+    } else {
+      out.push('<circle cx="0" cy="0" r="' + fmt(R) + '" fill="#f1f0ec" stroke="#444" stroke-width="' + fmt(sw * 2) + '"/>');
+    }
 
     // кольцевые канавки маски (декор, вне полезной зоны)
     ((model.fixtures && model.fixtures.grooves) || []).forEach(function (gr) {
@@ -250,6 +264,12 @@
         out.push('<circle cx="0" cy="0" r="' + fmt(dia / 2) + '" fill="none" stroke="#c0beb8" stroke-width="' + fmt(sw) + '" stroke-dasharray="' + fmt(sw * 6) + " " + fmt(sw * 4) + '"/>');
       });
     });
+
+    // занижение по краю болванки — штрихованное кольцо снаружи edgeRecess.diameter
+    // (реальная ступенька строится в 3D/STEP; в 2D — только граница + подпись глубины)
+    if (model.edgeRecess && model.edgeRecess.diameter > 0) {
+      out.push('<circle cx="0" cy="0" r="' + fmt(model.edgeRecess.diameter / 2) + '" fill="none" stroke="#9a8f7a" stroke-width="' + fmt(sw) + '" stroke-dasharray="' + fmt(sw * 3) + " " + fmt(sw * 2) + '"/>');
+    }
 
     // полезная зона (граница раскладки деталей) — только если болванка крупнее
     if (model.blankDiameter && model.blankDiameter > model.discDiameter + 0.1) {

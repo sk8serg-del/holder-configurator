@@ -39,6 +39,9 @@
         <input id="custName" name="name" autocomplete="name">
         <input id="custOrg" name="organization" autocomplete="organization">
         <input id="custContact" name="email" autocomplete="email">
+        <!-- авто-название подложкодержателя по составу деталей (для гравировки/
+             отчёта/заказа); заполняется после раскладки, наружу не показывается -->
+        <input type="text" id="holderName" readonly>
       </div>
 
       <section>
@@ -98,58 +101,224 @@
   </section>
 
   <section id="tabBlanks" class="tab-panel" role="tabpanel" hidden>
-    <div class="panel blanks-panel">
+    <div class="panel blanks-table-panel">
       <h2 data-i18n="Болванки">Болванки</h2>
-      <p class="hint" data-i18n="Таблица/поиск по сохранённым болванкам — в разработке. Пока — редактирование текущей выбранной (см. вкладку «Конфигуратор») и загрузка новых.">Таблица/поиск по сохранённым болванкам — в разработке. Пока — редактирование текущей выбранной (см. вкладку «Конфигуратор») и загрузка новых.</p>
-
-      <div class="dims">
-        <label><span data-i18n="Название">Название</span><input type="text" id="holderName" readonly></label>
+      <div class="table-scroll">
+        <table class="blanks-table" id="blanksTable">
+          <thead>
+            <tr>
+              <th data-i18n="Название">Название</th>
+              <th data-i18n="Установка">Установка</th>
+              <th data-i18n="Описание">Описание</th>
+              <th data-i18n="Ø, мм">Ø, мм</th>
+              <th data-i18n="Reference">Reference</th>
+              <th data-i18n="Свидетель с краю">Свидетель с краю</th>
+              <th data-i18n="Свидетель центр">Свидетель центр</th>
+            </tr>
+          </thead>
+          <tbody id="blanksTableBody"></tbody>
+        </table>
       </div>
-      <div class="hint" data-i18n="Название формируется автоматически по составу деталей (после раскладки).">Название формируется автоматически по составу деталей (после раскладки).</div>
 
-      <label id="customDiscWrap" hidden><span data-i18n="Ø кастомного подложкодержителя, мм">Ø кастомного подложкодержителя, мм</span>
-        <input type="number" id="customDiscDia" min="1" step="0.1" value="200">
-      </label>
-      <label><span data-i18n="Контрольные отверстия">Контрольные отверстия</span>
-        <select id="controlSelect"></select>
-      </label>
+      <div class="add-blank">
+        <button type="button" id="addBlankBtn" class="secondary" data-i18n="＋ Добавить болванку">＋ Добавить болванку</button>
+      </div>
+    </div>
+
+    <main class="blanks-main" id="blanksMain" hidden>
+    <div class="panel blanks-preview-panel">
+      <div class="preview-head">
+        <div id="blanksSummary" class="summary"></div>
+        <div class="view-opts">
+          <div class="view-toggle">
+            <button type="button" id="blanksView2dBtn" class="active">2D</button>
+            <button type="button" id="blanksView3dBtn">3D</button>
+          </div>
+          <button type="button" id="blanksCancelBtn" class="link" data-i18n="Отмена">Отмена</button>
+        </div>
+      </div>
+      <div id="blanksSvgHost" class="svg-host"></div>
+      <div id="blanksView3dHost" class="view3d" hidden></div>
+      <div id="blanksMsg" class="status"></div>
+    </div>
+
+    <div class="panel blanks-panel">
+      <div class="dims">
+        <label><span data-i18n="Название">Название</span><input type="text" id="blankName"></label>
+        <label><span data-i18n="Установка">Установка</span><input type="text" id="blankInstall" placeholder="напр. Ortus 900" data-i18n-ph="напр. Ortus 900"></label>
+      </div>
+      <label><span data-i18n="Описание">Описание</span><textarea id="blankDesc" rows="2"></textarea></label>
+
+      <h2 data-i18n="Контрольные отверстия">Контрольные отверстия</h2>
       <div id="controlList"></div>
       <div class="hint" data-i18n="Позиции контрольных отверстий фиксированы; наличие и диаметр — задаются здесь.">Позиции контрольных отверстий фиксированы; наличие и диаметр — задаются здесь.</div>
       <div class="hint" id="discInfo"></div>
-      <button type="button" id="discDelBtn" class="link" hidden data-i18n="удалить этот подложкодержатель">удалить этот подложкодержатель</button>
 
-      <details class="upload-disc">
-        <summary data-i18n="＋ Загрузить свой подложкодержатель (CSV из Inventor)">＋ Загрузить свой подложкодержатель (CSV из Inventor)</summary>
-        <div class="hint" style="margin-bottom:8px" data-i18n-html="Файл выгрузки правила <code>DumpHoles</code>. Подложкодержатель добавится в список и сохранится в этом браузере.">Файл выгрузки правила <code>DumpHoles</code>. Подложкодержатель добавится в список и сохранится в этом браузере.</div>
-        <label><span data-i18n="Файл выгрузки (.csv)">Файл выгрузки (.csv)</span><input type="file" id="discFile" accept=".csv,text/csv"></label>
-        <label><span data-i18n="Название">Название</span><input id="discName" placeholder="напр. Диск Ø320" data-i18n-ph="напр. Диск Ø320"></label>
-        <div class="dims">
-          <label><span data-i18n="Ø полезной зоны, мм">Ø полезной зоны, мм</span><input type="number" id="discZone" min="1" step="0.1" value="298"></label>
-          <label><span data-i18n="Толщина, мм">Толщина, мм</span><input type="number" id="discThk" min="0.1" step="0.1" value="6"></label>
-        </div>
-        <button type="button" id="discLoadBtn" class="secondary" data-i18n="Добавить в каталог">Добавить в каталог</button>
-        <div id="discLoadMsg" class="status"></div>
-      </details>
+      <div class="actions">
+        <button type="button" id="blankSaveBtn" class="primary" data-i18n="Сохранить">Сохранить</button>
+        <button type="button" id="discDelBtn" data-i18n="Удалить">Удалить</button>
+      </div>
+      <div id="blankSaveMsg" class="status"></div>
 
-      <details class="upload-disc">
-        <summary data-i18n="＋ Загрузить STEP болванки">＋ Загрузить STEP болванки</summary>
-        <div class="hint" style="margin-bottom:8px" data-i18n="Твердотельный STEP заготовки диска (без деталей). Отверстия находятся автоматически по геометрии — круглые посадки и сквозные отверстия; фигурные вырезы и канавки так не распознаются, их нужно поправить в каталоге вручную.">Твердотельный STEP заготовки диска (без деталей). Отверстия находятся автоматически по геометрии — круглые посадки и сквозные отверстия; фигурные вырезы и канавки так не распознаются, их нужно поправить в каталоге вручную.</div>
-        <label><span data-i18n="Файл болванки (.step/.stp)">Файл болванки (.step/.stp)</span><input type="file" id="discStepFile" accept=".step,.stp"></label>
-        <label><span data-i18n="Название">Название</span><input id="discStepName" placeholder="напр. Диск Ø320" data-i18n-ph="напр. Диск Ø320"></label>
-        <div class="dims">
-          <label><span data-i18n="Ø полезной зоны, мм">Ø полезной зоны, мм</span><input type="number" id="discStepZone" min="1" step="0.1" value="298"></label>
-        </div>
-        <button type="button" id="discStepLoadBtn" class="secondary" data-i18n="Разобрать и добавить в каталог">Разобрать и добавить в каталог</button>
-        <div id="discStepLoadMsg" class="status"></div>
-      </details>
+      <h2 style="margin-top:16px" data-i18n="История изменений">История изменений</h2>
+      <div id="blankHistory" class="hint"></div>
     </div>
+    </main>
   </section>
 
-  <section id="tabOrders" class="tab-panel" role="tabpanel" hidden>
-    <div class="stub-panel">
-      <h2 data-i18n="База подложкодержателей">База подложкодержателей</h2>
-      <p class="hint" data-i18n="Реестр готовых заказов (поиск по столбцам, карточка с чертежом и 3D, история правок) — в разработке.">Реестр готовых заказов (поиск по столбцам, карточка с чертежом и 3D, история правок) — в разработке.</p>
+  <div id="addBlankModal" class="login-overlay add-blank-overlay" hidden>
+    <div class="login-box add-blank-box">
+      <h2 data-i18n="＋ Добавить болванку">＋ Добавить болванку</h2>
+      <div class="add-blank-layout">
+        <div class="add-blank-form">
+          <div class="dims">
+            <label><span data-i18n="Название">Название</span><input id="nbName" placeholder="напр. Ortus 900 Ø327" data-i18n-ph="напр. Ortus 900 Ø327"></label>
+            <label><span data-i18n="Установка">Установка</span><input id="nbInstall" placeholder="напр. Ortus 900" data-i18n-ph="напр. Ortus 900"></label>
+          </div>
+          <label><span data-i18n="Описание">Описание</span><textarea id="nbDesc" rows="2"></textarea></label>
+
+          <details class="upload-disc">
+            <summary data-i18n="＋ Загрузить свой подложкодержатель (CSV из Inventor)">＋ Загрузить свой подложкодержатель (CSV из Inventor)</summary>
+            <div class="hint" style="margin-bottom:8px" data-i18n-html="Файл выгрузки правила <code>DumpHoles</code>.">Файл выгрузки правила <code>DumpHoles</code>.</div>
+            <label><span data-i18n="Файл выгрузки (.csv)">Файл выгрузки (.csv)</span><input type="file" id="discFile" accept=".csv,text/csv"></label>
+            <div class="dims">
+              <label><span data-i18n="Ø полезной зоны, мм">Ø полезной зоны, мм</span><input type="number" id="discZone" min="1" step="0.1" value="298"></label>
+              <label><span data-i18n="Толщина, мм">Толщина, мм</span><input type="number" id="discThk" min="0.1" step="0.1" value="6"></label>
+            </div>
+            <button type="button" id="discLoadBtn" class="secondary" data-i18n="Разобрать">Разобрать</button>
+            <div id="discLoadMsg" class="status"></div>
+          </details>
+
+          <details class="upload-disc">
+            <summary data-i18n="＋ Загрузить STEP болванки">＋ Загрузить STEP болванки</summary>
+            <div class="hint" style="margin-bottom:8px" data-i18n="Твердотельный STEP заготовки диска (без деталей). Отверстия находятся автоматически по геометрии — круглые посадки и сквозные отверстия; фигурные вырезы и канавки так не распознаются, их нужно поправить в каталоге вручную.">Твердотельный STEP заготовки диска (без деталей). Отверстия находятся автоматически по геометрии — круглые посадки и сквозные отверстия; фигурные вырезы и канавки так не распознаются, их нужно поправить в каталоге вручную.</div>
+            <label><span data-i18n="Файл болванки (.step/.stp)">Файл болванки (.step/.stp)</span><input type="file" id="discStepFile" accept=".step,.stp"></label>
+            <div class="dims">
+              <label><span data-i18n="Ø полезной зоны, мм">Ø полезной зоны, мм</span><input type="number" id="discStepZone" min="1" step="0.1" value="298"></label>
+            </div>
+            <button type="button" id="discStepLoadBtn" class="secondary" data-i18n="Разобрать">Разобрать</button>
+            <div id="discStepLoadMsg" class="status"></div>
+          </details>
+
+          <details class="upload-disc">
+            <summary data-i18n="＋ Создать болванку самому">＋ Создать болванку самому</summary>
+            <div class="hint" style="margin-bottom:8px" data-i18n="Параметрический конструктор: диаметр, толщина, занижение по краю, свидетели/Reference и крепёжные отверстия. Всё — реальная геометрия: видна в превью и режется в STEP.">Параметрический конструктор: диаметр, толщина, занижение по краю, свидетели/Reference и крепёжные отверстия. Всё — реальная геометрия: видна в превью и режется в STEP.</div>
+            <div class="dims">
+              <label><span data-i18n="Диаметр, мм">Диаметр, мм</span><input type="number" id="mbDia" min="1" step="0.1" value="300"></label>
+              <label><span data-i18n="Толщина, мм">Толщина, мм</span><input type="number" id="mbThk" min="0.1" step="0.1" value="6"></label>
+            </div>
+
+            <div class="mb-block">
+              <label class="mb-toggle"><input type="checkbox" id="mbRecessOn"> <span data-i18n="занижение по краю болванки">занижение по краю болванки</span></label>
+              <div id="mbRecessFields" class="dims" hidden>
+                <label><span data-i18n="Сторона">Сторона</span>
+                  <select id="mbRecessSide">
+                    <option value="top" data-i18n="сверху">сверху</option>
+                    <option value="bottom" data-i18n="снизу">снизу</option>
+                  </select>
+                </label>
+                <label><span data-i18n="Ø границы, мм">Ø границы, мм</span><input type="number" id="mbRecessDia" min="1" step="0.1" value="260"></label>
+                <label><span data-i18n="Глубина, мм">Глубина, мм</span><input type="number" id="mbRecessDepth" min="0.1" step="0.1" value="1"></label>
+              </div>
+            </div>
+
+            <div class="mb-block">
+              <div class="mb-head">
+                <span data-i18n="Свидетели / Reference">Свидетели / Reference</span>
+                <button type="button" id="mbAddWitness" class="link" data-i18n="+ добавить">+ добавить</button>
+              </div>
+              <div id="mbWitnessList"></div>
+            </div>
+
+            <div class="mb-block">
+              <div class="mb-head">
+                <span data-i18n="Крепёжные / технологические отверстия">Крепёжные / технологические отверстия</span>
+                <button type="button" id="mbAddFixture" class="link" data-i18n="+ добавить">+ добавить</button>
+              </div>
+              <div id="mbFixtureList"></div>
+            </div>
+
+            <button type="button" id="mbCreateBtn" class="secondary" data-i18n="Собрать">Собрать</button>
+            <div id="mbMsg" class="status"></div>
+          </details>
+
+          <div class="actions">
+            <button type="button" id="addBlankModalSaveBtn" class="primary" data-i18n="Сохранить">Сохранить</button>
+            <button type="button" id="addBlankModalCancelBtn" data-i18n="Отмена">Отмена</button>
+          </div>
+          <div id="addBlankModalMsg" class="status"></div>
+        </div>
+
+        <div class="add-blank-preview panel">
+          <div class="preview-head">
+            <div class="view-toggle">
+              <button type="button" id="addBlankView2dBtn" class="active">2D</button>
+              <button type="button" id="addBlankView3dBtn">3D</button>
+            </div>
+          </div>
+          <div id="addBlankPreviewHost" class="svg-host"></div>
+          <div id="addBlankView3dHost" class="view3d" hidden></div>
+          <div id="addBlankMsg" class="status"></div>
+        </div>
+      </div>
     </div>
+  </div>
+
+  <section id="tabOrders" class="tab-panel" role="tabpanel" hidden>
+    <div class="panel blanks-table-panel">
+      <h2 data-i18n="База подложкодержателей">База подложкодержателей</h2>
+      <p class="hint" id="ordersEmptyHint" data-i18n="Здесь появятся заказы, отправленные с этого компьютера (хранятся в этом браузере).">Здесь появятся заказы, отправленные с этого компьютера (хранятся в этом браузере).</p>
+      <div class="table-scroll">
+        <table class="blanks-table" id="ordersTable">
+          <thead>
+            <tr>
+              <th data-i18n="Дата">Дата</th>
+              <th data-i18n="Номер">Номер</th>
+              <th data-i18n="Название">Название</th>
+              <th data-i18n="Технолог">Технолог</th>
+              <th data-i18n="Подложка">Подложка</th>
+              <th data-i18n="Размещено">Размещено</th>
+              <th data-i18n="Отправлено">Отправлено</th>
+            </tr>
+          </thead>
+          <tbody id="ordersTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <main class="blanks-main" id="ordersMain" hidden>
+    <div class="panel blanks-preview-panel">
+      <div class="preview-head">
+        <div id="ordersSummary" class="summary"></div>
+        <div class="view-opts">
+          <div class="view-toggle">
+            <button type="button" id="ordersView2dBtn" class="active">2D</button>
+            <button type="button" id="ordersView3dBtn">3D</button>
+          </div>
+          <button type="button" id="ordersCancelBtn" class="link" data-i18n="Отмена">Отмена</button>
+        </div>
+      </div>
+      <div id="ordersSvgHost" class="svg-host"></div>
+      <div id="ordersView3dHost" class="view3d" hidden></div>
+      <div id="ordersMsg" class="status"></div>
+    </div>
+
+    <div class="panel blanks-panel">
+      <h2 data-i18n="Заказ">Заказ</h2>
+      <div id="orderInfo" class="hint"></div>
+
+      <div class="actions">
+        <button type="button" id="orderCsvBtn" data-i18n="Скачать CSV для Inventor">Скачать CSV для Inventor</button>
+        <button type="button" id="orderStepBtn" data-i18n="Скачать STEP">Скачать STEP</button>
+        <button type="button" id="orderReportBtn" data-i18n="Отчёт / PDF">Отчёт / PDF</button>
+      </div>
+      <div id="orderActionMsg" class="status"></div>
+
+      <div class="actions" style="margin-top:16px">
+        <button type="button" id="orderDelBtn" data-i18n="Удалить">Удалить</button>
+      </div>
+    </div>
+    </main>
   </section>
 </div>
 
@@ -184,6 +353,7 @@
 <script src="js/sheets.js?v=202607291827"></script>
 <script src="js/viewer3d.js?v=202607291827"></script>
 <script src="js/holder-import.js?v=202607291827"></script>
+<script src="js/blank-builder.js?v=202607291827"></script>
 <script src="js/app.js?v=202607291827"></script>
 </body>
 </html>

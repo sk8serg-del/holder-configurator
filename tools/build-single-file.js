@@ -16,7 +16,7 @@ const root = path.join(__dirname, "..");
 const outDir = path.join(root, "dist");
 const outFile = path.join(outDir, "holder-configurator.html");
 
-const SCRIPTS = ["catalog", "i18n", "geometry", "packer", "render", "export-csv", "step-export", "step-import", "report", "sheets", "viewer3d", "holder-import", "app"];
+const SCRIPTS = ["catalog", "i18n", "geometry", "packer", "render", "export-csv", "step-export", "step-import", "report", "sheets", "viewer3d", "holder-import", "blank-builder", "app"];
 
 function readIndex() {
   return fs.readFileSync(path.join(root, "index.html"), "utf8");

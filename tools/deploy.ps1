@@ -18,7 +18,7 @@ $ver  = Get-Date -Format "yyyyMMddHHmm"
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
 $scripts = @("catalog","i18n","geometry","packer","render","export-csv","step-export","step-import","report",
-             "sheets","viewer3d","holder-import","app")
+             "sheets","viewer3d","holder-import","blank-builder","app")
 
 # --- 1) cache versions on index.html assets ---
 $idxPath = Join-Path $root "index.html"

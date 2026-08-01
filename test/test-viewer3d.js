@@ -115,5 +115,79 @@ gReal.traverse((o) => {
 check("реальный disc-298 (крепёж внутри вырезов Mountings) собирается без NaN", finiteReal && meshesReal > 0,
   "finite=" + finiteReal + " meshes=" + meshesReal);
 
+// --- занижение по краю болванки (edgeRecess): реальная ступенька в 3D ---
+function layerMeshes(g) {
+  const ms = [];
+  g.traverse((o) => {
+    if (o.isMesh && o.geometry.type === "ExtrudeGeometry" && o.position.x === 0 && o.position.y === 0 &&
+      o.position.z < 0 && o.material.color.getHex() === 0xc9cdd1) ms.push(o);
+  });
+  return ms;
+}
+function xSpan(mesh) {
+  const box = new THREE.Box3().setFromObject(mesh);
+  return box.max.x - box.min.x;
+}
+
+const recessModelTop = { discDiameter: 298, thickness: 6, controlHoles: [], placed: [], showNumbers: false,
+  edgeRecess: { side: "top", diameter: 250, depth: 2 } };
+const gTop = HC.viewer3d._buildGroup(recessModelTop);
+const layersTop = layerMeshes(gTop).sort((a, b) => a.position.z - b.position.z);
+check("edgeRecess top: диск разбит на 2 слоя (0..2 занижен, 2..6 полный)", layersTop.length === 2, String(layersTop.length));
+if (layersTop.length === 2) {
+  check("edgeRecess top: верхний (ближний к 0) слой сужен до Ø250", Math.abs(xSpan(layersTop[1]) - 250) < 1, String(xSpan(layersTop[1])));
+  check("edgeRecess top: нижний слой остаётся Ø298", Math.abs(xSpan(layersTop[0]) - 298) < 1, String(xSpan(layersTop[0])));
+}
+let finiteTop = true;
+gTop.traverse((o) => { if (!o.isMesh) return; const a = o.geometry.attributes.position.array;
+  for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) { finiteTop = false; break; } });
+check("edgeRecess top: все вершины конечны", finiteTop);
+
+const recessModelBottom = { discDiameter: 298, thickness: 6, controlHoles: [], placed: [], showNumbers: false,
+  edgeRecess: { side: "bottom", diameter: 250, depth: 2 } };
+const gBottom = HC.viewer3d._buildGroup(recessModelBottom);
+const layersBottom = layerMeshes(gBottom).sort((a, b) => a.position.z - b.position.z);
+check("edgeRecess bottom: диск разбит на 2 слоя (0..4 полный, 4..6 занижен)", layersBottom.length === 2, String(layersBottom.length));
+if (layersBottom.length === 2) {
+  check("edgeRecess bottom: нижний (дальний, ближе к -6) слой сужен до Ø250", Math.abs(xSpan(layersBottom[0]) - 250) < 1, String(xSpan(layersBottom[0])));
+  check("edgeRecess bottom: верхний слой остаётся Ø298", Math.abs(xSpan(layersBottom[1]) - 298) < 1, String(xSpan(layersBottom[1])));
+}
+let finiteBottom = true;
+gBottom.traverse((o) => { if (!o.isMesh) return; const a = o.geometry.attributes.position.array;
+  for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) { finiteBottom = false; break; } });
+check("edgeRecess bottom: все вершины конечны", finiteBottom);
+
+// diameter >= discDiameter — некорректное занижение, должно тихо игнорироваться (1 слой, без NaN)
+const recessModelInvalid = { discDiameter: 298, thickness: 6, controlHoles: [], placed: [], showNumbers: false,
+  edgeRecess: { side: "top", diameter: 298, depth: 2 } };
+const gInvalid = HC.viewer3d._buildGroup(recessModelInvalid);
+const layersInvalid = layerMeshes(gInvalid);
+check("edgeRecess некорректный диаметр (>= Ø диска) игнорируется (1 слой)", layersInvalid.length === 1, String(layersInvalid.length));
+
+// --- крепёжное отверстие РОВНО на краю болванки: контур получает реальную
+// выемку (не просто декоративный сквозной кружок поверх целого диска) ---
+const edgeHoleModel = {
+  discDiameter: 300, blankDiameter: 300, thickness: 6, controlHoles: [], placed: [], showNumbers: false,
+  fixtures: { holes: [{ d: 10, label: "вырез", points: [[150, 0]] }] }
+};
+const gEdge = HC.viewer3d._buildGroup(edgeHoleModel);
+let finiteEdge = true;
+gEdge.traverse((o) => { if (!o.isMesh) return; const a = o.geometry.attributes.position.array;
+  for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) { finiteEdge = false; break; } });
+check("отверстие на краю: все вершины конечны (контур клипован без NaN)", finiteEdge);
+const boxEdge = new THREE.Box3().setFromObject(gEdge);
+// вершины контура на границе выреза лежат ровно на пересечении окружностей
+// (R=150, отверстие r=5 в (150,0)) — угол пересечения ≈1.91°, max X ≈150·cos(1.91°)≈149.92
+check("отверстие на краю: контур реально выедает кромку (max X заметно < R=150)", boxEdge.max.x < 149.95, String(boxEdge.max.x));
+
+// то же отверстие полностью внутри — контур не меняется, max X остаётся ≈150
+const innerHoleModel = {
+  discDiameter: 300, blankDiameter: 300, thickness: 6, controlHoles: [], placed: [], showNumbers: false,
+  fixtures: { holes: [{ d: 10, label: "вырез", points: [[50, 0]] }] }
+};
+const gInner = HC.viewer3d._buildGroup(innerHoleModel);
+const boxInner = new THREE.Box3().setFromObject(gInner);
+check("отверстие внутри болванки: контур не меняется (max X ≈ R=150)", Math.abs(boxInner.max.x - 150) < 0.5, String(boxInner.max.x));
+
 console.log(failures ? "\nПРОВАЛЕНО: " + failures : "\nТест 3D-построителя пройден.");
 process.exit(failures ? 1 : 0);

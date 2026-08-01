@@ -231,9 +231,27 @@
       return f;
     });
 
-    // границы слоёв: 0, все глубины посадок, толщина
+    // Занижение по краю (model.edgeRecess: {side, diameter, depth}) — кольцо
+    // снаружи diameter занижено на depth от указанной грани. "Глубина от
+    // верха" диапазон занижения: top -> [0, depth], bottom -> [T-depth, T].
+    // Реализовано как ЕЩЁ ОДНА граница слоя, у которой радиус диска меньше
+    // (innerR вместо R) — соседний слой ниже/выше сохраняет полный R, и его
+    // собственная (уже существующая) торцевая крышка ExtrudeGeometry сама
+    // становится видимой ступенькой, без отдельной геометрии для неё.
+    var edgeRecess = model.edgeRecess && model.edgeRecess.diameter > 0 && model.edgeRecess.depth > 0 ? model.edgeRecess : null;
+    var erInnerR = edgeRecess ? edgeRecess.diameter / 2 : 0;
+    var erT0 = 0, erT1 = 0;
+    if (edgeRecess && erInnerR < R) {
+      if (edgeRecess.side === "bottom") { erT0 = Math.max(0, T - edgeRecess.depth); erT1 = T; }
+      else { erT0 = 0; erT1 = Math.min(T, edgeRecess.depth); }
+    } else {
+      edgeRecess = null; // диаметр занижения не меньше диска — некорректно, не строим
+    }
+
+    // границы слоёв: 0, все глубины посадок, границы занижения, толщина
     var bounds = [0, T];
     features.forEach(function (f) { if (!f.through) bounds.push(f.depth); });
+    if (edgeRecess) { bounds.push(erT0); bounds.push(erT1); }
     bounds.sort(function (a, b) { return a - b; });
     bounds = bounds.filter(function (v, i, arr) { return i === 0 || v - arr[i - 1] > eps; });
 
@@ -242,7 +260,22 @@
 
     for (var i = 0; i + 1 < bounds.length; i++) {
       var t0 = bounds[i], t1 = bounds[i + 1];
-      var shape = toShape(circlePoly(0, 0, R, 128));
+      var layerInRecess = edgeRecess && t0 >= erT0 - eps && t1 <= erT1 + eps;
+      var layerR = layerInRecess ? erInnerR : R;
+
+      // крепёж, ЧАСТИЧНО пересекающий край именно этого слоя, — реальная
+      // выемка в самом контуре (не отдельное "внутреннее" отверстие: полигон,
+      // выходящий за границу формы, ломает триангуляцию ExtrudeGeometry —
+      // видимого выреза не получается вообще, диск остаётся целым)
+      var edgeCircles = fixtureCircles.filter(function (fc) {
+        return HC.geom && HC.geom.circleEdgeOverlap && HC.geom.circleEdgeOverlap(layerR, fc.cx, fc.cy, fc.r);
+      });
+      var interiorCircles = fixtureCircles.filter(function (fc) { return edgeCircles.indexOf(fc) === -1; });
+      var clippedBoundary = edgeCircles.length && HC.geom && HC.geom.circleMinusCircles
+        ? HC.geom.circleMinusCircles(layerR, edgeCircles.map(function (fc) { return { x: fc.cx, y: fc.cy, r: fc.r }; }))
+        : null;
+      var shape = toShape(clippedBoundary || circlePoly(0, 0, layerR, 128));
+
       features.forEach(function (f) {
         if (f.through || f.depth >= t1 - eps) {
           shape.holes.push(toPath(f.outline));            // слой внутри кармана
@@ -250,7 +283,7 @@
           shape.holes.push(toPath(caPolyOf(f.ca))); // сквозная CA
         }
       });
-      fixtureCircles.forEach(function (fc) {
+      interiorCircles.forEach(function (fc) {
         shape.holes.push(toPath(circlePoly(fc.cx, fc.cy, fc.r, 28))); // крепёж — насквозь
       });
       fixturePolys.forEach(function (poly) {

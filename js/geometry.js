@@ -278,6 +278,107 @@
     return best;
   }
 
+  function norm2pi(a) {
+    a = a % (2 * Math.PI);
+    return a < 0 ? a + 2 * Math.PI : a;
+  }
+
+  // span может быть отрицательным (дуга по часовой стрелке — см. circleMinusCircles,
+  // где направление дуги отверстия выбирается по тому, что остаётся внутри диска)
+  function appendArc(pts, r, cx, cy, startAngle, span) {
+    var steps = Math.max(1, Math.round((Math.abs(span) / (2 * Math.PI)) * 256));
+    for (var i = 0; i < steps; i++) {
+      var a = startAngle + (span * i) / steps;
+      pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+    }
+  }
+
+  // Контур окружности радиуса R (центр 0,0) МИНУС пересечения со списком
+  // окружностей holes=[{x,y,r}], которые ЧАСТИЧНО выступают за её границу —
+  // нужно, чтобы крепёжное/тех. отверстие у самого края болванки реально
+  // выедало кромку в 2D/3D-превью, а не просто рисовалось декоративным
+  // кружком поверх целого диска (STEP это всегда резал верно — см.
+  // step-export.js, здесь речь только о превью). Отверстия полностью внутри
+  // или полностью снаружи диска сюда не попадают — они не меняют контур.
+  // Численно: по каждому пересечению находим обе точки пересечения окружностей,
+  // вырезаем из базового контура дугу, накрытую отверстием, и вставляем вместо
+  // неё дугу отверстия (ту её часть, что лежит внутри базового круга).
+  // Пересекает ли окружность (x,y,r) границу базового круга радиуса R
+  // (частично — не целиком внутри и не целиком снаружи). Общий тест для
+  // circleMinusCircles и для вызывающего кода: такие отверстия нужно вырезать
+  // из контура ОДИН раз (либо здесь, либо как обычное внутреннее отверстие —
+  // не и то, и другое).
+  function circleEdgeOverlap(R, x, y, r) {
+    var d = Math.hypot(x, y);
+    return r > 0 && d >= EPS && d < R + r - EPS && d + r > R + EPS;
+  }
+
+  function circleMinusCircles(R, holes) {
+    var cuts = [];
+    (holes || []).forEach(function (h) {
+      var hx = h.x, hy = h.y, r = h.r;
+      if (!circleEdgeOverlap(R, hx, hy, r)) return;
+      var d = Math.hypot(hx, hy);
+
+      var a = (d * d + R * R - r * r) / (2 * d);
+      var hh = Math.sqrt(Math.max(0, R * R - a * a));
+      var ux = hx / d, uy = hy / d;
+      var mx = a * ux, my = a * uy;
+      var perpx = -uy, perpy = ux;
+      var p1 = { x: mx + hh * perpx, y: my + hh * perpy };
+      var p2 = { x: mx - hh * perpx, y: my - hh * perpy };
+      var b1 = norm2pi(Math.atan2(p1.y, p1.x)), b2 = norm2pi(Math.atan2(p2.y, p2.x));
+      var h1 = norm2pi(Math.atan2(p1.y - hy, p1.x - hx)), h2 = norm2pi(Math.atan2(p2.y - hy, p2.x - hx));
+
+      function insideHole(theta) {
+        var px = R * Math.cos(theta), py = R * Math.sin(theta);
+        return Math.hypot(px - hx, py - hy) < r;
+      }
+      function insideBase(theta) {
+        var px = hx + r * Math.cos(theta), py = hy + r * Math.sin(theta);
+        return Math.hypot(px, py) < R;
+      }
+
+      // вырезаемая дуга БАЗОВОГО круга: идём вперёд (CCW) от b1 к b2 (rawSpan) —
+      // если середина этого пути лежит внутри отверстия, это и есть вырез;
+      // иначе вырез — оставшаяся часть круга (от b2 к b1)
+      var rawSpan = norm2pi(b2 - b1);
+      var rStart, rEnd;
+      if (insideHole(norm2pi(b1 + rawSpan / 2))) { rStart = b1; rEnd = b2; }
+      else { rStart = b2; rEnd = b1; }
+      var rSpan = norm2pi(rEnd - rStart);
+
+      // дуга ОТВЕРСТИЯ, которой заменяем вырез — начинается в той же физической
+      // точке, что и rStart, заканчивается в точке rEnd; направление (CCW/CW
+      // вокруг центра отверстия) — то, что остаётся внутри базового круга
+      var hFrom = rStart === b1 ? h1 : h2;
+      var hTo = rStart === b1 ? h2 : h1;
+      var rawHoleSpan = norm2pi(hTo - hFrom);
+      var holeSpan = insideBase(norm2pi(hFrom + rawHoleSpan / 2)) ? rawHoleSpan : rawHoleSpan - 2 * Math.PI;
+
+      cuts.push({ rStart: rStart, rEnd: rEnd, rSpan: rSpan, hx: hx, hy: hy, r: r, hFrom: hFrom, holeSpan: holeSpan });
+    });
+
+    if (!cuts.length) return null; // нет частичных пересечений — обычный круг, ничего готовить не надо
+
+    // Начинаем обход с угла ПЕРВОГО выреза (а не с 0): иначе если ровно этот
+    // вырез лежит рядом со швом 0°/360°, «дуга от 0 до rStart» и «дуга от
+    // rEnd до 2π» превращаются в два огромных перекрывающихся куска (почти
+    // весь круг дважды) — обходим только ЗАЗОРЫ между соседними вырезами
+    // (посл.rEnd → след.rStart), это всегда корректно оборачивается через 0.
+    cuts.sort(function (a, b) { return a.rStart - b.rStart; });
+    var pts = [];
+    var angle = cuts[0].rStart;
+    cuts.forEach(function (cut, i) {
+      appendArc(pts, cut.r, cut.hx, cut.hy, cut.hFrom, cut.holeSpan);
+      angle = cut.rEnd;
+      var next = cuts[(i + 1) % cuts.length];
+      appendArc(pts, R, 0, 0, angle, norm2pi(next.rStart - angle));
+      angle = next.rStart;
+    });
+    return pts;
+  }
+
   HC.geom = {
     EPS: EPS,
     rectPoly: rectPoly,
@@ -292,6 +393,8 @@
     placementDist: placementDist,
     polyPolyDist: polyPolyDist,
     edgeDist: edgeDist,
-    pointInPoly: pointInPoly
+    pointInPoly: pointInPoly,
+    circleEdgeOverlap: circleEdgeOverlap,
+    circleMinusCircles: circleMinusCircles
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

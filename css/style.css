@@ -114,7 +114,42 @@ main { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 }
 
 .form-panel { flex: 0 0 33.333%; max-width: 100%; min-width: 320px; }
-.blanks-panel { max-width: 480px; }
+.blanks-panel { flex: 0 0 33.333%; max-width: 100%; min-width: 320px; }
+.blanks-preview-panel { flex: 1 1 420px; min-width: 320px; }
+
+.blanks-table-panel { margin-bottom: 16px; }
+.table-scroll { overflow-x: auto; }
+.blanks-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.blanks-table th, .blanks-table td { padding: 6px 10px; border-bottom: 1px solid var(--row-border); text-align: left; white-space: nowrap; }
+.blanks-table th { color: var(--muted); font-weight: 600; }
+.blanks-table tbody tr { cursor: pointer; }
+.blanks-table tbody tr:hover { background: var(--row-bg); }
+.blanks-table tbody tr.active { background: var(--row-bg); font-weight: 600; color: var(--accent); }
+.blanks-main { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.blanks-main[hidden] { display: none; }
+.add-blank { margin-top: 12px; }
+
+/* ---------- модальное окно «Добавить болванку» — во всю страницу ---------- */
+.add-blank-overlay { align-items: stretch; justify-content: stretch; padding: 0; background: var(--bg); }
+.add-blank-box {
+  width: 100%; height: 100vh; max-height: 100vh; overflow-y: hidden;
+  border-radius: 0; box-shadow: none; text-align: left;
+  display: flex; flex-direction: column;
+}
+.add-blank-box h2 { flex: 0 0 auto; }
+.add-blank-layout { display: flex; gap: 16px; align-items: stretch; flex: 1 1 auto; min-height: 0; }
+/* форма — 1 доля, превью — 3 доли (тот же принцип, что у формы/просмотра
+   в остальных вкладках, только соотношение уже сильнее в пользу превью) */
+.add-blank-form { flex: 1 1 0; min-width: 280px; overflow-y: auto; padding-right: 4px; }
+.add-blank-preview { flex: 3 1 0; min-width: 320px; display: flex; flex-direction: column; }
+.add-blank-preview .svg-host { flex: 1 1 auto; min-height: 0; }
+.add-blank-preview .svg-host svg { max-height: 100%; height: 100%; }
+.add-blank-preview .view3d { flex: 1 1 auto; min-height: 0; max-height: none; aspect-ratio: auto; }
+
+@media (max-width: 800px) {
+  .add-blank-layout { flex-direction: column; }
+  .add-blank-form, .add-blank-preview { flex: 1 1 auto; }
+}
 
 /* ---------- заглушка входа (вместо логина/пароля) ---------- */
 .login-overlay {
@@ -157,7 +192,7 @@ h2 { font-size: 14px; margin: 0 0 10px; color: var(--label); }
 
 label { display: block; font-size: 13px; margin-bottom: 8px; color: var(--label); }
 
-input, select {
+input, select, textarea {
   width: 100%;
   padding: 6px 8px;
   margin-top: 2px;
@@ -167,6 +202,7 @@ input, select {
   background: var(--panel);
   color: var(--text);
 }
+textarea { resize: vertical; }
 
 input[readonly] {
   background: var(--row-bg);
@@ -270,6 +306,24 @@ input[type="checkbox"], input[type="radio"] {
   align-items: end;
 }
 .clearances label { display: contents; }
+
+/* ---------- ручной конструктор болванки (вкладка «Болванки») ---------- */
+.mb-block { margin: 12px 0; }
+.mb-block .mb-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 13px; color: var(--label); margin-bottom: 6px;
+}
+.mb-toggle { display: inline-flex; align-items: center; margin-bottom: 6px; }
+.mb-row {
+  border: 1px solid var(--row-border); border-radius: 8px; padding: 8px 10px;
+  margin-bottom: 8px; background: var(--row-bg); font-size: 13px;
+}
+.mb-row .row-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.mb-row textarea {
+  width: 100%; min-height: 52px; padding: 6px 8px; margin-top: 2px;
+  border: 1px solid var(--border); border-radius: 6px; font: inherit; font-size: 12px;
+  background: var(--panel); color: var(--text); resize: vertical;
+}
 
 .upload-disc { margin-top: 12px; border: 1px dashed var(--border); border-radius: 8px; padding: 8px 10px; }
 .upload-disc summary { cursor: pointer; font-size: 13px; color: var(--accent); user-select: none; }
