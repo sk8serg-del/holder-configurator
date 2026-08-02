@@ -94,6 +94,8 @@
     "Укажите диаметр болванки.": "Specify the blank diameter.",
     "Укажите толщину болванки.": "Specify the blank thickness.",
     "Занижение по краю: укажите Ø границы и глубину.": "Edge recess: specify boundary Ø and depth.",
+    "Зона напыления, мм": "Coating zone, mm",
+    "авто: Ø диска/занижения −3мм, можно поправить": "auto: disc/recess Ø −3mm, editable",
     "Ø границы занижения должен быть меньше диаметра болванки.": "Recess boundary Ø must be smaller than the blank diameter.",
     "Глубина занижения должна быть меньше толщины.": "Recess depth must be less than the thickness.",
     "Собрано. Заполните название вверху и нажмите «Сохранить».": "Built. Fill in the name above and click “Save”.",

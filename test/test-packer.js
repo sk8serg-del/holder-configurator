@@ -21,7 +21,9 @@ function verifyLayout(name, opts, res) {
     // как в самом упаковщике: занятая зона — по Ø посадки, если задан, иначе по d
     // (у некоторых КО, напр. Reference, задан только seatD, без d)
     return { type: "circle", cx: h.x, cy: h.y, d: h.seatD != null ? h.seatD : h.d };
-  });
+  }).concat((opts.fixtureHoles || []).map(function (h) {
+    return { type: "circle", cx: h.x, cy: h.y, d: h.d };
+  }));
   var placed = res.placed;
   var minPP = Infinity, minPE = Infinity, minPC = Infinity;
   for (var i = 0; i < placed.length; i++) {
@@ -176,6 +178,22 @@ check("7: прямоугольники есть (>5)", res7.perPart[1].placed > 
 check("7: partIndex сохранён", res7.placed.some(function (p) { return p.partIndex === 0; }) &&
   res7.placed.some(function (p) { return p.partIndex === 1; }));
 verifyLayout("7", opts7, res7);
+
+// --- 7b. Крепёжное/тех. отверстие болванки (fixtureHoles) — тоже запретная
+// зона: деталь не должна залезать на него, как и на контрольное отверстие ---
+var opts7b = {
+  discDiameter: 100,
+  controlHoles: [],
+  fixtureHoles: [{ x: 20, y: 0, d: 6 }],
+  clearances: { pp: 2, pe: 3, pc: 4 },
+  parts: [{ type: "circle", d: 15, qty: null }]
+};
+var res7b = HC.pack(opts7b);
+check("7b: крепёжное отверстие не пусто — что-то разместилось", res7b.placed.length > 0, String(res7b.placed.length));
+check("7b: ни одна деталь не залезла на крепёжное отверстие (центр детали не ближе d/2+15/2+pc к (20,0))",
+  res7b.placed.every(function (p) { return Math.hypot(p.cx - 20, p.cy - 0) >= 6 / 2 + 15 / 2 + 4 - 1e-4; }),
+  JSON.stringify(res7b.placed.map(function (p) { return [p.cx, p.cy]; })));
+verifyLayout("7b", opts7b, res7b);
 
 // --- 8. Деталь больше диска — не падаем, размещаем 0 ---
 var res8 = HC.pack({

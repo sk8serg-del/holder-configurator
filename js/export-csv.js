@@ -110,7 +110,7 @@
       L.push(featRow({
         kind: "control", type: "circle", cx: h.x, cy: h.y,
         d: h.d, seatD: h.seatD != null ? h.seatD : h.d, caDia: h.apertureCA,
-        slotOn: !!h.slotOn, depth: h.depth > 0 ? h.depth : partDepth,
+        slotOn: !!h.slotOn, slotAngle: h.slotAngle, depth: h.depth > 0 ? h.depth : partDepth,
         markCount: 0 // метки-ориентиры — только у деталей, не у контрольных отверстий
       }));
     });

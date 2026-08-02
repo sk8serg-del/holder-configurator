@@ -6,6 +6,8 @@
  * HC.blankBuilder.buildManualDiscEntry(opts) → запись диска (см. js/catalog.js)
  * opts = {
  *   id, name, diameter, thickness,
+ *   coatingZoneDiameter: число | null — Ø зоны напыления (меньше диаметра
+ *     диска/занижения; чисто информационная граница, реальной геометрии не меняет),
  *   edgeRecess: {side:'top'|'bottom', diameter, depth} | null,
  *   witnesses: [{name, mode:'polar'|'xy', r, angle, x, y, d, seatD, apertureCA, depth, slotAvailable, slotAngle}],
  *   fixtureGroups: [{label, d, mode:'diameter'|'xy', r, count, rotation, x, y}]
@@ -87,6 +89,7 @@
           depth: opts.edgeRecess.depth
         };
       }
+      if (opts.coatingZoneDiameter > 0) entry.coatingZoneDiameter = opts.coatingZoneDiameter;
       return entry;
     }
   };

@@ -5,6 +5,10 @@
  * HC.viewer3d.update(host, model) — построить/обновить вид в контейнере;
  *   возвращает false, если WebGL недоступен.
  * model — как у HC.renderSVG, плюс thickness (толщина диска, мм).
+ * HC.viewer3d.updateMesh(host, {vertices,triangles,normals}) — то же самое,
+ *   но из настоящего меша STEP-геометрии (shape.mesh() из replicad, см.
+ *   app.js refreshBlanks3DFromMesh) — для папочных болванок с реальным
+ *   файлом, вместо приближённой реконструкции слоями.
  *
  * Диск строится «слоями» без CSG: толщина делится по всем встречающимся
  * глубинам посадок; в каждом слое отверстия — контуры (посадка + паз) тех
@@ -99,7 +103,9 @@
     (model.controlHoles || []).forEach(function (h) {
       var seat = h.seatD > 0 ? h.seatD : h.d;
       if (!(seat > 0)) return;
-      var ang = Math.atan2(h.y, h.x);
+      // явно заданная ориентация паза (свидетель из конструктора болванки) —
+      // приоритет; иначе, как раньше, радиально от центра диска
+      var ang = h.slotAngle != null ? (h.slotAngle * Math.PI) / 180 : Math.atan2(h.y, h.x);
       fs.push({
         outline: seatOutline(h.x, h.y, seat, !!h.slotOn, ang),
         depth: h.depth > 0 ? h.depth : defDepth,
@@ -415,6 +421,28 @@
     return new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
   }
 
+  // Настоящий меш из STEP (см. shape.mesh() в replicad — {vertices, triangles,
+  // normals}, тот же формат, что и THREE.BufferGeometry) — для папочных болванок
+  // с реальным файлом (app.js refreshBlanks3DFromMesh), вместо приближённой
+  // реконструкции слоями (buildGroup). Один меш, один материал — сама STEP-
+  // геометрия уже несёт всю форму (посадки/пазы/канавки/фаски), раскрашивать
+  // отдельные карманы по принадлежности (как в buildGroup) тут не из чего.
+  function buildGroupFromMesh(meshData) {
+    var THREE = g.THREE;
+    var group = new THREE.Group();
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(meshData.vertices, 3));
+    geo.setIndex(Array.prototype.slice.call(meshData.triangles));
+    if (meshData.normals && meshData.normals.length) {
+      geo.setAttribute("normal", new THREE.Float32BufferAttribute(meshData.normals, 3));
+    } else {
+      geo.computeVertexNormals();
+    }
+    var mat = new THREE.MeshStandardMaterial({ color: 0xc9cdd1, metalness: 0.55, roughness: 0.5, side: THREE.DoubleSide });
+    group.add(new THREE.Mesh(geo, mat));
+    return group;
+  }
+
   // ---------- рендерер, камера, управление ----------
 
   function initOnce(host) {
@@ -582,14 +610,28 @@
     });
   }
 
+  // Полный снос экземпляра (рендерер + канвас + обработчик resize) — нужен,
+  // когда переключаемся на ДРУГОЙ host (другая вкладка со своей 3D-панелью):
+  // одиночный `st` был жёстко привязан к самому первому host, куда бы потом
+  // ни звали update() — из-за этого во всех вкладках, кроме первой открытой,
+  // 3D-панель оставалась пустой (канвас как был приклеен к первому host).
+  function disposeInstance(s) {
+    g.removeEventListener("resize", s.resize);
+    if (s.group) disposeGroup(s.group);
+    if (s.renderer.domElement.parentNode) s.renderer.domElement.parentNode.removeChild(s.renderer.domElement);
+    s.renderer.dispose();
+  }
+
   HC.viewer3d = {
     available: function () { return typeof g.THREE !== "undefined"; },
     _buildGroup: buildGroup, // для тестов (node, без WebGL)
+    _buildGroupFromMesh: buildGroupFromMesh, // для тестов (node, без WebGL)
 
     // Построить/обновить 3D-вид. host должен быть видим (нужны его размеры).
     update: function (host, model) {
       if (!this.available()) return false;
-      if (!st) {
+      if (!st || st.host !== host) {
+        if (st) disposeInstance(st);
         st = initOnce(host);
         if (!st) return false;
         // стартовая дистанция — по полному диаметру болванки
@@ -604,6 +646,40 @@
       }
       st.group = buildGroup(model);
       st.scene.add(st.group);
+      st.resize();
+      st.requestRender();
+      return true;
+    },
+
+    // То же самое, но из настоящего меша STEP-геометрии (см. buildGroupFromMesh) —
+    // стартовая дистанция камеры берётся из bounding-сферы самого меша (диаметр
+    // болванки заранее неизвестен, в отличие от model.blankDiameter у update()).
+    // Карманы деталей заказа (если есть) уже должны быть вырезаны В САМОМ
+    // meshData (см. app.js refresh3DFromMesh/HC.buildOrderMeshFromImported) —
+    // здесь просто отображается готовый меш, без декалей поверх.
+    updateMesh: function (host, meshData) {
+      if (!this.available()) return false;
+      var THREE = g.THREE;
+      var isNew = !st || st.host !== host;
+      if (isNew) {
+        if (st) disposeInstance(st);
+        st = initOnce(host);
+        if (!st) return false;
+      }
+      if (st.group) {
+        st.scene.remove(st.group);
+        disposeGroup(st.group);
+      }
+      st.group = buildGroupFromMesh(meshData);
+      st.scene.add(st.group);
+      if (isNew) {
+        var box = new THREE.Box3().setFromObject(st.group);
+        var sphere = box.getBoundingSphere(new THREE.Sphere());
+        var dia = sphere && sphere.radius > 0 ? sphere.radius * 2 : 300;
+        st.sph.r = dia * 1.5;
+        st.rMin = dia * 0.25;
+        st.rMax = dia * 5;
+      }
       st.resize();
       st.requestRender();
       return true;

@@ -189,5 +189,30 @@ const gInner = HC.viewer3d._buildGroup(innerHoleModel);
 const boxInner = new THREE.Box3().setFromObject(gInner);
 check("отверстие внутри болванки: контур не меняется (max X ≈ R=150)", Math.abs(boxInner.max.x - 150) < 0.5, String(boxInner.max.x));
 
+// --- buildGroupFromMesh: настоящий меш STEP (см. shape.mesh() в replicad) —
+// плоский квадрат 20×20, 2 треугольника, без явных нормалей (должны
+// досчитаться автоматически, а не упасть на пустом атрибуте) ---
+const meshData = {
+  vertices: [-10, -10, 0, 10, -10, 0, 10, 10, 0, -10, 10, 0],
+  triangles: [0, 1, 2, 0, 2, 3],
+  normals: []
+};
+const gMesh = HC.viewer3d._buildGroupFromMesh(meshData);
+let meshCountFromMesh = 0;
+gMesh.traverse((o) => { if (o.isMesh) meshCountFromMesh++; });
+check("buildGroupFromMesh: ровно один меш (одна геометрия, один материал)", meshCountFromMesh === 1, String(meshCountFromMesh));
+const boxMesh = new THREE.Box3().setFromObject(gMesh);
+check("buildGroupFromMesh: габарит по X = 20", Math.abs(boxMesh.max.x - boxMesh.min.x - 20) < 1e-6, String(boxMesh.max.x - boxMesh.min.x));
+check("buildGroupFromMesh: габарит по Y = 20", Math.abs(boxMesh.max.y - boxMesh.min.y - 20) < 1e-6, String(boxMesh.max.y - boxMesh.min.y));
+let indexOk = false, normalsFinite = true;
+gMesh.traverse((o) => {
+  if (!o.isMesh) return;
+  indexOk = o.geometry.getIndex() && o.geometry.getIndex().count === 6;
+  const n = o.geometry.attributes.normal.array;
+  for (let i = 0; i < n.length; i++) if (!Number.isFinite(n[i])) normalsFinite = false;
+});
+check("buildGroupFromMesh: индекс на 2 треугольника (6 индексов)", indexOk);
+check("buildGroupFromMesh: нормали досчитаны автоматически (без NaN)", normalsFinite);
+
 console.log(failures ? "\nПРОВАЛЕНО: " + failures : "\nТест 3D-построителя пройден.");
 process.exit(failures ? 1 : 0);

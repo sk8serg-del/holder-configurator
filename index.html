@@ -107,7 +107,7 @@
         <table class="blanks-table" id="blanksTable">
           <thead>
             <tr>
-              <th data-i18n="Название">Название</th>
+              <th data-i18n="Номер">Номер</th>
               <th data-i18n="Установка">Установка</th>
               <th data-i18n="Описание">Описание</th>
               <th data-i18n="Ø, мм">Ø, мм</th>
@@ -122,7 +122,10 @@
 
       <div class="add-blank">
         <button type="button" id="addBlankBtn" class="secondary" data-i18n="＋ Добавить болванку">＋ Добавить болванку</button>
+        <button type="button" id="connectBlankFolderBtn" class="link" data-i18n="Подключить папку с заготовками">Подключить папку с заготовками</button>
+        <span id="blankFolderStatus" class="hint"></span>
       </div>
+      <div id="blankFolderMsg" class="status"></div>
     </div>
 
     <main class="blanks-main" id="blanksMain" hidden>
@@ -151,8 +154,10 @@
 
       <h2 data-i18n="Контрольные отверстия">Контрольные отверстия</h2>
       <div id="controlList"></div>
+      <div class="hint" id="controlListEmptyHint" hidden data-i18n="Контрольные отверстия для этой болванки не распознаются по отдельности — они уже часть загруженной геометрии и учтены как запретные зоны для раскладки.">Контрольные отверстия для этой болванки не распознаются по отдельности — они уже часть загруженной геометрии и учтены как запретные зоны для раскладки.</div>
       <div class="hint" data-i18n="Позиции контрольных отверстий фиксированы; наличие и диаметр — задаются здесь.">Позиции контрольных отверстий фиксированы; наличие и диаметр — задаются здесь.</div>
       <div class="hint" id="discInfo"></div>
+      <div class="hint" id="sourceMissingHint" hidden data-i18n="Эта болванка перенесена из старого формата — исходный STEP-файл не сохранён, поэтому 3D-вид и финальный экспорт используют приближённую геометрию. Перезалейте исходный .stp через «＋ Добавить болванку» для точности.">Эта болванка перенесена из старого формата — исходный STEP-файл не сохранён, поэтому 3D-вид и финальный экспорт используют приближённую геометрию. Перезалейте исходный .stp через «＋ Добавить болванку» для точности.</div>
 
       <div class="actions">
         <button type="button" id="blankSaveBtn" class="primary" data-i18n="Сохранить">Сохранить</button>
@@ -191,7 +196,7 @@
 
           <details class="upload-disc">
             <summary data-i18n="＋ Загрузить STEP болванки">＋ Загрузить STEP болванки</summary>
-            <div class="hint" style="margin-bottom:8px" data-i18n="Твердотельный STEP заготовки диска (без деталей). Отверстия находятся автоматически по геометрии — круглые посадки и сквозные отверстия; фигурные вырезы и канавки так не распознаются, их нужно поправить в каталоге вручную.">Твердотельный STEP заготовки диска (без деталей). Отверстия находятся автоматически по геометрии — круглые посадки и сквозные отверстия; фигурные вырезы и канавки так не распознаются, их нужно поправить в каталоге вручную.</div>
+            <div class="hint" style="margin-bottom:8px" data-i18n="Твердотельный STEP заготовки диска (без деталей). Геометрия не пересобирается — реальные отверстия/вырезы находятся только чтобы отметить их как запретные зоны для раскладки, а новые отверстия под детали при экспорте режутся прямо в исходном теле. Требуется подключённая папка с заготовками (кнопка над таблицей) — сам файл сохранится в неё.">Твердотельный STEP заготовки диска (без деталей). Геометрия не пересобирается — реальные отверстия/вырезы находятся только чтобы отметить их как запретные зоны для раскладки, а новые отверстия под детали при экспорте режутся прямо в исходном теле. Требуется подключённая папка с заготовками (кнопка над таблицей) — сам файл сохранится в неё.</div>
             <label><span data-i18n="Файл болванки (.step/.stp)">Файл болванки (.step/.stp)</span><input type="file" id="discStepFile" accept=".step,.stp"></label>
             <div class="dims">
               <label><span data-i18n="Ø полезной зоны, мм">Ø полезной зоны, мм</span><input type="number" id="discStepZone" min="1" step="0.1" value="298"></label>
@@ -207,6 +212,10 @@
               <label><span data-i18n="Диаметр, мм">Диаметр, мм</span><input type="number" id="mbDia" min="1" step="0.1" value="300"></label>
               <label><span data-i18n="Толщина, мм">Толщина, мм</span><input type="number" id="mbThk" min="0.1" step="0.1" value="6"></label>
             </div>
+            <label><span data-i18n="Зона напыления, мм">Зона напыления, мм</span>
+              <span class="hint">(<span data-i18n="авто: Ø диска/занижения −3мм, можно поправить">авто: Ø диска/занижения −3мм, можно поправить</span>)</span>
+              <input type="number" id="mbCoatingZoneDia" min="1" step="0.1">
+            </label>
 
             <div class="mb-block">
               <label class="mb-toggle"><input type="checkbox" id="mbRecessOn"> <span data-i18n="занижение по краю болванки">занижение по краю болванки</span></label>
@@ -349,6 +358,7 @@
 <script src="js/export-csv.js?v=202607291827"></script>
 <script src="js/step-export.js?v=202607291827"></script>
 <script src="js/step-import.js?v=202607291827"></script>
+<script src="js/blank-storage.js?v=202607291827"></script>
 <script src="js/report.js?v=202607291827"></script>
 <script src="js/sheets.js?v=202607291827"></script>
 <script src="js/viewer3d.js?v=202607291827"></script>

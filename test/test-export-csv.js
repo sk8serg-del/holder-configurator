@@ -72,6 +72,23 @@ check("угол паза контрольного отверстия — рад�
   rowCtrl && Math.abs(parseFloat(rowCtrl.slotAngle) - expectedCtrl) < 1e-3,
   rowCtrl && rowCtrl.slotAngle + " vs " + expectedCtrl);
 
+// контрольное отверстие (свидетель из конструктора болванки) СО своим
+// slotAngle — CSV должен резать паз под этим углом, не радиально (раньше
+// свой угол свидетеля никак не доходил до CSV — Inventor резал не туда же,
+// куда показывала страница)
+var orderCtrlAngle = {
+  id: "T3b", date: "2026-01-01", customer: { name: "T", org: "" },
+  disc: { id: "d", name: "Диск", diameter: 298, thickness: 6 },
+  clearances: { pp: 6, pe: 3, pc: 6 },
+  controlHoles: [{ x: -13.527, y: 110.173, d: 25.4, seatD: 25.6, apertureCA: 22.6, slotOn: true, slotAngle: 45 }],
+  placed: []
+};
+var csvCtrlAngle = HC.buildCSV(orderCtrlAngle);
+var rowCtrlAngle = parseRow(csvCtrlAngle, -13.527);
+check("угол паза контрольного отверстия со своим slotAngle=45 — используется он, не радиальный ≈96.99°",
+  rowCtrlAngle && Math.abs(parseFloat(rowCtrlAngle.slotAngle) - 45) < 1e-6,
+  rowCtrlAngle && rowCtrlAngle.slotAngle);
+
 // --- метка-ориентир (markX/markY): только у ДЕТАЛЕЙ с пазом, в 2мм от
 // посадки и в 2мм от паза; у контрольных отверстий и у деталей без паза —
 // пусто (метка не режется) ---

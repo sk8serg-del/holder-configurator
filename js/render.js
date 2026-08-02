@@ -6,7 +6,10 @@
  *   discDiameter, edgeClearance,
  *   controlHoles: [{x, y, d}],
  *   placed: [placement...],
- *   showNumbers: bool
+ *   showNumbers: bool,
+ *   previewSVG: string  // опционально — настоящий вид сверху STEP-геометрии
+ *     (см. js/step-import.js), рисуется фоном вместо приближённой
+ *     реконструкции контура/крепежа/канавок из fixtures
  * }
  * Координаты CAD (Y вверх) — группа перевёрнута scale(1,-1), подписи возвращаются обратно.
  */
@@ -239,12 +242,54 @@
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + vb + '" ' +
       'font-family="system-ui, Segoe UI, sans-serif">'
     );
+
+    var hasPreview = !!model.previewSVG;
+    var previewLayer = "";
+    if (hasPreview) {
+      // Настоящий вид сверху STEP-геометрии (см. js/step-import.js
+      // buildBlankSummary — replicad.drawProjection, кэшируется строкой).
+      // Координаты в нём — те же самые CAD X/Y (Y вверх), что и у наших
+      // отверстий/деталей (обе стороны считаны из одного и того же реального
+      // тела) — поэтому переносим их как обычную <g> ВНУТРЬ общего flip-слоя
+      // (scale(1,-1) ниже), а не отдельным вложенным <svg> со своим viewBox
+      // ДО флипа: так было раньше и давало зеркало по вертикали относительно
+      // всего остального чертежа и 3D-вида (которые этот флип получают).
+      //
+      // replicad кладёт fill="none" stroke="black" stroke-width="0.6%"
+      // vector-effect="non-scaling-stroke" на КОРНЕВОЙ <svg>, дочерние <path> —
+      // без своих атрибутов, наследуют их. Отбросить корневой тег — потерять
+      // fill="none" (path красится дефолтным чёрным). Переносим fill/stroke,
+      // но толщину линии и non-scaling-stroke — свои: без этого линии остаются
+      // непропорционально толстыми (фиксированные в пикселях экрана, не в мм
+      // чертежа) на фоне тонких линий остальной отрисовки.
+      var svgOpenMatch = /^<svg([^>]*)>/.exec(model.previewSVG);
+      var attrs = {};
+      if (svgOpenMatch) {
+        var attrRe = /([\w:-]+)\s*=\s*"([^"]*)"/g, am;
+        while ((am = attrRe.exec(svgOpenMatch[1]))) attrs[am[1]] = am[2];
+      }
+      attrs.fill = attrs.fill || "none";
+      attrs.stroke = attrs.stroke || "#333";
+      attrs["stroke-width"] = fmt(sw);
+      delete attrs["vector-effect"];
+      delete attrs.viewBox;
+      delete attrs.xmlns;
+      delete attrs.version;
+      var attrStr = Object.keys(attrs).map(function (k) { return k + '="' + esc(attrs[k]) + '"'; }).join(" ");
+      var innerBody = model.previewSVG.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
+      previewLayer = "<g " + attrStr + ">" + innerBody + "</g>";
+    }
+
     out.push('<g transform="scale(1,-1)">');
+    if (hasPreview) out.push(previewLayer);
 
     // болванка (полный физический диск) — если крепёжное/тех. отверстие стоит
     // прямо на краю, контур получает реальную выемку (circleMinusCircles),
     // а не рисуется целым кругом с отверстием поверх (STEP это всегда резал
-    // верно — см. step-export.js, тут дело было только в превью)
+    // верно — см. step-export.js, тут дело было только в превью). С реальным
+    // previewSVG фоном свой (приближённый) контур+крепёж+канавки не рисуем —
+    // они уже настоящие на картинке, дублировать/расходиться с ней незачем.
+    if (!hasPreview) {
     var edgeHoles = [];
     ((model.fixtures && model.fixtures.holes) || []).forEach(function (grp) {
       if (!(grp.d > 0)) return;
@@ -258,28 +303,41 @@
       out.push('<circle cx="0" cy="0" r="' + fmt(R) + '" fill="#f1f0ec" stroke="#444" stroke-width="' + fmt(sw * 2) + '"/>');
     }
 
-    // кольцевые канавки маски (декор, вне полезной зоны)
+    // кольцевые канавки маски (декор, вне полезной зоны) — реальная физическая
+    // грань (не просто разметка), поэтому сплошной линией, как и все настоящие
+    // рёбра STEP-превью (единообразно — см. combineProjectionSVG)
     ((model.fixtures && model.fixtures.grooves) || []).forEach(function (gr) {
       [gr.outer, gr.inner].forEach(function (dia) {
-        out.push('<circle cx="0" cy="0" r="' + fmt(dia / 2) + '" fill="none" stroke="#c0beb8" stroke-width="' + fmt(sw) + '" stroke-dasharray="' + fmt(sw * 6) + " " + fmt(sw * 4) + '"/>');
+        out.push('<circle cx="0" cy="0" r="' + fmt(dia / 2) + '" fill="none" stroke="#c0beb8" stroke-width="' + fmt(sw) + '"/>');
       });
     });
-
-    // занижение по краю болванки — штрихованное кольцо снаружи edgeRecess.diameter
-    // (реальная ступенька строится в 3D/STEP; в 2D — только граница + подпись глубины)
-    if (model.edgeRecess && model.edgeRecess.diameter > 0) {
-      out.push('<circle cx="0" cy="0" r="' + fmt(model.edgeRecess.diameter / 2) + '" fill="none" stroke="#9a8f7a" stroke-width="' + fmt(sw) + '" stroke-dasharray="' + fmt(sw * 3) + " " + fmt(sw * 2) + '"/>');
     }
 
-    // полезная зона (граница раскладки деталей) — только если болванка крупнее
+    // занижение по краю болванки — реальная физическая ступенька (та же
+    // геометрия строится в 3D/STEP), поэтому сплошной линией, а не пунктиром —
+    // пунктир здесь читался как «вырез с другой стороны/не по-настоящему»
+    if (model.edgeRecess && model.edgeRecess.diameter > 0) {
+      out.push('<circle cx="0" cy="0" r="' + fmt(model.edgeRecess.diameter / 2) + '" fill="none" stroke="#9a8f7a" stroke-width="' + fmt(sw) + '"/>');
+    }
+
+    // зона напыления — чисто информационная граница (не режется), просто
+    // показывает, где на болванке физически есть покрытие
+    if (model.coatingZoneDiameter > 0) {
+      out.push('<circle cx="0" cy="0" r="' + fmt(model.coatingZoneDiameter / 2) + '" fill="none" stroke="#5b8fb0" stroke-width="' + fmt(sw) + '" stroke-dasharray="' + fmt(sw * 2) + " " + fmt(sw * 3) + '"/>');
+    }
+
+    // полезная зона (граница раскладки деталей) — только если болванка крупнее.
+    // С previewSVG-фоном заливка ЗАКРАСИТ настоящую геометрию под собой
+    // (реальные отверстия и т.п.) — тут нужна только граница, без заливки.
     if (model.blankDiameter && model.blankDiameter > model.discDiameter + 0.1) {
-      out.push('<circle cx="0" cy="0" r="' + fmt(Ruse) + '" fill="#fdfdfc" stroke="#6f9e6f" stroke-width="' + fmt(sw * 1.5) + '"/>');
+      out.push('<circle cx="0" cy="0" r="' + fmt(Ruse) + '" fill="' + (hasPreview ? "none" : "#fdfdfc") + '" stroke="#6f9e6f" stroke-width="' + fmt(sw * 1.5) + '"/>');
     }
     // зона отступа от края полезной зоны
     if (model.edgeClearance > 0) {
       out.push('<circle cx="0" cy="0" r="' + fmt(Ruse - model.edgeClearance) + '" fill="none" stroke="#b8b8b8" stroke-width="' + fmt(sw) + '" stroke-dasharray="' + fmt(sw * 8) + ' ' + fmt(sw * 5) + '"/>');
     }
 
+    if (!hasPreview) {
     // крепёж/штифты/резьба болванки (декор, вне полезной зоны)
     ((model.fixtures && model.fixtures.holes) || []).forEach(function (grp) {
       (grp.points || []).forEach(function (p) {
@@ -291,6 +349,7 @@
       var pts = (cut.points || []).map(function (p) { return fmt(p[0]) + "," + fmt(p[1]); }).join(" ");
       if (pts) out.push('<polygon points="' + pts + '" fill="#dededa" stroke="#8a8a84" stroke-width="' + fmt(sw) + '"/>');
     });
+    }
 
     // центр диска
     var cm = Ruse * 0.03;
@@ -300,7 +359,9 @@
     // деталей; серая заливка отличает их от обычных деталей
     (model.controlHoles || []).forEach(function (h) {
       var seat = h.seatD != null ? h.seatD : h.d;
-      var slotAngle = (Math.atan2(h.y, h.x) * 180) / Math.PI; // ориентация паза свободная — радиально
+      // явно заданная ориентация паза (свидетель из конструктора болванки) —
+      // приоритет; иначе, как раньше, радиально от центра диска
+      var slotAngle = h.slotAngle != null ? h.slotAngle : (Math.atan2(h.y, h.x) * 180) / Math.PI;
       var swC = Math.max(sw * 1.5, (seat || 1) / 70);
       out.push(
         '<g transform="translate(' + fmt(h.x) + "," + fmt(h.y) + ')">' +

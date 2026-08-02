@@ -17,7 +17,7 @@ $root = Split-Path -Parent $PSScriptRoot            # project root (.../holder-c
 $ver  = Get-Date -Format "yyyyMMddHHmm"
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
-$scripts = @("catalog","i18n","geometry","packer","render","export-csv","step-export","step-import","report",
+$scripts = @("catalog","i18n","geometry","packer","render","export-csv","step-export","step-import","blank-storage","report",
              "sheets","viewer3d","holder-import","blank-builder","app")
 
 # --- 1) cache versions on index.html assets ---

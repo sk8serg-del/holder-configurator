@@ -138,10 +138,9 @@ main { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 }
 .add-blank-box h2 { flex: 0 0 auto; }
 .add-blank-layout { display: flex; gap: 16px; align-items: stretch; flex: 1 1 auto; min-height: 0; }
-/* форма — 1 доля, превью — 3 доли (тот же принцип, что у формы/просмотра
-   в остальных вкладках, только соотношение уже сильнее в пользу превью) */
+/* форма — 1 доля, превью — 2 доли */
 .add-blank-form { flex: 1 1 0; min-width: 280px; overflow-y: auto; padding-right: 4px; }
-.add-blank-preview { flex: 3 1 0; min-width: 320px; display: flex; flex-direction: column; }
+.add-blank-preview { flex: 2 1 0; min-width: 320px; display: flex; flex-direction: column; }
 .add-blank-preview .svg-host { flex: 1 1 auto; min-height: 0; }
 .add-blank-preview .svg-host svg { max-height: 100%; height: 100%; }
 .add-blank-preview .view3d { flex: 1 1 auto; min-height: 0; max-height: none; aspect-ratio: auto; }

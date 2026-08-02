@@ -21,6 +21,28 @@
     return HC.CATALOG.discs[0];
   }
 
+  // Граница, от которой реально отсчитывается «зазор деталь–край» (clPE) — это
+  // Ø зоны напыления (там физически ложится покрытие), а НЕ просто «Ø полезной
+  // зоны» (d.diameter, чисто разрешённая площадь размещения — может быть шире
+  // зоны напыления). Деталь, стоящая между зоной напыления и Ø полезной зоны,
+  // окажется непокрытой — раскладчик и все виды (2D/3D/раскладка) должны
+  // одинаково это учитывать. Если зона напыления не задана (сейчас — только у
+  // болванок из конструктора) — как и раньше, граница = Ø полезной зоны.
+  function packBoundaryDiameter(d) {
+    return (d && d.coatingZoneDiameter > 0) ? d.coatingZoneDiameter : (d && d.diameter);
+  }
+
+  // Настоящий физический диаметр болванки для отрисовки (полный диск, а НЕ
+  // зона напыления/полезная зона — та задаётся отдельно через discDiameter,
+  // см. packBoundaryDiameter). У CSV/STEP-импорта blankDiameter — реальный,
+  // отдельный от diameter; у конструктора/каталожных записей без blankDiameter
+  // сам diameter И ЕСТЬ полный физический диск — используем его как запасной
+  // вариант (иначе renderSVG/viewer3d свели бы R к discDiameter, если тот
+  // теперь меньше из-за зоны напыления, и нарисовали бы диск меньше, чем он есть).
+  function physicalDiameter(d) {
+    return (d && d.blankDiameter) || (d && d.diameter);
+  }
+
   // Вариант контрольных отверстий всегда один — первый из каталога; наличие
   // каждого отверстия задаётся его галочкой (выпадающего списка вариантов нет).
   function currentControl() {
@@ -30,7 +52,10 @@
 
   function fillDiscSelect() {
     $("discSelect").innerHTML = HC.CATALOG.discs.map(function (d) {
-      return '<option value="' + d.id + '">' + HC.t(d.name) + "</option>";
+      var label = HC.t(d.name);
+      if (d.installation) label += " — " + d.installation;
+      if (d.description) label += " — " + d.description;
+      return '<option value="' + escHtml(d.id) + '">' + escHtml(label) + "</option>";
     }).join("");
   }
 
@@ -43,12 +68,22 @@
 
   function isUserDisc(d) { return String(d.id).indexOf("user-") === 0; }
 
+  // Болванка из подключённой папки (STEP, см. js/blank-storage.js) — хранится
+  // ФАЙЛОМ в папке, а не в localStorage (иначе быстро упрёмся в его квоту —
+  // см. README). Признак — наличие fileName (имя STEP-файла в этой папке).
+  // Мигрированные старые STEP-записи (см. migrateOldStepDiscs) файла не имеют
+  // (сырые байты раньше не сохранялись) — их метит sourceMissing, но они
+  // ТАК ЖЕ живут в индексе папки, а не в localStorage.
+  function isFolderDisc(d) { return !!(d && (d.fileName || d.sourceMissing)); }
+
   // Сохраняются: подложки пользователя (user-*) целиком и ПРАВКИ встроенных
   // (флаг _edited — запись хранится полной копией и при загрузке замещает
   // каталожную по id). Удаление встроенной — список id в hc-hidden-discs.
+  // Папочные болванки (isFolderDisc) сюда НЕ попадают — они уже в индексе
+  // папки, дублировать в localStorage незачем (и вредно по объёму).
   function saveCustomDiscs() {
     try {
-      var custom = HC.CATALOG.discs.filter(function (d) { return isUserDisc(d) || d._edited; });
+      var custom = HC.CATALOG.discs.filter(function (d) { return (isUserDisc(d) || d._edited) && !isFolderDisc(d); });
       localStorage.setItem("hc-custom-discs", JSON.stringify(custom));
     } catch (e) { /* localStorage недоступен — не критично */ }
   }
@@ -68,23 +103,140 @@
     } catch (e) { /* не критично */ }
   }
 
+  // Добавляет/замещает записи в HC.CATALOG.discs по id — общий шаг для
+  // localStorage (loadCustomDiscs) и индекса подключённой папки (loadFolderDiscs).
+  function mergeDiscEntries(arr) {
+    if (!Array.isArray(arr)) return;
+    arr.forEach(function (d) {
+      if (!d || !d.id) return;
+      var idx = -1;
+      HC.CATALOG.discs.forEach(function (x, i) { if (x.id === d.id) idx = i; });
+      if (idx >= 0) HC.CATALOG.discs[idx] = d; // правленая встроенная/уже известная — замещает
+      else HC.CATALOG.discs.push(d);
+    });
+  }
+
   function loadCustomDiscs() {
     try {
-      var arr = JSON.parse(localStorage.getItem("hc-custom-discs") || "[]");
-      if (Array.isArray(arr)) {
-        arr.forEach(function (d) {
-          if (!d || !d.id) return;
-          var idx = -1;
-          HC.CATALOG.discs.forEach(function (x, i) { if (x.id === d.id) idx = i; });
-          if (idx >= 0) HC.CATALOG.discs[idx] = d; // правленая встроенная — замещает
-          else HC.CATALOG.discs.push(d);
-        });
-      }
+      mergeDiscEntries(JSON.parse(localStorage.getItem("hc-custom-discs") || "[]"));
       var hidden = hiddenDiscIds();
       if (hidden.length) {
         HC.CATALOG.discs = HC.CATALOG.discs.filter(function (d) { return hidden.indexOf(d.id) === -1; });
       }
     } catch (e) { /* игнорируем битый кэш */ }
+  }
+
+  // ---------- папка с заготовками (STEP-болванки, js/blank-storage.js) ----------
+  // Хранит сами STEP-файлы + индекс их метаданных НА ДИСКЕ, а не в
+  // localStorage (там быстро кончится квота — см. README). Индекс читается
+  // асинхронно при подключении/загрузке страницы; до этого момента таблица
+  // просто не содержит папочных болванок — не ошибка, а нормальная задержка.
+
+  function refreshFolderStatus() {
+    var el = $("blankFolderStatus");
+    if (!el || !HC.blankStorage) return;
+    if (!HC.blankStorage.isSupported()) {
+      el.textContent = HC.t("Работа с папкой заготовок недоступна в этом браузере (нужен Chrome/Edge).");
+    } else if (HC.blankStorage.isConnected()) {
+      el.textContent = HC.t("Папка с заготовками подключена.");
+    } else {
+      el.textContent = HC.t("Папка с заготовками не подключена.");
+    }
+  }
+
+  function setBlankFolderMsg(text, cls) {
+    var el = $("blankFolderMsg");
+    if (!el) return;
+    el.textContent = text || "";
+    el.className = "status" + (cls ? " " + cls : "");
+  }
+
+  function loadFolderDiscs() {
+    if (!HC.blankStorage || !HC.blankStorage.isConnected()) return Promise.resolve();
+    return HC.blankStorage.readIndex().then(function (arr) {
+      mergeDiscEntries(arr);
+      fillDiscSelect();
+      renderBlanksTable();
+    }).catch(function (err) {
+      setBlankFolderMsg(HC.t("Не удалось прочитать папку: {0}", (err && err.message) || err), "error");
+    });
+  }
+
+  // Клик по «Подключить папку» — жест пользователя, showDirectoryPicker
+  // требует именно его (не может вызываться сам по себе при загрузке страницы).
+  function connectBlankFolder() {
+    if (!HC.blankStorage) return;
+    HC.blankStorage.connect().then(function () {
+      refreshFolderStatus();
+      setBlankFolderMsg("");
+      return loadFolderDiscs();
+    }).then(function () {
+      return migrateOldStepDiscs();
+    }).catch(function (err) {
+      setBlankFolderMsg(HC.t("Не удалось подключить папку: {0}", (err && err.message) || err), "error");
+    });
+  }
+
+  // ---------- миграция старых STEP-болванок (до перехода на папку) ----------
+  // Старый STEP-импорт клал болванку с полной (но хрупкой) классификацией
+  // отверстий в localStorage как user-* — маркер "Из STEP" в имени варианта
+  // (controlVariants[0].name); сырые байты самого файла никогда не
+  // сохранялись. При каждом успешном подключении/переподключении папки
+  // разворачиваем такие записи в плоский список запретных зон (тем же
+  // способом, что и HC.stepImport.keepoutsFromHoles — просто на уже
+  // classified holes, без повторного парсинга STEP) и переносим в индекс
+  // папки БЕЗ fileName, помечая sourceMissing:true — карточка объясняет, что
+  // для честного 3D/экспорта такую болванку стоит перезалить через новый
+  // поток. После переноса запись убирается из localStorage — идемпотентно,
+  // повторные вызовы (например, при каждом заходе на страницу) находят
+  // уже пустой список и ничего не делают.
+  function migrateOldStepDiscs() {
+    if (!HC.blankStorage || !HC.blankStorage.isConnected() || !HC.stepImport) return Promise.resolve();
+    var raw;
+    try { raw = JSON.parse(localStorage.getItem("hc-custom-discs") || "[]"); } catch (e) { return Promise.resolve(); }
+    if (!Array.isArray(raw)) return Promise.resolve();
+    var oldStep = raw.filter(function (d) { return d && d.controlVariants && d.controlVariants[0] && d.controlVariants[0].name === "Из STEP"; });
+    if (!oldStep.length) return Promise.resolve();
+
+    var migrated = oldStep.map(function (d) {
+      var controlKeepouts = HC.stepImport.keepoutsFromHoles(d.controlVariants[0].holes || []);
+      var fixtureKeepouts = [];
+      (d.fixtures && d.fixtures.holes || []).forEach(function (grp) {
+        (grp.points || []).forEach(function (p) { fixtureKeepouts.push({ x: p[0], y: p[1], r: (grp.d || 0) / 2 }); });
+      });
+      return {
+        id: d.id, name: d.name, installation: d.installation || "", description: d.description || "",
+        diameter: d.diameter, blankDiameter: d.blankDiameter, thickness: d.thickness,
+        coatingZoneDiameter: d.coatingZoneDiameter,
+        previewSVG: "", sourceMissing: true,
+        fixtures: {
+          holes: HC.stepImport.groupKeepoutsByDiameter(controlKeepouts.concat(fixtureKeepouts)),
+          cutouts: (d.fixtures && d.fixtures.cutouts) || [],
+          grooves: (d.fixtures && d.fixtures.grooves) || []
+        },
+        controlVariants: [{ id: "none", name: "Без контрольных отверстий", holes: [] }],
+        defaults: d.defaults || { partPart: 6, partEdge: 3, partControl: 6 }
+      };
+    });
+
+    return HC.blankStorage.readIndex().then(function (arr) {
+      migrated.forEach(function (m) {
+        var idx = -1;
+        arr.forEach(function (x, i) { if (x.id === m.id) idx = i; });
+        if (idx >= 0) arr[idx] = m; else arr.push(m);
+      });
+      return HC.blankStorage.writeIndex(arr);
+    }).then(function () {
+      var movedIds = {};
+      oldStep.forEach(function (d) { movedIds[d.id] = true; });
+      var rest = raw.filter(function (d) { return !d || !movedIds[d.id]; });
+      try { localStorage.setItem("hc-custom-discs", JSON.stringify(rest)); } catch (e) { /* не критично */ }
+      mergeDiscEntries(migrated);
+      fillDiscSelect();
+      renderBlanksTable();
+    }).catch(function (err) {
+      setBlankFolderMsg(HC.t("Не удалось перенести старые STEP-болванки в папку: {0}", (err && err.message) || err), "error");
+    });
   }
 
   // Все три способа добавления (CSV/STEP/конструктор) только СОБИРАЮТ запись
@@ -108,6 +260,9 @@
         });
         if (!entry) { msg(HC.t("В файле не найдено геометрии — это выгрузка DumpHoles?"), "error"); return; }
         pendingBlankEntry = entry;
+        pendingBlankStepBytes = null;
+        pendingBlankStepFileName = null;
+        schedulePendingBlankPreviewSVG();
         renderAddBlankPreview();
         var extra = entry._threadPoints && entry._threadPoints.length ? HC.t(" Резьбовых отверстий без Ø: {0} (уточните в модели).", entry._threadPoints.length) : "";
         msg(HC.t("Разобрано.{0} Заполните название вверху и нажмите «Сохранить».", extra), "ok");
@@ -119,13 +274,21 @@
     reader.readAsText(file);
   }
 
-  // Импорт STEP-болванки: отверстия находятся геометрически (см. js/step-import.js),
-  // без Inventor. Асинхронно — грузит CAD-движок (WASM) при первом использовании.
+  // Импорт STEP-болванки: отверстия находятся геометрически только чтобы
+  // собрать плоский список запретных зон для раскладчика (см. js/step-import.js) —
+  // сама геометрия не пересобирается, штатное отверстие/паз в готовой болванке
+  // никто по одному не редактирует (см. план в rosy-giggling-stroustrup.md).
+  // Файл при сохранении ляжет в подключённую папку заготовок — без неё сохранить
+  // такую болванку нельзя (localStorage не годится для хранения самих STEP-файлов).
   function loadDiscFromStepFile() {
     var input = $("discStepFile");
     var msgEl = $("discStepLoadMsg");
     var btn = $("discStepLoadBtn");
     function msg(t, cls) { msgEl.textContent = t || ""; msgEl.className = "status" + (cls ? " " + cls : ""); }
+    if (!HC.blankStorage || !HC.blankStorage.isConnected()) {
+      msg(HC.t("Сначала подключите папку с заготовками (кнопка над таблицей болванок)."), "error");
+      return;
+    }
     var file = input.files && input.files[0];
     if (!file) { msg(HC.t("Выберите STEP-файл болванки."), "error"); return; }
     var zone = parseFloat($("discStepZone").value);
@@ -135,12 +298,20 @@
     var reader = new FileReader();
     reader.onload = function () {
       btn.disabled = true;
-      HC.stepImport.fromFile(reader.result, { id: "user-" + Date.now(), name: HC.t("Подложкодержатель"), discDiameter: zone }, function (t) { msg(t); })
+      var bytes = reader.result;
+      HC.stepImport.fromFile(bytes, { id: "blank-" + Date.now(), name: HC.t("Подложкодержатель"), discDiameter: zone, fileName: file.name }, function (t) { msg(t); })
         .then(function (entry) {
           pendingBlankEntry = entry;
+          pendingBlankStepBytes = bytes;
+          pendingBlankStepFileName = file.name;
+          // тихий фоновый прогрев меша — к переключению на 3D должен быть уже готов;
+          // ошибку здесь не показываем (не критично) — она проявится (и будет
+          // показана) при реальном открытии 3D в refreshAddBlank3D
+          var warmMesh = pendingBlankMesh();
+          if (warmMesh) warmMesh.catch(function () {});
           renderAddBlankPreview();
-          var n = entry.controlVariants[0].holes.length, f = entry.fixtures.holes.length;
-          msg(HC.t("Разобрано: найдено отверстий {0}, крепежа на фланце {1}. Заполните название вверху и нажмите «Сохранить».", n, f), "ok");
+          var zones = entry.fixtures.holes.reduce(function (n, g) { return n + g.points.length; }, 0);
+          msg(HC.t("Разобрано: запретных зон для раскладки {0}. Заполните название вверху и нажмите «Сохранить» — файл сохранится в папку заготовок.", zones), "ok");
         })
         .catch(function (err) {
           msg(HC.t("Ошибка разбора STEP: {0}", (err && err.message) || err), "error");
@@ -161,13 +332,71 @@
     }
     if (!g.confirm(HC.t("Удалить болванку «{0}»? Это действие нельзя отменить.", HC.t(d.name)))) return;
     HC.CATALOG.discs = HC.CATALOG.discs.filter(function (x) { return x.id !== d.id; });
-    // встроенная (не user-*) вернулась бы из catalog.js при следующей загрузке —
-    // запоминаем её id как скрытый
-    if (!isUserDisc(d)) hideDiscId(d.id);
-    saveCustomDiscs();
+    if (isFolderDisc(d)) {
+      // папочная — стираем запись индекса и (если есть) сам файл в подключённой
+      // папке; у мигрированных старых записей (sourceMissing) файла нет вовсе
+      if (HC.blankStorage && HC.blankStorage.isConnected()) {
+        HC.blankStorage.readIndex().then(function (arr) {
+          var next = arr.filter(function (x) { return x && x.id !== d.id; });
+          return HC.blankStorage.writeIndex(next);
+        }).then(function () {
+          return d.fileName ? HC.blankStorage.deleteFile(d.fileName) : Promise.resolve();
+        }).catch(function () { /* папка могла быть отключена — запись уже убрана из каталога */ });
+      }
+    } else {
+      // встроенная (не user-*) вернулась бы из catalog.js при следующей загрузке —
+      // запоминаем её id как скрытый
+      if (!isUserDisc(d)) hideDiscId(d.id);
+      saveCustomDiscs();
+    }
     fillDiscSelect();
     $("discSelect").value = HC.CATALOG.discs[0].id;
     onDiscChange();
+  }
+
+  // ---------- реальная 2D-проекция для болванок без исходного STEP-файла ----------
+  // Единообразный вид сверху (см. HC.computeBlankPreviewSVG в step-export.js) —
+  // одна и та же настоящая проекция, что и у STEP-импорта (js/step-import.js
+  // combineProjectionSVG), вместо приближённой схемы из параметров. Считается
+  // ЛЕНИВО (один раз при первом показе болванки без previewSVG, не при каждом
+  // рендере — WASM недёшев) и кэшируется в самой записи каталога; у STEP-
+  // болванок previewSVG уже посчитан при импорте, тут ничего не делаем.
+  var previewSVGPending = {}; // id/ссылка на запись -> true, пока считается — не дублируем запрос
+
+  function ensureBlankPreviewSVG(d, onReady) {
+    if (!d || d.previewSVG || d.fileName || !HC.computeBlankPreviewSVG) return;
+    var key = d.id || d;
+    if (previewSVGPending[key]) return;
+    previewSVGPending[key] = true;
+    HC.computeBlankPreviewSVG(d).then(function (svg) {
+      delete previewSVGPending[key];
+      d.previewSVG = svg;
+      if (onReady) onReady(d);
+    }).catch(function () {
+      delete previewSVGPending[key]; // не критично — 2D просто останется схематичным
+    });
+  }
+
+  // Сохраняет посчитанный previewSVG туда же, откуда обычно сохраняется сама
+  // запись: индекс подключённой папки для папочных болванок (актуально для
+  // sourceMissing — мигрированных без файла, у fileName-болванок previewSVG
+  // уже есть с импорта), localStorage — для пользовательских/правленых
+  // встроенных. Обычный неправленый каталожный диск — только в памяти на эту
+  // сессию (пересчитается заново при следующей загрузке страницы, не страшно).
+  function persistBlankPreviewSVG(d) {
+    if (isFolderDisc(d)) {
+      if (HC.blankStorage && HC.blankStorage.isConnected()) {
+        HC.blankStorage.readIndex().then(function (arr) {
+          var idx = -1;
+          arr.forEach(function (x, i) { if (x.id === d.id) idx = i; });
+          if (idx < 0) return;
+          arr[idx] = d;
+          return HC.blankStorage.writeIndex(arr);
+        }).catch(function () { /* папка могла отключиться — не критично */ });
+      }
+    } else if (isUserDisc(d) || d._edited) {
+      saveCustomDiscs();
+    }
   }
 
   function onDiscChange() {
@@ -176,6 +405,16 @@
     applyDefaultClearances();
     fillBlankFields();
     markDirty();
+    // фоновый прогрев настоящего меша STEP (см. HC.viewer3d.updateMesh) —
+    // общий discSelect для Конфигуратора и вкладки «Болванки», прогреваем тут
+    // один раз на смену болванки, а не в каждом месте, где она выбирается
+    scheduleMeshPrefetch(currentDisc());
+    ensureBlankPreviewSVG(currentDisc(), function (d) {
+      if (currentDisc().id !== d.id) return; // выбор сменился, пока считали
+      persistBlankPreviewSVG(d);
+      refreshBlanksPreview();
+      refreshView();
+    });
   }
 
   function applyDefaultClearances() {
@@ -230,6 +469,10 @@
       if (h.shownWhenOff && !isControlShown(h)) return;
       host.appendChild(ctrlHoleRow(h));
     });
+    // болванки из подключённой папки не разбираются на именованные контрольные
+    // отверстия (см. isFolderDisc) — весь список пуст, поясняем почему
+    var hintEl = $("controlListEmptyHint");
+    if (hintEl) hintEl.hidden = !isFolderDisc(currentDisc());
   }
 
   // показывается ли привязанное отверстие сейчас (по состоянию опорного);
@@ -364,7 +607,7 @@
       return {
         x: h.x, y: h.y,
         d: h.d, seatD: h.seatD, apertureCA: h.apertureCA,
-        depth: h.depth, slotOn: h.slotOn
+        depth: h.depth, slotOn: h.slotOn, slotAngle: h.slotOn ? h.slotAngle : null
       };
     });
   }
@@ -773,9 +1016,15 @@
     }
 
     var disc = currentDisc();
+    var fixtureHoles = [];
+    ((disc.fixtures && disc.fixtures.holes) || []).forEach(function (grp) {
+      if (!(grp.d > 0)) return;
+      (grp.points || []).forEach(function (p) { fixtureHoles.push({ x: p[0], y: p[1], d: grp.d }); });
+    });
     var opts = {
-      discDiameter: disc.diameter,
+      discDiameter: packBoundaryDiameter(disc),
       controlHoles: activeControlHoles(),
+      fixtureHoles: fixtureHoles,
       clearances: {
         pp: parseFloat($("clPP").value),
         pe: parseFloat($("clPE").value),
@@ -839,10 +1088,12 @@
   function refreshSVG() {
     if (!lastResult) return;
     $("svgHost").innerHTML = HC.renderSVG({
-      discDiameter: lastResult.disc.diameter,
-      blankDiameter: lastResult.disc.blankDiameter,
+      discDiameter: lastResult.opts.discDiameter,
+      blankDiameter: physicalDiameter(lastResult.disc),
       fixtures: lastResult.disc.fixtures,
       edgeRecess: lastResult.disc.edgeRecess,
+      coatingZoneDiameter: lastResult.disc.coatingZoneDiameter,
+      previewSVG: lastResult.disc.previewSVG,
       edgeClearance: lastResult.opts.clearances.pe,
       controlHoles: lastResult.opts.controlHoles,
       placed: lastResult.placed,
@@ -856,12 +1107,22 @@
 
   function refresh3D() {
     if (!mode3d || !lastResult) return;
-    var ok = HC.viewer3d && HC.viewer3d.available() && HC.viewer3d.update($("view3dHost"), {
-      discDiameter: lastResult.disc.diameter,
-      blankDiameter: lastResult.disc.blankDiameter,
-      fixtures: lastResult.disc.fixtures,
-      edgeRecess: lastResult.disc.edgeRecess,
-      thickness: lastResult.disc.thickness || 6,
+    if (!HC.viewer3d || !HC.viewer3d.available()) {
+      setViewMode(false);
+      setSendMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
+      return;
+    }
+    var d = lastResult.disc;
+    if (d.fileName) {
+      refresh3DFromMesh(d);
+      return;
+    }
+    var ok = HC.viewer3d.update($("view3dHost"), {
+      discDiameter: lastResult.opts.discDiameter,
+      blankDiameter: physicalDiameter(d),
+      fixtures: d.fixtures,
+      edgeRecess: d.edgeRecess,
+      thickness: d.thickness || 6,
       controlHoles: lastResult.opts.controlHoles,
       placed: lastResult.placed,
       showNumbers: $("showNumbers").checked
@@ -870,6 +1131,49 @@
       setViewMode(false);
       setSendMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
     }
+  }
+
+  // Болванка с настоящим STEP-файлом — настоящий меш С УЖЕ ВЫРЕЗАННЫМИ
+  // карманами деталей заказа (см. HC.buildOrderMeshFromImported — та же
+  // булева вырезка, что и при экспорте STEP), а не приближённая декаль
+  // поверх нетронутой геометрии. Кэш по ССЫЛКЕ на lastResult — новый
+  // doPack() создаёт новый объект lastResult, автоматически инвалидируя кэш;
+  // ВНИМАНИЕ: вырезка — та же дорогая булева операция, что и при экспорте,
+  // на плотных раскладках (полусотня+ деталей) может заметно подвиснуть.
+  var orderMeshCache = { lastResult: null, promise: null };
+  function orderMesh(d) {
+    if (orderMeshCache.lastResult !== lastResult) {
+      orderMeshCache.lastResult = lastResult;
+      orderMeshCache.promise = (!HC.blankStorage || !HC.blankStorage.isConnected() || !HC.buildOrderMeshFromImported)
+        ? null
+        : HC.blankStorage.readStepFile(d.fileName).then(function (buf) {
+            var order = { disc: { thickness: d.thickness }, controlHoles: lastResult.opts.controlHoles, placed: lastResult.placed };
+            return HC.buildOrderMeshFromImported(order, buf);
+          });
+    }
+    return orderMeshCache.promise;
+  }
+
+  function refresh3DFromMesh(d) {
+    var targetResult = lastResult;
+    var meshPromise = orderMesh(d);
+    if (!meshPromise) {
+      setSendMsg(HC.t("3D недоступен: не удалось начать резку STEP (папка отключена?)."), "error");
+      return;
+    }
+    setSendMsg(HC.t("Режу карманы в STEP…"));
+    meshPromise.then(function (meshData) {
+      if (!mode3d || lastResult !== targetResult) return; // раскладка сменилась, пока считалось
+      var ok = HC.viewer3d.updateMesh($("view3dHost"), meshData);
+      if (ok) setSendMsg("");
+      else {
+        setViewMode(false);
+        setSendMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
+      }
+    }).catch(function (err) {
+      if (lastResult !== targetResult) return;
+      setSendMsg(HC.t("Не удалось вырезать карманы в STEP: {0}", (err && err.message) || err), "error");
+    });
   }
 
   function refreshView() {
@@ -930,6 +1234,10 @@
     if (!host) return;
     var curId = $("discSelect").value;
     function yn(b) { return b ? HC.t("есть") : HC.t("нет"); }
+    // папочные болванки (isFolderDisc) не разбираются на именованные
+    // контрольные отверстия — «нет» тут вводило бы в заблуждение (как будто
+    // их нет в геометрии), поэтому прочерк вместо да/нет
+    function ynControl(d, name) { return isFolderDisc(d) ? "—" : yn(blankHasHole(d, name)); }
     host.innerHTML = HC.CATALOG.discs.map(function (d) {
       var active = blanksExpanded && d.id === curId;
       return '<tr data-id="' + escHtml(d.id) + '"' + (active ? ' class="active"' : "") + ">" +
@@ -937,9 +1245,9 @@
         "<td>" + (d.installation ? escHtml(d.installation) : "—") + "</td>" +
         "<td>" + (d.description ? escHtml(d.description) : "—") + "</td>" +
         "<td>" + d.diameter + "</td>" +
-        "<td>" + yn(blankHasHole(d, "Reference")) + "</td>" +
-        "<td>" + yn(blankHasHole(d, "Свидетель")) + "</td>" +
-        "<td>" + yn(blankHasHole(d, "Свидетель Центр")) + "</td>" +
+        "<td>" + ynControl(d, "Reference") + "</td>" +
+        "<td>" + ynControl(d, "Свидетель") + "</td>" +
+        "<td>" + ynControl(d, "Свидетель Центр") + "</td>" +
         "</tr>";
     }).join("");
     host.querySelectorAll("tr").forEach(function (tr) {
@@ -983,6 +1291,8 @@
     $("blankInstall").value = d.installation || "";
     $("blankDesc").value = d.description || "";
     $("blankSaveMsg").textContent = "";
+    var hintEl = $("sourceMissingHint");
+    if (hintEl) hintEl.hidden = !d.sourceMissing;
     renderBlankHistory();
   }
 
@@ -1080,13 +1390,44 @@
     el.className = "status" + (cls ? " " + cls : "");
   }
 
+  // ---------- реальный меш болванки из STEP (для 3D папочных болванок) ----------
+  // Настоящая твердотельная геометрия (а не приближённая реконструкция
+  // buildGroup слоями) — считается один раз через тот же CAD-движок, что и
+  // импорт (см. HC.loadReplicad в step-export.js), кэшируется по id диска на
+  // сессию (вкладку не перезагружаем — WASM-разбор STEP не бесплатный).
+  // Фоново подогревается при выборе строки таблицы (scheduleMeshPrefetch), чтобы
+  // клик по кнопке «3D» обычно попадал в уже готовый кэш.
+  var stepMeshCache = {}; // id -> Promise<{vertices,triangles,normals}>
+  var blanksMeshPrefetchTimer = null;
+
+  function prefetchDiscMesh(d) {
+    if (!d || !d.fileName || stepMeshCache[d.id]) return;
+    if (!HC.blankStorage || !HC.blankStorage.isConnected() || !HC.loadReplicad) return;
+    stepMeshCache[d.id] = HC.blankStorage.readStepFile(d.fileName).then(function (buf) {
+      return HC.loadReplicad().then(function (rep) {
+        return rep.importSTEP(new Blob([buf])).then(function (shape) { return shape.mesh(); });
+      });
+    }).catch(function (err) {
+      delete stepMeshCache[d.id]; // не кэшируем ошибку — следующий выбор строки попробует заново
+      throw err;
+    });
+  }
+
+  function scheduleMeshPrefetch(d) {
+    if (blanksMeshPrefetchTimer) clearTimeout(blanksMeshPrefetchTimer);
+    if (!d || !d.fileName) return;
+    blanksMeshPrefetchTimer = setTimeout(function () { prefetchDiscMesh(d); }, 250);
+  }
+
   function refreshBlanksSVG() {
     var d = currentDisc();
     $("blanksSvgHost").innerHTML = HC.renderSVG({
-      discDiameter: d.diameter,
-      blankDiameter: d.blankDiameter,
+      discDiameter: packBoundaryDiameter(d),
+      blankDiameter: physicalDiameter(d),
       fixtures: d.fixtures,
       edgeRecess: d.edgeRecess,
+      coatingZoneDiameter: d.coatingZoneDiameter,
+      previewSVG: d.previewSVG,
       controlHoles: activeControlHoles(),
       placed: [],
       showNumbers: false
@@ -1096,9 +1437,18 @@
   function refreshBlanks3D() {
     if (!blanksMode3d) return;
     var d = currentDisc();
-    var ok = HC.viewer3d && HC.viewer3d.available() && HC.viewer3d.update($("blanksView3dHost"), {
-      discDiameter: d.diameter,
-      blankDiameter: d.blankDiameter,
+    if (!HC.viewer3d || !HC.viewer3d.available()) {
+      setBlanksViewMode(false);
+      setBlanksMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
+      return;
+    }
+    if (d.fileName) {
+      refreshBlanks3DFromMesh(d);
+      return;
+    }
+    var ok = HC.viewer3d.update($("blanksView3dHost"), {
+      discDiameter: packBoundaryDiameter(d),
+      blankDiameter: physicalDiameter(d),
       fixtures: d.fixtures,
       edgeRecess: d.edgeRecess,
       thickness: d.thickness || 6,
@@ -1110,6 +1460,32 @@
       setBlanksViewMode(false);
       setBlanksMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
     }
+  }
+
+  // Папочная болванка с настоящим STEP-файлом — честный меш вместо
+  // реконструкции слоями (см. HC.viewer3d.updateMesh). Если фоновый
+  // прогрев (scheduleMeshPrefetch) уже закончился — обновление мгновенное;
+  // иначе ждём тот же промис и проверяем, что выбор не сменился, пока грузилось.
+  function refreshBlanks3DFromMesh(d) {
+    prefetchDiscMesh(d); // на случай если фон ещё не запускался (debounce не сработал)
+    var entry = stepMeshCache[d.id];
+    if (!entry) {
+      setBlanksMsg(HC.t("3D недоступен: не удалось начать загрузку STEP (папка отключена?)."), "error");
+      return;
+    }
+    setBlanksMsg(HC.t("Разбираю STEP…"));
+    entry.then(function (meshData) {
+      if (!blanksMode3d || currentDisc().id !== d.id) return; // выбор сменился, пока грузилось
+      var ok = HC.viewer3d.updateMesh($("blanksView3dHost"), meshData);
+      if (ok) setBlanksMsg("");
+      else {
+        setBlanksViewMode(false);
+        setBlanksMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
+      }
+    }).catch(function (err) {
+      if (!blanksMode3d || currentDisc().id !== d.id) return;
+      setBlanksMsg(HC.t("Не удалось построить 3D из STEP: {0}", (err && err.message) || err), "error");
+    });
   }
 
   function refreshBlanksPreview() {
@@ -1155,16 +1531,43 @@
 
   var mbWitnesses = []; // [{name, mode, r, angle, x, y, seatD, apertureCA, depth, slotAvailable, slotAngle}]
   var mbFixtures = [];  // [{label, d, mode, r, count, rotation, x, y}]
+  var mbCoatingZoneAuto = true; // пока true — поле «Зона напыления» следует за Ø диска/занижения (см. syncCoatingZoneAuto)
+
+  // Авто-Ø зоны напыления: меньше диска на 3мм; если включено занижение по
+  // краю — меньше диаметра ЗАНИЖЕНИЯ на те же 3мм (напыление не заходит на
+  // занижение). Пока пользователь не тронул поле руками (mbCoatingZoneAuto).
+  function autoCoatingZoneDia() {
+    var dia = parseFloat($("mbDia").value);
+    if (!(dia > 0)) return null;
+    var base = dia;
+    if ($("mbRecessOn").checked) {
+      var rDia = parseFloat($("mbRecessDia").value);
+      if (rDia > 0) base = Math.min(base, rDia);
+    }
+    return Math.max(1, Math.round((base - 3) * 100) / 100);
+  }
+  function syncCoatingZoneAuto() {
+    if (!mbCoatingZoneAuto) return;
+    var v = autoCoatingZoneDia();
+    if (v != null) $("mbCoatingZoneDia").value = v;
+  }
+  // Текущая Ø зоны напыления для дефолтов расположения свидетеля/крепежа —
+  // из поля формы, если введено, иначе разумный запасной вариант (диск ещё
+  // не задан или зона напыления явно очищена).
+  function currentCoatingZoneDia() {
+    var v = parseFloat($("mbCoatingZoneDia").value);
+    return v > 0 ? v : (autoCoatingZoneDia() || 300);
+  }
 
   function defaultWitness() {
     return {
-      name: "Свидетель", mode: "polar", r: 150, angle: 0, x: 0, y: 0,
+      name: "Свидетель", mode: "polar", r: currentCoatingZoneDia() / 2, angle: 0, x: 0, y: 0,
       d: 25.4, seatD: 25.6, apertureCA: 22.6, depth: 4.5,
       slotAvailable: true, slotAngle: 0
     };
   }
   function defaultFixture() {
-    return { label: "Крепёж", d: 3.3, mode: "diameter", r: 160, count: 3, rotation: 0, x: 0, y: 0 };
+    return { label: "Крепёж", d: 3.3, mode: "diameter", r: currentCoatingZoneDia() / 2, count: 3, rotation: 0, x: 0, y: 0 };
   }
 
   function mbWitnessRow(wit, i) {
@@ -1294,10 +1697,15 @@
       }
     }
 
+    var coatingZoneDia = parseFloat($("mbCoatingZoneDia").value);
     pendingBlankEntry = HC.blankBuilder.buildManualDiscEntry({
       id: pendingBlankEntry ? pendingBlankEntry.id : undefined, name: HC.t("Болванка"), diameter: dia, thickness: thk,
+      coatingZoneDiameter: coatingZoneDia > 0 ? coatingZoneDia : null,
       edgeRecess: recess, witnesses: mbWitnesses, fixtureGroups: mbFixtures
     });
+    pendingBlankStepBytes = null;
+    pendingBlankStepFileName = null;
+    schedulePendingBlankPreviewSVG();
     renderAddBlankPreview();
   }
 
@@ -1321,11 +1729,16 @@
       if (recess.depth >= thk) { msg(HC.t("Глубина занижения должна быть меньше толщины."), "error"); return; }
     }
 
+    var coatingZoneDia = parseFloat($("mbCoatingZoneDia").value);
     var entry = HC.blankBuilder.buildManualDiscEntry({
       id: "user-" + Date.now(), name: HC.t("Болванка"), diameter: dia, thickness: thk,
+      coatingZoneDiameter: coatingZoneDia > 0 ? coatingZoneDia : null,
       edgeRecess: recess, witnesses: mbWitnesses, fixtureGroups: mbFixtures
     });
     pendingBlankEntry = entry;
+    pendingBlankStepBytes = null;
+    pendingBlankStepFileName = null;
+    schedulePendingBlankPreviewSVG();
     renderAddBlankPreview();
     msg(HC.t("Собрано. Заполните название вверху и нажмите «Сохранить»."), "ok");
   }
@@ -1337,10 +1750,42 @@
   // общие поля и добавляет запись в каталог, «Отмена» просто закрывает окно.
 
   var pendingBlankEntry = null;
+  // если запись пришла из STEP — сырые байты файла + предложенное имя, чтобы
+  // saveAddBlankModal записал сам файл в подключённую папку заготовок
+  // (см. js/blank-storage.js); для CSV/конструктора оба всегда null.
+  var pendingBlankStepBytes = null;
+  var pendingBlankStepFileName = null;
   var addBlankMode3d = false;
 
+  // Реальная 2D-проекция для CSV/конструктор-записей в самой модалке (см.
+  // ensureBlankPreviewSVG выше — то же единообразие с STEP: previewSVG вместо
+  // приближённой схемы). Отдельный, более длинный дебаунс (не как у мгновенной
+  // схематичной 2D-схемы) — WASM недёшев гонять на каждое движение слайдера в
+  // конструкторе; при смене параметров pendingBlankEntry подменяется НОВЫМ
+  // объектом — проверка ниже отбрасывает устаревший результат, если параметры
+  // успели поменяться, пока считалось.
+  var pendingPreviewTimer = null;
+  function schedulePendingBlankPreviewSVG() {
+    if (pendingPreviewTimer) clearTimeout(pendingPreviewTimer);
+    pendingPreviewTimer = setTimeout(function () {
+      var target = pendingBlankEntry;
+      if (!target || target.previewSVG || target.fileName || !HC.computeBlankPreviewSVG) return;
+      HC.computeBlankPreviewSVG(target).then(function (svg) {
+        if (pendingBlankEntry !== target) return; // параметры уже сменились, результат устарел
+        target.previewSVG = svg;
+        renderAddBlankPreview();
+      }).catch(function () { /* не критично — превью останется схематичным */ });
+    }, 500);
+  }
+
   function addBlankPreviewHoles(d) {
-    return (d.controlVariants && d.controlVariants[0] && d.controlVariants[0].holes) || [];
+    var holes = (d.controlVariants && d.controlVariants[0] && d.controlVariants[0].holes) || [];
+    // сырые holes из каталога несут только slotAvailable (возможность паза);
+    // renderSVG/viewer3d рисуют паз по slotOn (реальный переключатель заказа) —
+    // здесь заказа нет, поэтому паз включаем везде, где он в принципе доступен
+    return holes.map(function (h) {
+      return h.slotAvailable ? Object.assign({}, h, { slotOn: true, slotAngle: h.slotAngle || 0 }) : h;
+    });
   }
 
   function refreshAddBlankSVG() {
@@ -1348,24 +1793,71 @@
     if (!pendingBlankEntry) { host.innerHTML = ""; return; }
     var d = pendingBlankEntry;
     host.innerHTML = HC.renderSVG({
-      discDiameter: d.diameter,
-      blankDiameter: d.blankDiameter,
+      discDiameter: packBoundaryDiameter(d),
+      blankDiameter: physicalDiameter(d),
       fixtures: d.fixtures,
       edgeRecess: d.edgeRecess,
+      coatingZoneDiameter: d.coatingZoneDiameter,
+      previewSVG: d.previewSVG,
       controlHoles: addBlankPreviewHoles(d),
       placed: [],
       showNumbers: false
     });
   }
 
+  // Пока запись собирается в модалке из STEP, сырые байты уже в памяти
+  // (pendingBlankStepBytes) — не нужно ни подключать папку, ни писать файл,
+  // чтобы посчитать настоящий меш для 3D-превью здесь же. Кэш по идентичности
+  // байт (меняются только при новой загрузке STEP/переключении на CSV или
+  // конструктор — тогда pendingBlankStepBytes становится null, и следующий
+  // вызов просто вернёт null вместо промиса).
+  var pendingBlankMeshBytes = null;
+  var pendingBlankMeshPromise = null;
+  function pendingBlankMesh() {
+    if (pendingBlankMeshBytes !== pendingBlankStepBytes) {
+      pendingBlankMeshBytes = pendingBlankStepBytes;
+      pendingBlankMeshPromise = (pendingBlankStepBytes && HC.loadReplicad)
+        ? HC.loadReplicad().then(function (rep) {
+            return rep.importSTEP(new Blob([pendingBlankStepBytes])).then(function (shape) { return shape.mesh(); });
+          })
+        : null;
+    }
+    return pendingBlankMeshPromise;
+  }
+
   function refreshAddBlank3D() {
     if (!addBlankMode3d) return;
     var host = $("addBlankView3dHost");
     if (!pendingBlankEntry) { return; }
+    if (!HC.viewer3d || !HC.viewer3d.available()) {
+      setAddBlankViewMode(false);
+      setAddBlankMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
+      return;
+    }
     var d = pendingBlankEntry;
-    var ok = HC.viewer3d && HC.viewer3d.available() && HC.viewer3d.update(host, {
-      discDiameter: d.diameter,
-      blankDiameter: d.blankDiameter,
+    var meshPromise = pendingBlankMesh();
+    if (meshPromise) {
+      // настоящий STEP-меш вместо приближённой реконструкции слоями (см.
+      // refreshBlanks3DFromMesh — тот же приём для уже сохранённых болванок)
+      var bytesAtRequest = pendingBlankStepBytes;
+      setAddBlankMsg(HC.t("Разбираю STEP…"));
+      meshPromise.then(function (meshData) {
+        if (!addBlankMode3d || pendingBlankStepBytes !== bytesAtRequest) return; // сменилось, пока грузилось
+        var ok = HC.viewer3d.updateMesh(host, meshData);
+        if (ok) setAddBlankMsg("");
+        else {
+          setAddBlankViewMode(false);
+          setAddBlankMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
+        }
+      }).catch(function (err) {
+        if (pendingBlankStepBytes !== bytesAtRequest) return;
+        setAddBlankMsg(HC.t("Не удалось построить 3D из STEP: {0}", (err && err.message) || err), "error");
+      });
+      return;
+    }
+    var ok = HC.viewer3d.update(host, {
+      discDiameter: packBoundaryDiameter(d),
+      blankDiameter: physicalDiameter(d),
       fixtures: d.fixtures,
       edgeRecess: d.edgeRecess,
       thickness: d.thickness || 6,
@@ -1424,9 +1916,13 @@
 
   function openAddBlankModal() {
     pendingBlankEntry = null;
+    pendingBlankStepBytes = null;
+    pendingBlankStepFileName = null;
     $("nbName").value = "";
     $("nbInstall").value = "";
     $("nbDesc").value = "";
+    mbCoatingZoneAuto = true;
+    syncCoatingZoneAuto();
     setAddBlankViewMode(false);
     renderAddBlankPreview();
     $("addBlankModal").hidden = false;
@@ -1435,6 +1931,8 @@
   function closeAddBlankModal() {
     $("addBlankModal").hidden = true;
     pendingBlankEntry = null;
+    pendingBlankStepBytes = null;
+    pendingBlankStepFileName = null;
   }
 
   function saveAddBlankModal() {
@@ -1451,6 +1949,37 @@
     entry.installation = $("nbInstall").value.trim();
     entry.description = $("nbDesc").value.trim();
     if (!entry.id) entry.id = "user-" + Date.now();
+
+    if (pendingBlankStepBytes) {
+      // папочная болванка — сначала пишем сам файл и индекс в подключённую
+      // папку, каталог обновляем только после успешной записи (иначе запись
+      // в HC.CATALOG.discs будет ссылаться на fileName, которого нет на диске)
+      if (!HC.blankStorage || !HC.blankStorage.isConnected()) {
+        msg(HC.t("Папка с заготовками не подключена — файл сохранить некуда."), "error");
+        return;
+      }
+      entry.fileName = pendingBlankStepFileName;
+      var bytes = pendingBlankStepBytes;
+      HC.blankStorage.writeStepFile(entry.fileName, bytes)
+        .then(function () { return HC.blankStorage.readIndex(); })
+        .then(function (arr) {
+          arr = arr.filter(function (x) { return x && x.id !== entry.id; });
+          arr.push(entry);
+          return HC.blankStorage.writeIndex(arr);
+        })
+        .then(function () {
+          HC.CATALOG.discs.push(entry);
+          saveCustomDiscs();
+          fillDiscSelect();
+          closeAddBlankModal();
+          blanksSelectRow(entry.id);
+        })
+        .catch(function (err) {
+          msg(HC.t("Не удалось сохранить в папку: {0}", (err && err.message) || err), "error");
+        });
+      return;
+    }
+
     HC.CATALOG.discs.push(entry);
     saveCustomDiscs();
     fillDiscSelect();
@@ -1475,7 +2004,13 @@
       holderName: $("holderName").value.trim(),
       disc: {
         id: lr.disc.id, name: lr.disc.name, diameter: lr.disc.diameter, blankDiameter: lr.disc.blankDiameter,
-        thickness: lr.disc.thickness, edgeRecess: lr.disc.edgeRecess, fixtures: lr.disc.fixtures
+        thickness: lr.disc.thickness, edgeRecess: lr.disc.edgeRecess, fixtures: lr.disc.fixtures,
+        coatingZoneDiameter: lr.disc.coatingZoneDiameter, previewSVG: lr.disc.previewSVG,
+        // БЕЗ этого поля HC.downloadSTEP никогда не берёт настоящий импортированный
+        // STEP (buildSolidFromImported) — order.disc.fileName всегда оказывался
+        // undefined, и экспорт ВСЕГДА тихо пересобирал диск с нуля по параметрам
+        // (buildSolid, Ø = «Ø полезной зоны», без реальных канавок/фигурных вырезов)
+        fileName: lr.disc.fileName
       },
       controlName: lr.controlName,
       controlHoles: lr.opts.controlHoles,
@@ -1595,8 +2130,9 @@
     var o = currentOrderFromRegistry();
     if (!o) return;
     $("ordersSvgHost").innerHTML = HC.renderSVG({
-      discDiameter: o.disc.diameter, blankDiameter: o.disc.blankDiameter, fixtures: o.disc.fixtures,
-      edgeRecess: o.disc.edgeRecess, edgeClearance: o.clearances.pe,
+      discDiameter: packBoundaryDiameter(o.disc), blankDiameter: physicalDiameter(o.disc), fixtures: o.disc.fixtures,
+      edgeRecess: o.disc.edgeRecess, coatingZoneDiameter: o.disc.coatingZoneDiameter, previewSVG: o.disc.previewSVG,
+      edgeClearance: o.clearances.pe,
       controlHoles: o.controlHoles, placed: o.placed, showNumbers: false
     });
   }
@@ -1606,7 +2142,7 @@
     var o = currentOrderFromRegistry();
     if (!o) return;
     var ok = HC.viewer3d && HC.viewer3d.available() && HC.viewer3d.update($("ordersView3dHost"), {
-      discDiameter: o.disc.diameter, blankDiameter: o.disc.blankDiameter, fixtures: o.disc.fixtures,
+      discDiameter: packBoundaryDiameter(o.disc), blankDiameter: physicalDiameter(o.disc), fixtures: o.disc.fixtures,
       edgeRecess: o.disc.edgeRecess, thickness: o.disc.thickness || 6,
       controlHoles: o.controlHoles, placed: o.placed, showNumbers: false
     });
@@ -1688,6 +2224,15 @@
   // ---------- инициализация ----------
 
   loadCustomDiscs(); // ранее загруженные пользователем подложки из localStorage
+  refreshFolderStatus();
+  if (HC.blankStorage) {
+    // тихая попытка переиспользовать папку, подключённую в прошлый раз —
+    // без нового клика пользователя (жест нужен только для самого connect())
+    HC.blankStorage.reconnect().then(function (handle) {
+      refreshFolderStatus();
+      if (handle) return loadFolderDiscs().then(migrateOldStepDiscs);
+    });
+  }
   fillDiscSelect();
   updateDiscInfo();
   rebuildControlHoles();
@@ -1732,6 +2277,14 @@
       document.querySelectorAll(".tab-panel").forEach(function (panel) {
         panel.hidden = panel.id !== btn.dataset.tab;
       });
+      // Вкладки просто показываются/прячутся (не удаляются из DOM) — пока
+      // панель скрыта (display:none), её 3D-хост не имеет размеров и не
+      // рисуется. Если в этой вкладке уже был выбран 3D-вид, перерисовываем
+      // его сейчас же — иначе пришлось бы вручную щёлкать 2D→3D после
+      // каждого переключения вкладки, чтобы вид снова появился.
+      if (btn.dataset.tab === "tabConfigurator" && mode3d) refresh3D();
+      else if (btn.dataset.tab === "tabBlanks" && blanksExpanded && blanksMode3d) refreshBlanks3D();
+      else if (btn.dataset.tab === "tabOrders" && ordersExpanded && ordersMode3d) refreshOrders3D();
     });
   });
 
@@ -1773,16 +2326,22 @@
   $("blanksView3dBtn").addEventListener("click", function () { setBlanksViewMode(true); });
   $("blankSaveBtn").addEventListener("click", saveBlankEdits);
   $("addBlankBtn").addEventListener("click", openAddBlankModal);
+  $("connectBlankFolderBtn").addEventListener("click", connectBlankFolder);
   $("addBlankModalSaveBtn").addEventListener("click", saveAddBlankModal);
   $("addBlankModalCancelBtn").addEventListener("click", closeAddBlankModal);
   $("addBlankView2dBtn").addEventListener("click", function () { setAddBlankViewMode(false); });
   $("addBlankView3dBtn").addEventListener("click", function () { setAddBlankViewMode(true); });
-  $("mbDia").addEventListener("input", scheduleConstructorPreview);
+  $("mbDia").addEventListener("input", function () { syncCoatingZoneAuto(); scheduleConstructorPreview(); });
   $("mbThk").addEventListener("input", scheduleConstructorPreview);
-  $("mbRecessOn").addEventListener("change", function (e) { $("mbRecessFields").hidden = !e.target.checked; scheduleConstructorPreview(); });
+  $("mbRecessOn").addEventListener("change", function (e) {
+    $("mbRecessFields").hidden = !e.target.checked;
+    syncCoatingZoneAuto();
+    scheduleConstructorPreview();
+  });
   $("mbRecessSide").addEventListener("change", scheduleConstructorPreview);
-  $("mbRecessDia").addEventListener("input", scheduleConstructorPreview);
+  $("mbRecessDia").addEventListener("input", function () { syncCoatingZoneAuto(); scheduleConstructorPreview(); });
   $("mbRecessDepth").addEventListener("input", scheduleConstructorPreview);
+  $("mbCoatingZoneDia").addEventListener("input", function () { mbCoatingZoneAuto = false; scheduleConstructorPreview(); });
   $("mbAddWitness").addEventListener("click", function () { mbWitnesses.push(defaultWitness()); renderMbWitnesses(); scheduleConstructorPreview(); });
   $("mbAddFixture").addEventListener("click", function () { mbFixtures.push(defaultFixture()); renderMbFixtures(); scheduleConstructorPreview(); });
   $("mbCreateBtn").addEventListener("click", createManualBlank);
@@ -1811,7 +2370,9 @@
     if (!lastResult) return;
     var order = assembleOrder();
     var svg = HC.renderSVG({
-      discDiameter: lastResult.disc.diameter,
+      discDiameter: lastResult.opts.discDiameter,
+      blankDiameter: physicalDiameter(lastResult.disc),
+      previewSVG: lastResult.disc.previewSVG,
       edgeClearance: lastResult.opts.clearances.pe,
       controlHoles: lastResult.opts.controlHoles,
       placed: lastResult.placed,
@@ -1886,7 +2447,8 @@
     var o = currentOrderFromRegistry();
     if (!o) return;
     var svg = HC.renderSVG({
-      discDiameter: o.disc.diameter, edgeClearance: o.clearances.pe,
+      discDiameter: packBoundaryDiameter(o.disc), blankDiameter: physicalDiameter(o.disc), previewSVG: o.disc.previewSVG,
+      edgeClearance: o.clearances.pe,
       controlHoles: o.controlHoles, placed: o.placed, showNumbers: true
     });
     HC.showReport(o, svg);

@@ -29,7 +29,7 @@ function check(name, cond, detail) {
 
 // подключаем модули в том же порядке, что и на странице
 // three.min.js в jsdom не грузим (нет WebGL) — viewer3d обязан жить без него
-for (const n of ["catalog", "i18n", "geometry", "packer", "render", "export-csv", "report", "sheets", "viewer3d", "holder-import", "blank-builder", "app"]) {
+for (const n of ["catalog", "i18n", "geometry", "packer", "render", "export-csv", "report", "sheets", "viewer3d", "holder-import", "blank-builder", "blank-storage", "app"]) {
   const src = fs.readFileSync(path.join(root, "js", n + ".js"), "utf8");
   w.eval(src);
 }
@@ -242,6 +242,27 @@ const svgInnerHole = w.HC.renderSVG({
 check("отверстие внутри болванки: контур диска — обычный <circle> r=150",
   svgInnerHole.indexOf('r="150"') !== -1);
 
+// --- контрольное отверстие с явно заданной ориентацией паза (slotAngle) —
+// используется именно этот угол, а не радиальный (раньше radAngle
+// пересчитывался всегда, свидетель из конструктора не мог задать свою
+// ориентацию нигде, кроме собственного превью модального окна) ---
+const svgSlotCustom = w.HC.renderSVG({
+  discDiameter: 300,
+  controlHoles: [{ x: 0, y: 100, d: 25.4, seatD: 25.6, apertureCA: 22.6, slotOn: true, slotAngle: 30 }],
+  placed: []
+});
+check("контрольное отверстие: явный slotAngle=30 использован (не радиальный 90°)",
+  svgSlotCustom.indexOf('rotate(30)') !== -1 && svgSlotCustom.indexOf('rotate(90)') === -1,
+  svgSlotCustom.match(/rotate\([^)]+\)/g));
+// без явного slotAngle — как раньше, радиально (обратная совместимость со старыми болванками)
+const svgSlotRadial = w.HC.renderSVG({
+  discDiameter: 300,
+  controlHoles: [{ x: 0, y: 100, d: 25.4, seatD: 25.6, apertureCA: 22.6, slotOn: true }],
+  placed: []
+});
+check("контрольное отверстие: без slotAngle — радиально (90°), для обратной совместимости",
+  svgSlotRadial.indexOf('rotate(90)') !== -1, svgSlotRadial.match(/rotate\([^)]+\)/g));
+
 // --- паз под пинцет должен быть виден и в общей раскладке, не только в карточке ---
 seatInput.value = "12";
 seatInput.dispatchEvent(new w.Event("input"));
@@ -384,12 +405,35 @@ setTimeout(() => {
   check("возврат на «Конфигуратор» скрывает остальные панели снова",
     !$("tabConfigurator").hidden && $("tabBlanks").hidden && $("tabOrders").hidden);
 
+  // --- переключение вкладок само перерисовывает 3D, если он уже был выбран
+  // (панели просто скрываются/показываются, не удаляются из DOM — 3D-хост,
+  // пока скрыт, не имеет размеров и не рисуется; раньше приходилось вручную
+  // щёлкать 2D→3D после каждого переключения вкладки) ---
+  {
+    const origAvailable = w.HC.viewer3d.available, origUpdate = w.HC.viewer3d.update;
+    const calls = [];
+    w.HC.viewer3d.available = () => true;
+    w.HC.viewer3d.update = (host) => { calls.push(host.id); return true; };
+    $("view3dBtn").click();
+    check("3D включился (со стабом viewer3d.available)", calls.indexOf("view3dHost") !== -1, JSON.stringify(calls));
+    calls.length = 0;
+    d.querySelector('.tab-btn[data-tab="tabBlanks"]').click();
+    d.querySelector('.tab-btn[data-tab="tabConfigurator"]').click();
+    check("возврат на вкладку с активным 3D сам перерисовывает вид (без ручного 2D→3D)",
+      calls.indexOf("view3dHost") !== -1, JSON.stringify(calls));
+    w.HC.viewer3d.available = origAvailable;
+    w.HC.viewer3d.update = origUpdate;
+    $("view2dBtn").click(); // вернуть 2D для остальных тестов
+  }
+
   // --- вкладка «Болванки»: ничего не выбрано по умолчанию ---
   check("нет опции «кастомный подложкодержитель» в списке дисков",
     !Array.from($("discSelect").options).some((o) => o.value === "custom"));
   const catalogCount = $("discSelect").options.length;
   const rows0 = Array.from(d.querySelectorAll("#blanksTableBody tr"));
   check("таблица болванок: по строке на каждый диск каталога", rows0.length === catalogCount, rows0.length + " vs " + catalogCount);
+  check("таблица болванок: заголовок первого столбца — «Номер» (не «Название»)",
+    d.querySelector("#blanksTable thead th").textContent === "Номер", d.querySelector("#blanksTable thead th").textContent);
   check("по умолчанию ни одна строка не активна", !rows0.some((tr) => tr.classList.contains("active")));
   check("превью/карточка скрыты по умолчанию (#blanksMain hidden)", $("blanksMain").hidden);
 
@@ -453,8 +497,9 @@ setTimeout(() => {
   check("карточка: новое название в таблице", savedRow.children[0].textContent === "Диск Ø298 (правка)", savedRow.children[0].textContent);
   check("карточка: установка в таблице", savedRow.children[1].textContent === "Ortus 700", savedRow.children[1].textContent);
   check("карточка: описание в таблице", savedRow.children[2].textContent === "Тестовое описание", savedRow.children[2].textContent);
-  check("карточка: название обновилось в выпадающем списке дисков",
-    Array.from($("discSelect").options).some((o) => o.textContent === "Диск Ø298 (правка)"));
+  check("карточка: название обновилось в выпадающем списке дисков (+ установка/описание после названия)",
+    Array.from($("discSelect").options).some((o) => o.textContent === "Диск Ø298 (правка) — Ortus 700 — Тестовое описание"),
+    Array.from($("discSelect").options).map((o) => o.textContent).join(" | "));
   check("карточка: история пополнилась записью с автором и сутью правки",
     $("blankHistory").textContent.indexOf($("custName").value) !== -1 && $("blankHistory").textContent.indexOf("Ortus 700") !== -1,
     $("blankHistory").textContent);
@@ -508,17 +553,30 @@ setTimeout(() => {
     $("addBlankModalMsg").textContent.indexOf("Сначала загрузите") !== -1, $("addBlankModalMsg").textContent);
 
   // --- ручной конструктор внутри модального окна: занижение, свидетель, крепёж ---
-  $("mbDia").value = "280"; $("mbThk").value = "8";
+  $("mbDia").value = "280"; $("mbDia").dispatchEvent(new w.Event("input"));
+  $("mbThk").value = "8"; $("mbThk").dispatchEvent(new w.Event("input"));
+  check("конструктор: зона напыления авто-считается (Ø диска −3мм = 277) без занижения",
+    $("mbCoatingZoneDia").value === "277", $("mbCoatingZoneDia").value);
   $("mbRecessOn").checked = true;
   $("mbRecessOn").dispatchEvent(new w.Event("change"));
   check("конструктор: поля занижения показаны после включения галочки", !$("mbRecessFields").hidden);
   $("mbRecessSide").value = "bottom"; $("mbRecessDia").value = "300"; $("mbRecessDepth").value = "2";
+  $("mbRecessDia").dispatchEvent(new w.Event("input"));
   $("mbCreateBtn").click();
   check("конструктор: Ø границы ≥ диаметра — понятная ошибка", $("mbMsg").textContent.indexOf("меньше диаметра") !== -1, $("mbMsg").textContent);
-  $("mbRecessDia").value = "240";
+  $("mbRecessDia").value = "240"; $("mbRecessDia").dispatchEvent(new w.Event("input"));
+  check("конструктор: зона напыления авто-пересчиталась по занижению (Ø240 −3мм = 237, меньше Ø диска)",
+    $("mbCoatingZoneDia").value === "237", $("mbCoatingZoneDia").value);
+  $("mbCoatingZoneDia").value = "150"; $("mbCoatingZoneDia").dispatchEvent(new w.Event("input"));
+  $("mbDia").value = "280.5"; $("mbDia").dispatchEvent(new w.Event("input")); // тронули диаметр — авто-поле трогать уже не должно
+  check("конструктор: ручная правка зоны напыления отключает авто-пересчёт", $("mbCoatingZoneDia").value === "150", $("mbCoatingZoneDia").value);
+  $("mbDia").value = "280"; $("mbDia").dispatchEvent(new w.Event("input")); // вернуть точное значение для остальных проверок
+  $("mbCoatingZoneDia").value = "237"; $("mbCoatingZoneDia").dispatchEvent(new w.Event("input")); // вернуть ожидаемое значение (проверили отключение авто — дальше снова используем его как дефолт)
   $("mbAddWitness").click();
   check("конструктор: строка свидетеля появилась", d.querySelectorAll("#mbWitnessList .mb-row").length === 1);
   const wRow = d.querySelector("#mbWitnessList .mb-row");
+  check("конструктор: новый свидетель по умолчанию — Ø расположения = зона напыления (237), не 300",
+    wRow.querySelector(".w-r").value === "237", wRow.querySelector(".w-r").value);
   wRow.querySelector(".w-r").value = "220";
   wRow.querySelector(".w-r").dispatchEvent(new w.Event("input"));
   wRow.querySelector(".w-angle").value = "90";
@@ -537,6 +595,8 @@ setTimeout(() => {
   const fRow = d.querySelector("#mbFixtureList .mb-row");
   check("конструктор: Ø крепежа по умолчанию 3.3", fRow.querySelector(".f-d").value === "3.3", fRow.querySelector(".f-d").value);
   check("конструктор: у крепежа (режим «по диаметру») есть поле поворота", fRow.querySelector(".f-rotation") !== null);
+  check("конструктор: новый крепёж по умолчанию — Ø расположения = зона напыления (237), не 320",
+    fRow.querySelector(".f-r").value === "237", fRow.querySelector(".f-r").value);
   fRow.querySelector(".f-count").value = "4";
   fRow.querySelector(".f-count").dispatchEvent(new w.Event("input"));
   fRow.querySelector(".f-rotation").value = "15";
@@ -593,11 +653,25 @@ setTimeout(() => {
   check("конструктор: паз/ориентация свидетеля сохранены (slotAvailable, угол 45°)",
     mbDisc && mbDisc.controlVariants[0].holes[0].slotAvailable === true && mbDisc.controlVariants[0].holes[0].slotAngle === 45,
     mbDisc && JSON.stringify(mbDisc.controlVariants[0].holes[0]));
-  check("конструктор: поворот крепежа (15°) сместил первую точку",
-    mbDisc && Math.abs(mbDisc.fixtures.holes[0].points[0][0] - 160 * Math.cos((15 * Math.PI) / 180)) < 0.01,
+  check("конструктор: поворот крепежа (15°) сместил первую точку (r=118.5 — дефолт по зоне напыления)",
+    mbDisc && Math.abs(mbDisc.fixtures.holes[0].points[0][0] - 118.5 * Math.cos((15 * Math.PI) / 180)) < 0.01,
     mbDisc && JSON.stringify(mbDisc.fixtures.holes[0].points[0]));
+  check("конструктор: зона напыления (237) сохранена в записи",
+    mbDisc && mbDisc.coatingZoneDiameter === 237, mbDisc && mbDisc.coatingZoneDiameter);
   check("конструктор: новая болванка выбрана и активна в таблице",
     d.querySelector('#blanksTableBody tr[data-id="' + mbDisc.id + '"]').classList.contains("active"));
+
+  // --- «зазор деталь-край» отсчитывается от зоны напыления (Ø237), а НЕ от
+  // «Ø полезной зоны» (Ø280) — иначе деталь могла бы встать между зоной
+  // напыления и краем полезной зоны и остаться непокрытой. Сам физический
+  // диск при этом рисуется в полный рост (Ø280), не сжимается до зоны
+  // напыления (см. packBoundaryDiameter/physicalDiameter в app.js) ---
+  $("packBtn").click();
+  const svgCoating = $("svgHost").innerHTML;
+  check("границу раскладки (Ruse) взяли по зоне напыления: r=118.5 (Ø237/2), а не r=140 (Ø280/2)",
+    svgCoating.indexOf('r="118.5"') !== -1, svgCoating.slice(0, 200));
+  check("физический диск всё равно в полный рост — r=140 (Ø280) присутствует, не сжат до зоны напыления",
+    svgCoating.indexOf('r="140"') !== -1, svgCoating.slice(0, 200));
 
   // --- загрузка своей подложки из CSV через модальное окно (FileReader → buildDiscEntry → каталог) ---
   const uploadCsv = [
@@ -650,6 +724,32 @@ setTimeout(() => {
       !w.HC.CATALOG.discs.some((x) => x.id === mbDisc.id));
     check("удаление пользовательской: её нет в hc-hidden-discs (не тумбстоун)",
       JSON.parse(w.localStorage.getItem("hc-hidden-discs")).indexOf(mbDisc.id) === -1);
+
+    // --- assembleOrder переносит fileName в снимок диска заказа: без этого
+    // поля HC.downloadSTEP никогда не брал настоящий импортированный STEP
+    // (buildSolidFromImported) — order.disc.fileName всегда оказывался
+    // undefined, и экспорт тихо пересобирал диск с нуля по параметрам
+    // (buildSolid, Ø «полезной зоны», без реальных канавок/фигурных вырезов) ---
+    $("addBlankBtn").click();
+    $("mbRecessOn").checked = false; // сбрасываем занижение, оставшееся от предыдущей болванки (Ø240 >= новых 200 — иначе ошибка валидации)
+    $("mbDia").value = "200"; $("mbThk").value = "6";
+    $("mbDia").dispatchEvent(new w.Event("input"));
+    $("mbThk").dispatchEvent(new w.Event("input"));
+    $("mbCreateBtn").click();
+    $("nbName").value = "ТестFileName";
+    $("addBlankModalSaveBtn").click();
+    const fnDisc = w.HC.CATALOG.discs.filter((x) => x.name === "ТестFileName")[0];
+    check("тестовая болванка для проверки fileName создана и выбрана",
+      fnDisc && $("discSelect").value === fnDisc.id, fnDisc && fnDisc.id);
+    fnDisc.fileName = "real-blank.stp"; // симулируем болванку с настоящим импортированным STEP-файлом
+    $("packBtn").click();
+    $("sendBtn").click();
+    const ordersAfterFnTest = JSON.parse(w.localStorage.getItem("hc-orders") || "[]");
+    const fnOrder = ordersAfterFnTest[ordersAfterFnTest.length - 1];
+    check("assembleOrder: order.disc.fileName перенесён из исходной болванки (регрессия)",
+      fnOrder && fnOrder.disc.fileName === "real-blank.stp", fnOrder && JSON.stringify(fnOrder.disc));
+    d.querySelector('#blanksTableBody tr[data-id="' + fnDisc.id + '"]').click();
+    $("discDelBtn").click();
 
     // --- нельзя удалить последнюю оставшуюся болванку ---
     while (w.HC.CATALOG.discs.length > 1) {

@@ -94,7 +94,7 @@
       out.push({
         type: "circle", cx: h.x, cy: h.y, d: h.d,
         seatD: h.seatD != null ? h.seatD : h.d, caDia: h.apertureCA,
-        slotOn: !!h.slotOn, slotAngle: null, depth: h.depth > 0 ? h.depth : partDepth,
+        slotOn: !!h.slotOn, slotAngle: h.slotAngle, depth: h.depth > 0 ? h.depth : partDepth,
         markCount: 0 // метки-ориентиры — только у деталей, не у контрольных отверстий
       });
     });
@@ -146,19 +146,31 @@
     return draw.translate([cx, cy]);
   }
 
-  // Собирает твёрдое тело: диск минус все карманы. warnings — массив, куда
-  // складываются сообщения о пропущенных элементах (не бросаем исключение
-  // наружу за один плохой элемент — раньше падение ЛЮБОГО одного выреза
-  // (напр. овал уже пойманным багом выше) обрывало buildSolid целиком, и
-  // экспорт «падал» даже для остальных, ни в чём не повинных деталей).
-  function buildSolid(rep, order, warnings) {
-    var thickness = order.disc.thickness > 0 ? order.disc.thickness : 6;
-    var R = order.disc.diameter / 2;
-    var disc = rep.drawCircle(R).sketchOnPlane("XY").extrude(-thickness);
-
+  // Вырезает в готовом теле (baseSolid) только карманы ДЕТАЛЕЙ ЗАКАЗА
+  // (посадка/паз/зона напыления каждого контрольного отверстия и размещённой
+  // детали, см. features()) — общая часть между buildSolid (диск строится с
+  // нуля) и buildSolidFromImported (тело — уже настоящая STEP-геометрия
+  // болванки, в ней НЕ нужно повторно резать занижение/крепёж/канавки — они
+  // уже часть исходного файла). warnings — массив, куда складываются
+  // сообщения о пропущенных элементах (не бросаем исключение наружу за один
+  // плохой элемент — падение ЛЮБОГО одного выреза не должно обрывать
+  // экспорт целиком для остальных, ни в чём не повинных деталей).
+  //
+  // topZ — Z верхней грани, ОТ КОТОРОЙ реально режутся карманы. У buildSolid
+  // диск строится этой же функцией с нуля (extrude(-thickness) от Z=0) —
+  // top=0 гарантирован по построению. У buildSolidFromImported тело — из
+  // РЕАЛЬНОГО STEP-файла: его Z=0 может вообще не совпадать с верхней гранью
+  // (зависит от того, как деталь была смоделирована в Inventor — например,
+  // выдавлена от 0 ВВЕРХ, а не вниз) — резать «от нуля» в этом случае резало
+  // бы не с той стороны/не с той высоты. thicknessOverride аналогично: для
+  // импортированного тела берём РЕАЛЬНУЮ толщину по его bounding box, а не
+  // сохранённое в каталоге число (могло разойтись).
+  function cutPartFeatures(rep, order, baseSolid, warnings, topZ, thicknessOverride) {
+    topZ = topZ || 0;
+    var thickness = thicknessOverride > 0 ? thicknessOverride : (order.disc.thickness > 0 ? order.disc.thickness : 6);
     var cutters = [];
-    function blind(draw, depth) { cutters.push(draw.sketchOnPlane("XY", TOP).extrude(-(depth + TOP))); }
-    function through(draw) { cutters.push(draw.sketchOnPlane("XY", TOP).extrude(-(thickness + 2 * TOP))); }
+    function blind(draw, depth) { cutters.push(draw.sketchOnPlane("XY", topZ + TOP).extrude(-(depth + TOP))); }
+    function through(draw) { cutters.push(draw.sketchOnPlane("XY", topZ + TOP).extrude(-(thickness + 2 * TOP))); }
 
     // Коническая зенковка-метка Ø MARK_D под углом MARK_ANGLE (полный), остриём вниз.
     // Строим лофтом от круга у поверхности к почти-точке на глубине; конус выступает
@@ -167,46 +179,12 @@
       var t = Math.tan((HC.MARK_ANGLE / 2) * Math.PI / 180);
       if (!(t > 0)) return;
       var rSurf = HC.MARK_D / 2;
-      var rTop = rSurf + TOP * t;              // радиус на уровне z=+TOP
-      var zApex = -(rSurf / t);                // где радиус обращается в 0
-      var top = rep.drawCircle(rTop).translate([mx, my]).sketchOnPlane("XY", TOP);
-      var bot = rep.drawCircle(0.02).translate([mx, my]).sketchOnPlane("XY", zApex);
+      var rTop = rSurf + TOP * t;              // радиус на уровне z=+TOP (от верхней грани)
+      var zApex = -(rSurf / t);                // где радиус обращается в 0 (от верхней грани)
+      var top = rep.drawCircle(rTop).translate([mx, my]).sketchOnPlane("XY", topZ + TOP);
+      var bot = rep.drawCircle(0.02).translate([mx, my]).sketchOnPlane("XY", topZ + zApex);
       cutters.push(top.loftWith(bot, { ruled: true }));
     }
-
-    // Занижение по краю болванки (order.disc.edgeRecess): кольцо СНАРУЖИ
-    // edgeRecess.diameter (до самого края диска R) занижено на depth от
-    // указанной грани (top — по умолчанию, или bottom). Внутри diameter —
-    // полная толщина, без изменений.
-    if (order.disc.edgeRecess && order.disc.edgeRecess.diameter > 0 && order.disc.edgeRecess.depth > 0) {
-      try {
-        var er = order.disc.edgeRecess;
-        var erInnerR = er.diameter / 2;
-        if (erInnerR < R) {
-          var erRing = rep.drawCircle(R).cut(rep.drawCircle(erInnerR));
-          if (er.side === "bottom") {
-            cutters.push(erRing.sketchOnPlane("XY", -thickness - TOP).extrude(er.depth + TOP));
-          } else {
-            cutters.push(erRing.sketchOnPlane("XY", TOP).extrude(-(er.depth + TOP)));
-          }
-        }
-      } catch (e) {
-        warnings.push("занижение по краю: " + ((e && e.message) || e));
-      }
-    }
-
-    // Крепёжные/технологические отверстия болванки (order.disc.fixtures.holes) —
-    // простые сквозные вырезы; раньше только рисовались в 2D/3D, в STEP не резались.
-    ((order.disc.fixtures && order.disc.fixtures.holes) || []).forEach(function (grp, gi) {
-      if (!(grp.d > 0)) return;
-      (grp.points || []).forEach(function (p, pi) {
-        try {
-          through(place(rep.drawCircle(grp.d / 2), p[0], p[1], 0));
-        } catch (e) {
-          warnings.push("крепёж «" + (grp.label || gi) + "» #" + (pi + 1) + ": " + ((e && e.message) || e));
-        }
-      });
-    });
 
     features(order).forEach(function (f, idx) {
       try {
@@ -234,7 +212,7 @@
       }
     });
 
-    if (!cutters.length) return disc;
+    if (!cutters.length) return baseSolid;
     // ВНИМАНИЕ: optimisation:"sameFace"/"commonFace" (BOPAlgo_GlueFull/GlueShift)
     // здесь пробовались ради скорости на плотных раскладках, но на деле дают
     // ТИХИЙ НЕПРАВИЛЬНЫЙ результат — проверено напрямую (measureVolume): диск
@@ -253,35 +231,199 @@
         warnings.push("не удалось объединить вырез #" + (i + 1) + ": " + ((e && e.message) || e));
       }
     });
-    if (all === null) return disc;
+    if (all === null) return baseSolid;
     try {
-      return disc.cut(all);
+      return baseSolid.cut(all);
     } catch (e) {
       warnings.push("не удалось вырезать карманы из диска: " + ((e && e.message) || e));
-      return disc;
+      return baseSolid;
     }
   }
 
+  // Строит ТОЛЬКО саму болванку: диск (цилиндр) минус занижение по краю и
+  // крепёж болванки (order.disc.fixtures.holes) — без деталей заказа. Общая
+  // часть для buildSolid (с нуля, режет ещё и заказ) и buildBlankOnlySolid
+  // (для реальной 2D-проекции превью — см. HC.computeBlankPreviewSVG).
+  function buildBlankBase(rep, disc, warnings) {
+    var thickness = disc.thickness > 0 ? disc.thickness : 6;
+    var R = disc.diameter / 2;
+    var base = rep.drawCircle(R).sketchOnPlane("XY").extrude(-thickness);
+
+    var blankCutters = [];
+    // Занижение по краю болванки (disc.edgeRecess): кольцо СНАРУЖИ
+    // edgeRecess.diameter (до самого края диска R) занижено на depth от
+    // указанной грани (top — по умолчанию, или bottom). Внутри diameter —
+    // полная толщина, без изменений.
+    if (disc.edgeRecess && disc.edgeRecess.diameter > 0 && disc.edgeRecess.depth > 0) {
+      try {
+        var er = disc.edgeRecess;
+        var erInnerR = er.diameter / 2;
+        if (erInnerR < R) {
+          var erRing = rep.drawCircle(R).cut(rep.drawCircle(erInnerR));
+          if (er.side === "bottom") {
+            blankCutters.push(erRing.sketchOnPlane("XY", -thickness - TOP).extrude(er.depth + TOP));
+          } else {
+            blankCutters.push(erRing.sketchOnPlane("XY", TOP).extrude(-(er.depth + TOP)));
+          }
+        }
+      } catch (e) {
+        warnings.push("занижение по краю: " + ((e && e.message) || e));
+      }
+    }
+
+    // Крепёжные/технологические отверстия болванки (disc.fixtures.holes) —
+    // простые сквозные вырезы; раньше только рисовались в 2D/3D, в STEP не резались.
+    ((disc.fixtures && disc.fixtures.holes) || []).forEach(function (grp, gi) {
+      if (!(grp.d > 0)) return;
+      (grp.points || []).forEach(function (p, pi) {
+        try {
+          blankCutters.push(place(rep.drawCircle(grp.d / 2), p[0], p[1], 0).sketchOnPlane("XY", TOP).extrude(-(thickness + 2 * TOP)));
+        } catch (e) {
+          warnings.push("крепёж «" + (grp.label || gi) + "» #" + (pi + 1) + ": " + ((e && e.message) || e));
+        }
+      });
+    });
+
+    if (blankCutters.length) {
+      var allBlank = blankCutters[0];
+      for (var i = 1; i < blankCutters.length; i++) {
+        try { allBlank = allBlank.fuse(blankCutters[i]); } catch (e) { warnings.push("не удалось объединить вырез болванки #" + (i + 1) + ": " + ((e && e.message) || e)); }
+      }
+      try { base = base.cut(allBlank); } catch (e) { warnings.push("не удалось вырезать элементы болванки: " + ((e && e.message) || e)); }
+    }
+
+    return base;
+  }
+
+  // Собирает твёрдое тело С НУЛЯ: болванка (buildBlankBase) + карманы деталей
+  // заказа. Путь для болванок БЕЗ настоящего исходного STEP-файла (ручные/из
+  // каталога/CSV/мигрированные без файла — см. buildSolidFromImported для
+  // противоположного случая).
+  function buildSolid(rep, order, warnings) {
+    var base = buildBlankBase(rep, order.disc, warnings);
+    return cutPartFeatures(rep, order, base, warnings);
+  }
+
+  // Болванка САМА ПО СЕБЕ (без заказа), но со всеми свидетелями/Reference
+  // (controlVariants[0].holes) — паз включён везде, где доступен (та же
+  // логика, что у app.js addBlankPreviewHoles: показываем физический вид
+  // болванки, а не конкретный заказ). Используется только для реальной
+  // 2D-проекции превью (см. HC.computeBlankPreviewSVG) — единообразно с
+  // STEP-импортом, вместо приближённой схемы из параметров.
+  function buildBlankOnlySolid(rep, disc, warnings) {
+    var base = buildBlankBase(rep, disc, warnings);
+    var rawHoles = (disc.controlVariants && disc.controlVariants[0] && disc.controlVariants[0].holes) || [];
+    var holes = rawHoles.map(function (h) {
+      if (!h.slotAvailable) return h;
+      var h2 = {};
+      for (var k in h) if (Object.prototype.hasOwnProperty.call(h, k)) h2[k] = h[k];
+      h2.slotOn = true;
+      h2.slotAngle = h.slotAngle || 0;
+      return h2;
+    });
+    var fakeOrder = { disc: { thickness: disc.thickness }, controlHoles: holes, placed: [] };
+    return cutPartFeatures(rep, fakeOrder, base, warnings);
+  }
+
+  // Собирает твёрдое тело ИЗ НАСТОЯЩЕГО STEP-файла болванки (arrayBuffer —
+  // байты .stp, см. js/blank-storage.js readStepFile): занижение/крепёж/
+  // канавки/фигурные вырезы уже часть этой геометрии, второй раз резать их
+  // не нужно (в отличие от buildSolid) — только карманы деталей заказа.
+  function buildSolidFromImported(rep, order, arrayBuffer, warnings) {
+    var blob = (typeof Blob !== "undefined" && arrayBuffer instanceof Blob) ? arrayBuffer : new Blob([arrayBuffer]);
+    return rep.importSTEP(blob).then(function (shape) {
+      // Верхняя грань и толщина — по РЕАЛЬНОМУ bounding box импортированного
+      // тела (та же договорённость «верх = максимальный Z», что и в
+      // js/step-import.js analyzeShape), а не по нулю/сохранённому в каталоге
+      // числу: у реального STEP из Inventor Z=0 не обязан быть верхней гранью
+      // (например, если деталь была выдавлена от 0 ВВЕРХ, а не вниз) — резать
+      // «от нуля» в этом случае резало бы не с той стороны/не на ту глубину.
+      var bb = shape.boundingBox.bounds; // [[xmin,ymin,zmin],[xmax,ymax,zmax]]
+      var topZ = bb[1][2];
+      var realThickness = bb[1][2] - bb[0][2];
+      return cutPartFeatures(rep, order, shape, warnings, topZ, realThickness);
+    });
+  }
+
+  HC._buildSolid = buildSolid; // для тестов (node + replicad, реальный WASM — см. scratchpad)
+  HC._buildSolidFromImported = buildSolidFromImported;
+  HC._buildBlankOnlySolid = buildBlankOnlySolid;
+
+  // Настоящая 2D-проекция (вид сверху) ЛЮБОЙ болванки БЕЗ исходного STEP-файла
+  // (CSV/конструктор/каталожная — см. buildBlankOnlySolid) — то же единообразие,
+  // что и у STEP-импорта (js/step-import.js combineProjectionSVG): видимые и
+  // скрытые рёбра объединяются одной сплошной линией, без пунктира. Используется
+  // для того, чтобы 2D выглядело одинаково независимо от способа создания
+  // болванки (см. app.js computeBlankPreviewSVG/ensureBlankPreviewSVG).
+  HC.computeBlankPreviewSVG = function (disc) {
+    return loadReplicad().then(function (rep) {
+      var warnings = [];
+      var solid = buildBlankOnlySolid(rep, disc, warnings);
+      var proj = rep.drawProjection(solid, "top");
+      var visibleSVG = proj.visible.toSVG();
+      var hiddenSVG = proj.hidden ? proj.hidden.toSVG() : null;
+      return (HC.stepImport && HC.stepImport.combineProjectionSVG)
+        ? HC.stepImport.combineProjectionSVG(visibleSVG, hiddenSVG)
+        : visibleSVG;
+    });
+  };
+
+  // Публичное API: настоящий меш болванки С УЖЕ ВЫРЕЗАННЫМИ карманами деталей
+  // заказа (без скачивания) — для 3D-превью в Конфигураторе (см. app.js
+  // refresh3DFromMesh), чтобы там было видно РЕАЛЬНЫЕ карманы, а не плоскую
+  // декаль поверх нетронутой геометрии. arrayBuffer — байты .stp (см.
+  // js/blank-storage.js readStepFile). ВНИМАНИЕ: та же булева вырезка, что и
+  // при экспорте — на плотных раскладках (полусотня+ деталей) может занять
+  // заметное время (WASM в том же потоке — вкладка может подвиснуть на это
+  // время, см. предупреждение в cutPartFeatures про buildSolid).
+  HC.buildOrderMeshFromImported = function (order, arrayBuffer, onStatus) {
+    onStatus = onStatus || function () {};
+    return loadReplicad(onStatus).then(function (rep) {
+      onStatus("Режу карманы в STEP…");
+      var warnings = [];
+      return buildSolidFromImported(rep, order, arrayBuffer, warnings).then(function (shape) {
+        if (warnings.length && g.console) warnings.forEach(function (w) { console.warn("3D:", w); });
+        return shape.mesh();
+      });
+    });
+  };
+
   // Публичное API: строит и скачивает STEP. order — как в assembleOrder.
+  // Болванка с настоящим исходным файлом (order.disc.fileName) и подключённой
+  // папкой (см. js/blank-storage.js) режется ПРЯМО В НЕЙ (buildSolidFromImported) —
+  // занижение/крепёж/канавки/фигурные вырезы уже настоящие, не пересобираются
+  // приближённо. Остальные болванки (ручные/из каталога/CSV/мигрированные без
+  // файла) — как раньше, buildSolid строит диск с нуля по параметрам.
   HC.downloadSTEP = function (order, onStatus) {
     onStatus = onStatus || function () {};
     return loadReplicad(onStatus).then(function (rep) {
-      onStatus("Строю тело (посадки/пазы/зона напыления)…");
       var warnings = [];
-      var solid = buildSolid(rep, order, warnings);
-      var blob = solid.blobSTEP();
-      var a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = (order.id || "holder") + ".step";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
-      if (warnings.length) {
-        if (g.console) warnings.forEach(function (w) { console.warn("STEP:", w); });
-        onStatus("STEP готов, но часть элементов пропущена (" + warnings.length + "): " + warnings.join("; "));
+      var solidPromise;
+      if (order.disc.fileName && HC.blankStorage && HC.blankStorage.isConnected()) {
+        onStatus("Читаю исходный STEP болванки…");
+        solidPromise = HC.blankStorage.readStepFile(order.disc.fileName).then(function (buf) {
+          onStatus("Режу отверстия под детали в исходном теле…");
+          return buildSolidFromImported(rep, order, buf, warnings);
+        });
       } else {
-        onStatus("STEP готов.");
+        onStatus("Строю тело (посадки/пазы/зона напыления)…");
+        solidPromise = Promise.resolve(buildSolid(rep, order, warnings));
       }
+      return solidPromise.then(function (solid) {
+        var blob = solid.blobSTEP();
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = (order.id || "holder") + ".step";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+        if (warnings.length) {
+          if (g.console) warnings.forEach(function (w) { console.warn("STEP:", w); });
+          onStatus("STEP готов, но часть элементов пропущена (" + warnings.length + "): " + warnings.join("; "));
+        } else {
+          onStatus("STEP готов.");
+        }
+      });
     });
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

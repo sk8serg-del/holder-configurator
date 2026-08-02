@@ -6,6 +6,7 @@
  * opts = {
  *   discDiameter: мм,
  *   controlHoles: [{x, y, d}],                 — запретные зоны
+ *   fixtureHoles: [{x, y, d}],                  — крепёжные/тех. отверстия болванки — тоже запретные зоны
  *   clearances: { pp, pe, pc },                — деталь–деталь, деталь–край, деталь–КО
  *   parts: [{ type:'circle'|'rect'|'oct'|'oval', d, w, h, chamfer,
  *             qty: число | null (null = максимум),
@@ -550,7 +551,10 @@
         // занятая зона контрольного отверстия — Ø посадки, если задан;
         // если у КО есть паз — он торчит за посадку, добавляем запас
         return { type: "circle", cx: h.x, cy: h.y, d: h.seatD != null ? h.seatD : h.d, pad: h.slotOn ? 2.5 : 0 };
-      }),
+      }).concat((opts.fixtureHoles || []).map(function (h) {
+        // крепёжные/тех. отверстия болванки — тоже запретная зона (без запаса на паз)
+        return { type: "circle", cx: h.x, cy: h.y, d: h.d, pad: 0 };
+      })),
       placed: []
     };
 
