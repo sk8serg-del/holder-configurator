@@ -9,6 +9,7 @@
 // сама логика группировки/классификации.
 // Запуск: node test/test-step-import.js
 "use strict";
+require("../js/geometry.js");
 require("../js/step-import.js");
 var HC = globalThis.HC;
 var stepImport = HC.stepImport;
@@ -134,6 +135,102 @@ check("keepoutsFromHoles: 2 зоны (вырожденная без размер
 check("keepoutsFromHoles: r = d/2 для простого сквозного", keepouts[0].r === 3, JSON.stringify(keepouts[0]));
 check("keepoutsFromHoles: r = seatD/2 (больше apertureCA) для составного", keepouts[1].r === 12.8, JSON.stringify(keepouts[1]));
 
+// --- keepoutsFromHoles + groupKeepoutsByDiameter: составная/глухая посадка
+// (seatD/apertureCA/depth/паз) должна пережить упрощение до плоской
+// запретной зоны — иначе 3D «Lite» (реконструкция из уже разобранной
+// болванки, viewer3d.js buildGroup/collectFeatures) режет её то насквозь
+// целиком (посадка без глубины), то глухим карманом без CA под ним (глубина
+// без CA) — обе регрессии уже были и исправлены здесь. Простой крепёж
+// (только h.d, ни seatD ни apertureCA) — как был плоским [x,y], так и остаётся. ---
+var slottedKeepouts = stepImport.keepoutsFromHoles([
+  { x: 0, y: 0, seatD: 25.6, apertureCA: 22.6, depth: 3, slotAvailable: true, slotAngle: 30 }, // составная + паз
+  { x: 100, y: 0, seatD: 30.1, apertureCA: 24.2, depth: 3, slotAvailable: false },              // составная, без паза (Reference)
+  { x: -100, y: 0, d: 6 }                                                                       // простой крепёжный болт
+]);
+check("keepoutsFromHoles: slotAvailable/slotAngle/seatD/apertureCA/depth перенесены для отверстия с пазом",
+  slottedKeepouts[0].slotAvailable === true && slottedKeepouts[0].slotAngle === 30 &&
+  slottedKeepouts[0].seatD === 25.6 && slottedKeepouts[0].apertureCA === 22.6 && slottedKeepouts[0].depth === 3,
+  JSON.stringify(slottedKeepouts[0]));
+check("keepoutsFromHoles: составная без паза — seatD/apertureCA/depth есть, slotAvailable=false",
+  slottedKeepouts[1].slotAvailable === false && slottedKeepouts[1].seatD === 30.1 && slottedKeepouts[1].apertureCA === 24.2,
+  JSON.stringify(slottedKeepouts[1]));
+check("keepoutsFromHoles: простой болт — seatD/apertureCA/depth не заданы",
+  slottedKeepouts[2].seatD === undefined && slottedKeepouts[2].apertureCA === undefined && slottedKeepouts[2].depth === undefined,
+  JSON.stringify(slottedKeepouts[2]));
+
+var slottedGroups = stepImport.groupKeepoutsByDiameter(slottedKeepouts);
+var seatGroup = slottedGroups.filter(function (g) { return g.d === 25.6; })[0];
+var refGroup = slottedGroups.filter(function (g) { return g.d === 30.1; })[0];
+var boltGroup = slottedGroups.filter(function (g) { return g.d === 6; })[0];
+check("groupKeepoutsByDiameter: составная с пазом — [x,y,slotAngle,depth,apertureCA] (5 элементов), ГЛУХАЯ, не сквозная",
+  seatGroup && seatGroup.points[0].length === 5 && seatGroup.points[0][2] === 30 && seatGroup.points[0][3] === 3 && seatGroup.points[0][4] === 22.6,
+  JSON.stringify(seatGroup));
+check("groupKeepoutsByDiameter: составная без паза — тоже 5 элементов (slotAngle=null), CA сохранена",
+  refGroup && refGroup.points[0].length === 5 && refGroup.points[0][2] === null && refGroup.points[0][4] === 24.2,
+  JSON.stringify(refGroup));
+check("groupKeepoutsByDiameter: простой крепёжный болт — [x,y] (2 элемента), как и раньше",
+  boltGroup && boltGroup.points[0].length === 2, JSON.stringify(boltGroup));
+
+// --- mergeDogboneHoles: вырез-«гантель» (два лепестка + прямая перемычка) —
+// найден на реальном файле технолога (Ø7.5 простое + Ø6/Ø4 составное, 8.2мм
+// друг от друга, между ними — две плоские грани на всю толщину). Без учёта
+// перемычки лепестки распознавались бы как два независимых отверстия, а
+// материал между ними (реально вырезанный) не попадал в запретную зону —
+// деталь могла бы встать прямо в перемычку. Числа — из реального файла. ---
+var dogboneHoles = [
+  { x: 137.536456887764, y: -74.6724382001832, d: 7.5 },                              // лепесток 1 — простое Ø7.5
+  { x: 133.436456887764, y: -81.7738465112155, seatD: 6, apertureCA: 4, depth: 2.5 }  // лепесток 2 — составное Ø6/Ø4
+];
+var dogboneWalls = [
+  { cx: 136.435, cy: -80.809 }, // реальные координаты бортов перемычки (PLANE #50/#56)
+  { cx: 132.773, cy: -78.695 }
+];
+var dogboneResult = stepImport.mergeDogboneHoles(dogboneHoles, dogboneWalls);
+check("mergeDogboneHoles: оба лепестка поглощены (holes пуст)",
+  dogboneResult.holes.length === 0, JSON.stringify(dogboneResult.holes));
+check("mergeDogboneHoles: keepouts включают оба лепестка (r=3.75 и r=3) плюс промежуточные кружки перемычки",
+  dogboneResult.dogboneKeepouts.some(function (k) { return Math.abs(k.r - 3.75) < 0.01; }) &&
+  dogboneResult.dogboneKeepouts.some(function (k) { return Math.abs(k.r - 3) < 0.01; }) &&
+  dogboneResult.dogboneKeepouts.length > 2,
+  JSON.stringify(dogboneResult.dogboneKeepouts));
+
+// --- регрессия: две МЕЛКИЕ метки-ориентиры (r=1 каждая), случайно оказавшиеся
+// в 6.45мм друг от друга рядом с той же стенкой, — гантелью считаться НЕ
+// должны (перемычка длиннее суммы их радиусов в разы — не похоже на
+// настоящую гантель, где лепестки почти соприкасаются через узкую перемычку) ---
+var markHoles = [
+  { x: 138.592401732196, y: -79.3035806602591, d: 2 },
+  { x: 132.997797446578, y: -76.0735343699482, d: 2 }
+];
+var markResult = stepImport.mergeDogboneHoles(markHoles, dogboneWalls);
+check("mergeDogboneHoles: далёкие мелкие метки НЕ объединяются в гантель (ложное срабатывание)",
+  markResult.holes.length === 2 && markResult.dogboneKeepouts.length === 0,
+  JSON.stringify(markResult));
+
+// --- dogboneRealOutline/pathFragments: НАСТОЯЩИЙ контур гантели прямо из
+// вида сверху (а не приближение кружками) — см. вживую проверено на реальном
+// файле (scratchpad, replicad+WASM): 3 гантели дали чистые контуры без
+// самопересечений, площадь 91.8-96.8мм². Здесь — только проверка МОНТАЖА
+// (pathFragments доходят до mergeDogboneHoles и дают fixtures.cutouts),
+// без WASM — простые окружности-моки вместо настоящих кривых со скруглениями.
+function circlePathD(cx, cy, r) {
+  return "M " + (cx - r) + " " + cy +
+    " A " + r + " " + r + " 0 1 0 " + (cx + r) + " " + cy +
+    " A " + r + " " + r + " 0 1 0 " + (cx - r) + " " + cy + " Z";
+}
+var dogbonePathFragments = [
+  circlePathD(137.536456887764, -74.6724382001832, 3.75), // лепесток 1
+  circlePathD(133.436456887764, -81.7738465112155, 3)     // лепесток 2 (посадка, не апертура — max(seatD,apertureCA))
+];
+var dogboneWithOutline = stepImport.mergeDogboneHoles(dogboneHoles, dogboneWalls, dogbonePathFragments);
+check("mergeDogboneHoles+pathFragments: dogboneCutouts — ровно один контур на пару лепестков",
+  dogboneWithOutline.dogboneCutouts.length === 1, JSON.stringify(dogboneWithOutline.dogboneCutouts.map(function (c) { return c.points.length; })));
+check("mergeDogboneHoles+pathFragments: контур — многоугольник (не вырожденный), достаточно точек",
+  dogboneWithOutline.dogboneCutouts[0].points.length >= 8, dogboneWithOutline.dogboneCutouts[0].points.length);
+check("mergeDogboneHoles+pathFragments: без pathFragments (как раньше) — dogboneCutouts пуст, keepouts не меняются",
+  dogboneResult.dogboneCutouts.length === 0 && dogboneResult.dogboneKeepouts.length === dogboneWithOutline.dogboneKeepouts.length,
+  JSON.stringify(dogboneResult.dogboneCutouts));
+
 // --- analyzeShape: мок Shape3D (без WASM) — внешняя стенка исключается,
 // найденные цилиндры классифицируются ---
 function mockCylFace(r, x, y, z0, z1) {
@@ -149,7 +246,7 @@ var mockShape = {
   boundingBox: { bounds: [[-125, -125, -6], [125, 125, 0]] },
   faces: [
     mockCylFace(125, 0, 0, -6, 0),      // внешняя стенка болванки Ø250
-    { geomType: "PLANE" },              // не цилиндр — игнорируется
+    { geomType: "PLANE", boundingBox: { bounds: [[-125, -125, 0], [125, 125, 0]] } }, // верх диска — не борт перемычки (zSpan=0), игнорируется
     mockCylFace(3, 20, 10, -6, 0),      // простое сквозное Ø6
     mockCylFace(6, -20, -10, -3, 0),    // посадка Ø12 глубиной 3
     mockCylFace(2.5, -20, -10, -6, -3)  // CA Ø5 (та же ось, что и посадка)

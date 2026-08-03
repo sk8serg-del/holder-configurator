@@ -379,6 +379,29 @@
     return pts;
   }
 
+  // Выпуклая оболочка набора точек (монотонная цепочка Эндрю) — используется
+  // и для 3D (viewer3d.js — схлопнуть налегающие кружки крепежа в один
+  // контур), и для реального контура выреза-гантели из STEP-проекции
+  // (step-import.js) — общий геометрический примитив, без побочных эффектов.
+  function convexHull(points) {
+    points = points.slice().sort(function (a, b) { return a.x - b.x || a.y - b.y; });
+    var n = points.length;
+    if (n < 3) return points;
+    function cross(o, a, b) { return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x); }
+    var lower = [];
+    for (var i = 0; i < n; i++) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], points[i]) <= 0) lower.pop();
+      lower.push(points[i]);
+    }
+    var upper = [];
+    for (var i2 = n - 1; i2 >= 0; i2--) {
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], points[i2]) <= 0) upper.pop();
+      upper.push(points[i2]);
+    }
+    upper.pop(); lower.pop();
+    return lower.concat(upper);
+  }
+
   HC.geom = {
     EPS: EPS,
     rectPoly: rectPoly,
@@ -395,6 +418,7 @@
     edgeDist: edgeDist,
     pointInPoly: pointInPoly,
     circleEdgeOverlap: circleEdgeOverlap,
-    circleMinusCircles: circleMinusCircles
+    circleMinusCircles: circleMinusCircles,
+    convexHull: convexHull
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

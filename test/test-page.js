@@ -743,11 +743,38 @@ setTimeout(() => {
       fnDisc && $("discSelect").value === fnDisc.id, fnDisc && fnDisc.id);
     fnDisc.fileName = "real-blank.stp"; // симулируем болванку с настоящим импортированным STEP-файлом
     $("packBtn").click();
+    check("переключатель Lite/STP появился для STEP-болванки", !$("view3dStepToggle").hidden);
+    check("по умолчанию выбран Lite (мгновенная реконструкция, без WASM)",
+      $("view3dLiteBtn").classList.contains("active") && !$("view3dStpBtn").classList.contains("active"));
+    $("view3dStpBtn").click();
+    check("клик по STP переключает активную кнопку", $("view3dStpBtn").classList.contains("active") && !$("view3dLiteBtn").classList.contains("active"));
+    $("view3dLiteBtn").click();
+    check("клик по Lite возвращает активную кнопку обратно", $("view3dLiteBtn").classList.contains("active"));
     $("sendBtn").click();
     const ordersAfterFnTest = JSON.parse(w.localStorage.getItem("hc-orders") || "[]");
     const fnOrder = ordersAfterFnTest[ordersAfterFnTest.length - 1];
     check("assembleOrder: order.disc.fileName перенесён из исходной болванки (регрессия)",
       fnOrder && fnOrder.disc.fileName === "real-blank.stp", fnOrder && JSON.stringify(fnOrder.disc));
+
+    // --- переключатель Lite/STP есть и во вкладке «Болванки» (не только в
+    // Конфигураторе) — тот же выбор быстрой реконструкции против честного STEP.
+    // Строка уже выбрана и развёрнута с МОМЕНТА создания (до fnDisc.fileName=...),
+    // клик по той же строке — no-op (см. renderBlanksTable guard); сворачиваем
+    // и разворачиваем заново, чтобы обновление реально сработало ---
+    $("blanksCancelBtn").click();
+    d.querySelector('#blanksTableBody tr[data-id="' + fnDisc.id + '"]').click();
+    check("переключатель Lite/STP появился во вкладке «Болванки»", !$("blanksView3dStepToggle").hidden);
+    check("во вкладке «Болванки» по умолчанию тоже Lite",
+      $("blanksView3dLiteBtn").classList.contains("active") && !$("blanksView3dStpBtn").classList.contains("active"));
+
+    // --- и в «Базе подложкодержателей» (заказ на этой же болванке) ---
+    d.querySelector('.tab-btn[data-tab="tabOrders"]').click();
+    d.querySelector('#ordersTableBody tr[data-id="' + fnOrder.id + '"]').click();
+    check("переключатель Lite/STP появился в «Базе подложкодержателей»", !$("ordersView3dStepToggle").hidden);
+    check("в «Базе» по умолчанию тоже Lite",
+      $("ordersView3dLiteBtn").classList.contains("active") && !$("ordersView3dStpBtn").classList.contains("active"));
+    d.querySelector('.tab-btn[data-tab="tabBlanks"]').click();
+
     d.querySelector('#blanksTableBody tr[data-id="' + fnDisc.id + '"]').click();
     $("discDelBtn").click();
 

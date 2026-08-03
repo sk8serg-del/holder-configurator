@@ -168,6 +168,7 @@
   function cutPartFeatures(rep, order, baseSolid, warnings, topZ, thicknessOverride) {
     topZ = topZ || 0;
     var thickness = thicknessOverride > 0 ? thicknessOverride : (order.disc.thickness > 0 ? order.disc.thickness : 6);
+
     var cutters = [];
     function blind(draw, depth) { cutters.push(draw.sketchOnPlane("XY", topZ + TOP).extrude(-(depth + TOP))); }
     function through(draw) { cutters.push(draw.sketchOnPlane("XY", topZ + TOP).extrude(-(thickness + 2 * TOP))); }
@@ -213,15 +214,23 @@
     });
 
     if (!cutters.length) return baseSolid;
-    // ВНИМАНИЕ: optimisation:"sameFace"/"commonFace" (BOPAlgo_GlueFull/GlueShift)
-    // здесь пробовались ради скорости на плотных раскладках, но на деле дают
-    // ТИХИЙ НЕПРАВИЛЬНЫЙ результат — проверено напрямую (measureVolume): диск
-    // остаётся НЕ вырезанным (0 мм³ разницы) при обоих режимах склейки, без
-    // единой ошибки/исключения. Дефолтный режим (без optimisation) — единственный,
-    // который реально режет; медленнее на больших раскладках («Page
-    // Unresponsive» на полусотне+ деталей), но корректность важнее скорости.
-    // Если будете оптимизировать дальше — сначала проверяйте объём результата
-    // (replicad.measureVolume), а не только число сущностей/время STEP-экспорта.
+
+    // ВНИМАНИЕ: два способа ускорить это уже пробовались и ОБА тихо портят
+    // результат — не включать без прямой проверки объёма (replicad.measureVolume)
+    // до и после:
+    //  1. optimisation:"sameFace"/"commonFace" (BOPAlgo_GlueFull/GlueShift) —
+    //     диск оставался НЕвырезанным (0 мм³ разницы), без единой ошибки.
+    //  2. rep.makeCompound(cutters) (сгруппировать все вырезы БЕЗ склейки,
+    //     потом один cut) — в разы быстрее, но если вырезы одной детали
+    //     перекрываются между собой (посадка+паз, посадка+CA+паз — САМЫЙ
+    //     обычный случай в этом проекте, у любой детали с включённым пазом),
+    //     результат либо падает сырым исключением WASM, либо — хуже —
+    //     тихо получается НЕПРАВИЛЬНЫЙ объём (без единой ошибки, проверено
+    //     прямым сравнением с надёжным путём на паре простых случаев:
+    //     расхождение 600-1100 мм³). Единственный доказанный корректным путь —
+    //     ниже: сначала явно склеить (fuse) все вырезы друг с другом, потом
+    //     ОДНО вычитание из диска. Медленнее на плотных раскладках
+    //     («Page Unresponsive» на полусотне+ деталей), но корректность важнее.
     var all = null;
     cutters.forEach(function (c, i) {
       if (all === null) { all = c; return; }

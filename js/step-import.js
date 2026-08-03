@@ -149,10 +149,189 @@
     });
   }
 
+  // Расстояние от точки до отрезка (не до прямой) — используется, чтобы
+  // проверить, что кандидат в «борт перемычки» реально лежит между двумя
+  // лепестками гантели, а не просто где-то неподалёку от их середины.
+  function pointToSegmentDist(px, py, x1, y1, x2, y2) {
+    var dx = x2 - x1, dy = y2 - y1;
+    var lenSq = dx * dx + dy * dy;
+    var t = lenSq > 0 ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
+    t = Math.max(0, Math.min(1, t));
+    var cx = x1 + t * dx, cy = y1 + t * dy;
+    return Math.hypot(px - cx, py - cy);
+  }
+
+  // Разбор одного фрагмента SVG-пути проекции replicad (toSVGPaths) —
+  // ТОЛЬКО команды M/L/A/Q/Z (дуги всегда окружности, без поворота, это
+  // проекция цилиндрических граней сверху) — в полилинию точек. Нужно, чтобы
+  // достать РЕАЛЬНЫЙ контур выреза-гантели прямо из геометрии STEP, а не
+  // приближать его кружками (см. mergeDogboneHoles/dogboneRealOutline).
+  function flattenSVGPath(d, segPerArc) {
+    segPerArc = segPerArc || 24;
+    var tokens = d.match(/[MLAQZ]|-?\d+\.?\d*(?:e-?\d+)?/gi) || [];
+    var pts = [], cur = null, i = 0;
+    function num() { return parseFloat(tokens[i++]); }
+    while (i < tokens.length) {
+      var cmd = tokens[i++];
+      if (cmd === "M" || cmd === "L") {
+        var x = num(), y = num();
+        pts.push({ x: x, y: y });
+        cur = { x: x, y: y };
+      } else if (cmd === "Q") {
+        var qx = num(), qy = num(), x2 = num(), y2 = num();
+        for (var s = 1; s <= segPerArc; s++) {
+          var t = s / segPerArc, mt = 1 - t;
+          pts.push({ x: mt * mt * cur.x + 2 * mt * t * qx + t * t * x2, y: mt * mt * cur.y + 2 * mt * t * qy + t * t * y2 });
+        }
+        cur = { x: x2, y: y2 };
+      } else if (cmd === "A") {
+        var rx = num(); num(); num(); // ry, поворот — не нужны (окружность)
+        var laf = num(), sf = num(), x3 = num(), y3 = num();
+        appendArcPoints(pts, cur.x, cur.y, x3, y3, rx, laf, sf, segPerArc);
+        cur = { x: x3, y: y3 };
+      } else {
+        // Z/z — замыкание, первая точка контура уже добавлена
+      }
+    }
+    return pts;
+  }
+
+  // Точки дуги ОКРУЖНОСТИ радиуса r между (x1,y1) и (x2,y2) — стандартное SVG
+  // параметрическое преобразование "конечные точки → центр", упрощённое для
+  // случая rx=ry=r (наши дуги — всегда проекции цилиндров, без эллипсов/поворота).
+  function appendArcPoints(pts, x1, y1, x2, y2, r, largeArc, sweep, seg) {
+    var dx2 = (x1 - x2) / 2, dy2 = (y1 - y2) / 2;
+    var lenSq = dx2 * dx2 + dy2 * dy2;
+    if (lenSq < 1e-12) return;
+    var rr = Math.max(r * r, lenSq); // страховка от погрешности (хорда чуть больше 2r)
+    var sign = largeArc !== sweep ? 1 : -1;
+    var co = sign * Math.sqrt(Math.max(0, rr - lenSq) / lenSq);
+    var cx = co * dy2 + (x1 + x2) / 2;
+    var cy = -co * dx2 + (y1 + y2) / 2;
+    var a1 = Math.atan2(y1 - cy, x1 - cx);
+    var a2 = Math.atan2(y2 - cy, x2 - cx);
+    var span = a2 - a1;
+    if (sweep && span < 0) span += 2 * Math.PI;
+    if (!sweep && span > 0) span -= 2 * Math.PI;
+    var steps = Math.max(1, Math.round((Math.abs(span) / (2 * Math.PI)) * seg * 4));
+    for (var k = 1; k <= steps; k++) {
+      var a = a1 + (span * k) / steps;
+      pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+    }
+  }
+
+  // Настоящий контур выреза-гантели прямо из вида сверху (а не приближение
+  // кружками): собираем точки проекции (visible+hidden), которые реально
+  // лежат НА границе этой пары отверстий — у окружности лепестка hi/hj (с
+  // запасом CIRC_TOL — сгибы/мелкие галтели на стыке со стенкой) или у
+  // отрезка между их центрами (с запасом WALL_TOL — сам борт перемычки), —
+  // и берём их выпуклую оболочку. Фильтр «у известной окружности/отрезка»
+  // (а не просто «где-то рядом с серединой») нужен, чтобы не подхватить
+  // точки СОСЕДНИХ, не относящихся к этой гантели элементов на плотной
+  // болванке (проверено на реальном файле технолога — иначе в оболочку
+  // попадают лишние точки от других отверстий поблизости).
+  var DOGBONE_CIRC_TOL = 1.5, DOGBONE_WALL_TOL = 3;
+  function dogboneRealOutline(pathFragments, hi, ri, hj, rj) {
+    if (!pathFragments || !pathFragments.length) return null;
+    var pts = [];
+    pathFragments.forEach(function (d) {
+      flattenSVGPath(d).forEach(function (p) {
+        var d1 = Math.abs(Math.hypot(p.x - hi.x, p.y - hi.y) - ri);
+        var d2 = Math.abs(Math.hypot(p.x - hj.x, p.y - hj.y) - rj);
+        var seg = pointToSegmentDist(p.x, p.y, hi.x, hi.y, hj.x, hj.y);
+        var onWall = seg < DOGBONE_WALL_TOL;
+        if (d1 < DOGBONE_CIRC_TOL || d2 < DOGBONE_CIRC_TOL || onWall) pts.push(p);
+      });
+    });
+    if (pts.length < 3) return null;
+    var hull = HC.geom.convexHull(pts);
+    return hull.length >= 3 ? hull.map(function (p) { return [Math.round(p.x * 1000) / 1000, Math.round(p.y * 1000) / 1000]; }) : null;
+  }
+
+  // Вырезы-«гантели» (dogbone/keyhole): два лепестка (обычные отверстия из
+  // classifyCylinders, разного или одинакового Ø) соединены прямой
+  // перемычкой — на реальном файле технолога подтверждено: Ø7.5 простое
+  // сквозное + составное Ø6/Ø4 в 8.2мм друг от друга, а между ними — две
+  // плоские грани НА ВСЮ ТОЛЩИНУ (борта перемычки). Без учёта перемычки два
+  // лепестка распознавались бы как ДВА независимых отверстия, а материал
+  // между ними (реально вырезанный, сквозной) вообще не попадал бы в
+  // запретную зону для раскладчика — деталь могла бы встать прямо в
+  // перемычку. wallCandidates — центры кандидатов в «борт перемычки»
+  // (полные плоские грани на всю толщину, небольшие в плане — см. analyzeShape).
+  // Возвращает { holes: остаток (не гантели), dogboneKeepouts: [{x,y,r},...],
+  // dogboneCutouts: [{points:[[x,y],...]}] }. dogboneKeepouts — по два
+  // кружка-лепестка плюс несколько промежуточных кружков вдоль перемычки
+  // консервативного радиуса (меньший из двух лепестков — не точная ширина
+  // перемычки, но заведомо не меньше её) — ЭТО остаётся источником истины
+  // для раскладчика (fixtures.holes, см. keepoutsFromHoles), никогда не
+  // приближение. dogboneCutouts — НАСТОЯЩИЙ контур этой же пары прямо из
+  // вида сверху (см. dogboneRealOutline), только когда есть pathFragments
+  // (реальный WASM-разбор, не mock-тесты) — используется ТОЛЬКО для более
+  // точной картинки в 3D «Lite» (viewer3d.js уже не рисует кружки, чей центр
+  // попал внутрь такого контура, см. fixturePolys/fixtureCircles dedup) —
+  // безопасность раскладки не зависит от того, найден он или нет.
+  function mergeDogboneHoles(holes, wallCandidates, pathFragments) {
+    if (!wallCandidates || !wallCandidates.length) return { holes: holes, dogboneKeepouts: [], dogboneCutouts: [] };
+    var used = {};
+    var dogboneKeepouts = [];
+    var dogboneCutouts = [];
+    for (var i = 0; i < holes.length; i++) {
+      if (used[i]) continue;
+      var hi = holes[i];
+      var ri = Math.max(hi.seatD || 0, hi.d || 0, hi.apertureCA || 0) / 2;
+      if (!(ri > 0)) continue;
+      for (var j = i + 1; j < holes.length; j++) {
+        if (used[j]) continue;
+        var hj = holes[j];
+        var rj = Math.max(hj.seatD || 0, hj.d || 0, hj.apertureCA || 0) / 2;
+        if (!(rj > 0)) continue;
+        var dist = Math.hypot(hi.x - hj.x, hi.y - hj.y);
+        if (dist < 1) continue;
+        // лепестки гантели всегда БЛИЗКИ друг к другу относительно своих
+        // радиусов (перемычка короче суммы радиусов) — иначе рискуем
+        // случайно связать два просто оказавшихся неподалёку отверстия
+        // (проверено: без этого условия две мелкие метки-ориентиры в 6.45мм
+        // друг от друга ложно попадали в гантель — у них дистанция/радиусы
+        // куда больше типичной перемычки)
+        if (dist > (ri + rj) * 1.5) continue;
+        // борт должен лежать РЯДОМ С ОТРЕЗКОМ между центрами (не просто где-то
+        // поблизости) — иначе стенка от совсем другой гантели может случайно
+        // подойти по расстоянию до чужой пары
+        var hasWall = wallCandidates.some(function (w) {
+          return pointToSegmentDist(w.cx, w.cy, hi.x, hi.y, hj.x, hj.y) < 3;
+        });
+        if (!hasWall) continue;
+        var waistR = Math.min(ri, rj);
+        dogboneKeepouts.push({ x: hi.x, y: hi.y, r: Math.round(ri * 1000) / 1000 });
+        dogboneKeepouts.push({ x: hj.x, y: hj.y, r: Math.round(rj * 1000) / 1000 });
+        var steps = Math.max(1, Math.round(dist / Math.max(0.5, waistR)));
+        for (var k = 1; k < steps; k++) {
+          var t = k / steps;
+          dogboneKeepouts.push({
+            x: Math.round((hi.x + (hj.x - hi.x) * t) * 1000) / 1000,
+            y: Math.round((hi.y + (hj.y - hi.y) * t) * 1000) / 1000,
+            r: Math.round(waistR * 1000) / 1000
+          });
+        }
+        var realOutline = dogboneRealOutline(pathFragments, hi, ri, hj, rj);
+        if (realOutline) dogboneCutouts.push({ points: realOutline });
+        used[i] = true; used[j] = true;
+        break;
+      }
+    }
+    var remaining = holes.filter(function (h, idx) { return !used[idx]; });
+    return { holes: remaining, dogboneKeepouts: dogboneKeepouts, dogboneCutouts: dogboneCutouts };
+  }
+
   // Достаёт из готового Shape3D (после importSTEP) цилиндрические грани,
   // отделяет внешнюю стенку болванки (наибольший радиус — крупнее любого
   // реального отверстия по построению) и классифицирует остальные.
-  function analyzeShape(shape) {
+  // pathFragments — необязательно: плоский список строк SVG-path (visible+
+  // hidden вида сверху, см. HC.stepImport.fromFile) для настоящего контура
+  // вырезов-гантелей (dogboneRealOutline); без него (как во всех mock-тестах
+  // ниже, без реального WASM) гантели по-прежнему безопасны для раскладчика,
+  // просто без картинки точного контура в 3D «Lite» — только кружки.
+  function analyzeShape(shape, pathFragments) {
     var bb = shape.boundingBox.bounds; // [[xmin,ymin,zmin],[xmax,ymax,zmax]]
     var thickness = bb[1][2] - bb[0][2];
 
@@ -164,7 +343,7 @@
       var fb = f.boundingBox.bounds;
       cyls.push({ r: cyl.Radius(), x: loc.X(), y: loc.Y(), z0: fb[0][2], z1: fb[1][2] });
     });
-    if (!cyls.length) return { blankDiameter: null, thickness: thickness, holes: [] };
+    if (!cyls.length) return { blankDiameter: null, thickness: thickness, holes: [], grooves: [], dogboneKeepouts: [], dogboneCutouts: [] };
 
     cyls.sort(function (a, b) { return b.r - a.r; });
     var blankDiameter = Math.round(cyls[0].r * 2 * 1000) / 1000;
@@ -180,6 +359,24 @@
     var maxHoleR = (blankDiameter / 2) * 0.5;
     var holeCandidates = cyls.slice(1).filter(function (c) { return c.r <= maxHoleR; });
     var holes = classifyCylinders(holeCandidates, thickness);
+
+    // Кандидаты в «борт перемычки» выреза-гантели (см. mergeDogboneHoles) —
+    // плоские грани НА ВСЮ ТОЛЩИНУ (это настоящий сквозной борт, а не пол
+    // посадки/дно канавки — те почти плоские по Z) и небольшие в плане (не
+    // путать с верхом/низом самого диска или полом канавки — те огромные).
+    var wallCandidates = [];
+    shape.faces.forEach(function (f) {
+      if (f.geomType !== "PLANE") return;
+      var fb = f.boundingBox.bounds;
+      var zSpan = fb[1][2] - fb[0][2];
+      var xSpan = fb[1][0] - fb[0][0];
+      var ySpan = fb[1][1] - fb[0][1];
+      if (zSpan > thickness - GROUP_TOL && xSpan < 15 && ySpan < 15) {
+        wallCandidates.push({ cx: (fb[0][0] + fb[1][0]) / 2, cy: (fb[0][1] + fb[1][1]) / 2 });
+      }
+    });
+    var dogboneResult = mergeDogboneHoles(holes, wallCandidates, pathFragments);
+    holes = dogboneResult.holes;
 
     // Сами канавки — две концентричные стенки (снаружи/внутри) на одной оси,
     // отсеянные выше по радиусу. Группируем так же, по (x,y); пара граней на
@@ -206,32 +403,61 @@
       });
     });
 
-    return { blankDiameter: blankDiameter, thickness: Math.round(thickness * 1000) / 1000, holes: holes, grooves: grooves };
+    return {
+      blankDiameter: blankDiameter, thickness: Math.round(thickness * 1000) / 1000,
+      holes: holes, grooves: grooves, dogboneKeepouts: dogboneResult.dogboneKeepouts,
+      dogboneCutouts: dogboneResult.dogboneCutouts
+    };
   }
 
   // Отверстие → запретная зона (кружок) для раскладчика: радиус — по
   // максимальному реальному размеру этого отверстия (посадка, если есть,
   // иначе сквозное d; зона напыления обычно не больше посадки, но берём
-  // максимум на случай нестандартной геометрии).
+  // максимум на случай нестандартной геометрии). seatD/apertureCA/depth/
+  // slotAvailable/slotAngle переносятся дальше как есть — сами по себе не
+  // дают отдельной запретной зоны (уже учтены в r через классификацию), но
+  // нужны ниже для 3D «Lite» (см. viewer3d.js collectFeatures): простой
+  // крепёж (только h.d) — честный сквозной болт, а вот составную/глухую
+  // посадку (seatD задан) нельзя резать насквозь на одну и ту же глубину —
+  // получится либо сквозная дыра там, где должна быть глухая посадка, либо
+  // (после фикса «паз насквозь») пропадает CA. depth есть у любого
+  // отверстия с seatD (классификация в обоих таких случаях его задаёт).
   function keepoutsFromHoles(holes) {
     return (holes || []).map(function (h) {
-      var r = Math.max(h.seatD || 0, h.d || 0, h.apertureCA || 0) / 2;
-      return { x: h.x, y: h.y, r: Math.round(r * 1000) / 1000 };
+      var seatD = h.seatD || h.d || 0;
+      var r = Math.max(seatD, h.apertureCA || 0) / 2;
+      return {
+        x: h.x, y: h.y, r: Math.round(r * 1000) / 1000,
+        seatD: h.seatD > 0 ? Math.round(h.seatD * 1000) / 1000 : undefined,
+        apertureCA: h.apertureCA > 0 ? Math.round(h.apertureCA * 1000) / 1000 : undefined,
+        depth: h.depth > 0 ? Math.round(h.depth * 1000) / 1000 : undefined,
+        slotAvailable: !!h.slotAvailable,
+        slotAngle: h.slotAvailable ? Math.round((h.slotAngle || 0) * 100) / 100 : undefined
+      };
     }).filter(function (k) { return k.r > 0; });
   }
 
-  // Плоский список {x,y,r} → группы fixtures.holes (та же форма, что и у
-  // обычного крепежа — см. js/packer.js opts.fixtureHoles). Вынесено отдельно
-  // от buildBlankSummary, чтобы этой же группировкой могла воспользоваться
-  // миграция старых STEP-записей (app.js migrateOldStepDiscs) — там источник
-  // уже классифицированные holes старого формата, а не свежий Shape3D.
+  // Плоский список {x,y,r,seatD,apertureCA,depth,slotAvailable,slotAngle} →
+  // группы fixtures.holes (та же форма, что и у обычного крепежа — см.
+  // js/packer.js opts.fixtureHoles). Точки СОСТАВНОЙ/ГЛУХОЙ посадки (seatD
+  // задан — то есть это не простой крепёжный болт) получают 5 элементов
+  // [x,y,slotAngle,depth,apertureCA] вместо [x,y] — остальной код (packer/
+  // render/step-export), читающий только p[0]/p[1], этого просто не
+  // замечает; viewer3d.js buildGroup/collectFeatures использует p[2..4]
+  // (если есть) и d группы (=seatD), чтобы построить настоящий глухой
+  // карман (+ паз, + сквозную CA) вместо одного сквозного кружка. Вынесено
+  // отдельно от buildBlankSummary, чтобы этой же группировкой могла
+  // воспользоваться миграция старых STEP-записей (app.js migrateOldStepDiscs) —
+  // там источник уже классифицированные holes старого формата, а не свежий Shape3D.
   function groupKeepoutsByDiameter(keepouts) {
     var fixtureGroups = {}, fixtureOrder = [];
     (keepouts || []).forEach(function (k) {
       var dia = Math.round(k.r * 2 * 1000) / 1000;
       var key = String(Math.round(dia * 100));
       if (!fixtureGroups[key]) { fixtureGroups[key] = { d: dia, label: "Существующее Ø" + dia, points: [] }; fixtureOrder.push(key); }
-      fixtureGroups[key].points.push([k.x, k.y]);
+      fixtureGroups[key].points.push(k.seatD
+        ? [k.x, k.y, k.slotAvailable ? k.slotAngle : null, k.depth || 0, k.apertureCA || 0]
+        : [k.x, k.y]);
     });
     return fixtureOrder.map(function (key) { return fixtureGroups[key]; });
   }
@@ -244,8 +470,13 @@
   // уже готовой строкой, эта функция WASM не трогает).
   function buildBlankSummary(shape, opts) {
     opts = opts || {};
-    var res = analyzeShape(shape);
-    var keepouts = keepoutsFromHoles(res.holes);
+    var res = analyzeShape(shape, opts.pathFragments);
+    // dogboneKeepouts — уже готовые {x,y,r} (см. mergeDogboneHoles), не через
+    // keepoutsFromHoles (у них нет seatD/apertureCA — просто безопасные
+    // кружки вдоль перемычки выреза-гантели). Это остаётся ЕДИНСТВЕННЫМ
+    // источником безопасности для раскладчика — dogboneCutouts (настоящий
+    // контур) ниже только для картинки в 3D «Lite», раскладку не затрагивает.
+    var keepouts = keepoutsFromHoles(res.holes).concat(res.dogboneKeepouts || []);
 
     return {
       id: opts.id || ("disc-" + Date.now()),
@@ -258,7 +489,7 @@
       coatingZoneDiameter: opts.coatingZoneDiameter || undefined,
       previewSVG: opts.previewSVG || "",
       fileName: opts.fileName || undefined,
-      fixtures: { holes: groupKeepoutsByDiameter(keepouts), cutouts: [], grooves: res.grooves || [] },
+      fixtures: { holes: groupKeepoutsByDiameter(keepouts), cutouts: res.dogboneCutouts || [], grooves: res.grooves || [] },
       controlVariants: [{ id: "none", name: "Без контрольных отверстий", holes: [] }],
       defaults: { partPart: 6, partEdge: 3, partControl: 6 }
     };
@@ -300,15 +531,28 @@
         : new Blob([arrayBufferOrBlob]);
       return rep.importSTEP(blob).then(function (shape) {
         var previewSVG = "";
+        var pathFragments = [];
         try {
           var proj = rep.drawProjection(shape, "top");
           var visibleSVG = proj.visible.toSVG();
           var hiddenSVG = proj.hidden ? proj.hidden.toSVG() : null;
           previewSVG = combineProjectionSVG(visibleSVG, hiddenSVG);
-        } catch (e) { /* превью — необязательное удобство, отсутствие не критично */ }
+          // тот же проход (visible+hidden) — ещё и как сырые строки контуров
+          // (не SVG-документ, а команды пути), для настоящего контура
+          // вырезов-гантели (см. mergeDogboneHoles/dogboneRealOutline).
+          (proj.visible.toSVGPaths() || []).forEach(function (arr) {
+            (arr || []).forEach(function (d) { pathFragments.push(d); });
+          });
+          if (proj.hidden) {
+            (proj.hidden.toSVGPaths() || []).forEach(function (arr) {
+              (arr || []).forEach(function (d) { pathFragments.push(d); });
+            });
+          }
+        } catch (e) { /* превью/контур — необязательное удобство, отсутствие не критично */ }
         var entryOpts = {};
         for (var k in opts) if (Object.prototype.hasOwnProperty.call(opts, k)) entryOpts[k] = opts[k];
         entryOpts.previewSVG = previewSVG;
+        entryOpts.pathFragments = pathFragments;
         var entry = buildBlankSummary(shape, entryOpts);
         onStatus("Готово.");
         return entry;
@@ -319,6 +563,9 @@
   HC.stepImport = {
     classifyCylinders: classifyCylinders,
     analyzeShape: analyzeShape,
+    mergeDogboneHoles: mergeDogboneHoles,
+    flattenSVGPath: flattenSVGPath,
+    dogboneRealOutline: dogboneRealOutline,
     keepoutsFromHoles: keepoutsFromHoles,
     groupKeepoutsByDiameter: groupKeepoutsByDiameter,
     combineProjectionSVG: combineProjectionSVG,

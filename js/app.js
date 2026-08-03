@@ -1104,6 +1104,28 @@
   // ---------- 3D-вид ----------
 
   var mode3d = false;
+  // Для STEP-болванок — выбор между двумя видами 3D (см. #view3dStepToggle):
+  // "lite" — приближённая реконструкция слоями из УЖЕ РАЗОБРАННОЙ болванки
+  //   (fixtures — плоские запретные зоны), та же buildGroup, что и у
+  //   ручных/CSV-болванок — мгновенно, без WASM, но крепёж/фиксации самой
+  //   болванки показаны декоративными сквозными кружками (без настоящей
+  //   формы посадки/паза — эта деталь потеряна при упрощении STEP-импорта);
+  //   детали и контрольные отверстия ЗАКАЗА при этом всё равно рисуются
+  //   полноценно (посадка+паз+CA), они берутся из самого заказа, а не из
+  //   разобранной болванки.
+  // "stp" — настоящий вырезанный STEP (см. refresh3DFromMesh) — медленно.
+  var mode3dStep = "lite";
+
+  // Показывает переключатель Lite/STP только для STEP-болванок (fileName) —
+  // для остальных выбирать нечего, там всегда честная реконструкция.
+  function updateView3dStepToggle() {
+    var el = $("view3dStepToggle");
+    if (!el) return;
+    var isStepDisc = !!(lastResult && lastResult.disc && lastResult.disc.fileName);
+    el.hidden = !isStepDisc;
+    $("view3dLiteBtn").classList.toggle("active", mode3dStep === "lite");
+    $("view3dStpBtn").classList.toggle("active", mode3dStep === "stp");
+  }
 
   function refresh3D() {
     if (!mode3d || !lastResult) return;
@@ -1113,7 +1135,7 @@
       return;
     }
     var d = lastResult.disc;
-    if (d.fileName) {
+    if (d.fileName && mode3dStep === "stp") {
       refresh3DFromMesh(d);
       return;
     }
@@ -1178,6 +1200,7 @@
 
   function refreshView() {
     refreshSVG();
+    updateView3dStepToggle();
     refresh3D();
   }
 
@@ -1434,6 +1457,19 @@
     });
   }
 
+  // Тот же выбор Lite/STP, что и в Конфигураторе (см. mode3dStep/
+  // updateView3dStepToggle) — по умолчанию Lite (мгновенная реконструкция),
+  // честный STEP-меш — по явному запросу.
+  var blanksMode3dStep = "lite";
+  function updateBlanksView3dStepToggle() {
+    var el = $("blanksView3dStepToggle");
+    if (!el) return;
+    var d = currentDisc();
+    el.hidden = !(d && d.fileName);
+    $("blanksView3dLiteBtn").classList.toggle("active", blanksMode3dStep === "lite");
+    $("blanksView3dStpBtn").classList.toggle("active", blanksMode3dStep === "stp");
+  }
+
   function refreshBlanks3D() {
     if (!blanksMode3d) return;
     var d = currentDisc();
@@ -1442,7 +1478,7 @@
       setBlanksMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
       return;
     }
-    if (d.fileName) {
+    if (d.fileName && blanksMode3dStep === "stp") {
       refreshBlanks3DFromMesh(d);
       return;
     }
@@ -1492,6 +1528,7 @@
     var d = currentDisc();
     $("blanksSummary").textContent = HC.t(d.name) + " · Ø" + d.diameter;
     refreshBlanksSVG();
+    updateBlanksView3dStepToggle();
     refreshBlanks3D();
   }
 
@@ -1825,6 +1862,16 @@
     return pendingBlankMeshPromise;
   }
 
+  // Тот же выбор Lite/STP, что и везде (см. mode3dStep) — по умолчанию Lite.
+  var addBlankMode3dStep = "lite";
+  function updateAddBlankView3dStepToggle() {
+    var el = $("addBlankView3dStepToggle");
+    if (!el) return;
+    el.hidden = !pendingBlankStepBytes;
+    $("addBlankView3dLiteBtn").classList.toggle("active", addBlankMode3dStep === "lite");
+    $("addBlankView3dStpBtn").classList.toggle("active", addBlankMode3dStep === "stp");
+  }
+
   function refreshAddBlank3D() {
     if (!addBlankMode3d) return;
     var host = $("addBlankView3dHost");
@@ -1835,7 +1882,7 @@
       return;
     }
     var d = pendingBlankEntry;
-    var meshPromise = pendingBlankMesh();
+    var meshPromise = pendingBlankStepBytes && addBlankMode3dStep === "stp" ? pendingBlankMesh() : null;
     if (meshPromise) {
       // настоящий STEP-меш вместо приближённой реконструкции слоями (см.
       // refreshBlanks3DFromMesh — тот же приём для уже сохранённых болванок)
@@ -1910,6 +1957,7 @@
     }
     var d = pendingBlankEntry;
     refreshAddBlankSVG();
+    updateAddBlankView3dStepToggle();
     refreshAddBlank3D();
     setAddBlankMsg(HC.t("Готово к сохранению: Ø{0}, толщина {1} мм.", d.diameter, d.thickness), "ok");
   }
@@ -2137,11 +2185,49 @@
     });
   }
 
+  // Тот же выбор Lite/STP, что и везде (см. mode3dStep) — по умолчанию Lite.
+  // Кэш вырезанного меша по id заказа (не по ссылке на объект —
+  // currentOrderFromRegistry() каждый раз парсит localStorage заново и
+  // отдаёт НОВЫЙ объект, ссылка никогда не совпадёт).
+  var ordersMode3dStep = "lite";
+  var ordersOrderMeshCache = { orderId: null, promise: null };
+
+  function updateOrdersView3dStepToggle() {
+    var el = $("ordersView3dStepToggle");
+    if (!el) return;
+    var o = currentOrderFromRegistry();
+    el.hidden = !(o && o.disc && o.disc.fileName);
+    $("ordersView3dLiteBtn").classList.toggle("active", ordersMode3dStep === "lite");
+    $("ordersView3dStpBtn").classList.toggle("active", ordersMode3dStep === "stp");
+  }
+
+  function ordersOrderMesh(o) {
+    if (ordersOrderMeshCache.orderId !== o.id) {
+      ordersOrderMeshCache.orderId = o.id;
+      ordersOrderMeshCache.promise = (!HC.blankStorage || !HC.blankStorage.isConnected() || !HC.buildOrderMeshFromImported)
+        ? null
+        : HC.blankStorage.readStepFile(o.disc.fileName).then(function (buf) {
+            var order = { disc: { thickness: o.disc.thickness }, controlHoles: o.controlHoles, placed: o.placed };
+            return HC.buildOrderMeshFromImported(order, buf);
+          });
+    }
+    return ordersOrderMeshCache.promise;
+  }
+
   function refreshOrders3D() {
     if (!ordersMode3d) return;
     var o = currentOrderFromRegistry();
     if (!o) return;
-    var ok = HC.viewer3d && HC.viewer3d.available() && HC.viewer3d.update($("ordersView3dHost"), {
+    if (!HC.viewer3d || !HC.viewer3d.available()) {
+      setOrdersViewMode(false);
+      setOrdersMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
+      return;
+    }
+    if (o.disc.fileName && ordersMode3dStep === "stp") {
+      refreshOrders3DFromMesh(o);
+      return;
+    }
+    var ok = HC.viewer3d.update($("ordersView3dHost"), {
       discDiameter: packBoundaryDiameter(o.disc), blankDiameter: physicalDiameter(o.disc), fixtures: o.disc.fixtures,
       edgeRecess: o.disc.edgeRecess, thickness: o.disc.thickness || 6,
       controlHoles: o.controlHoles, placed: o.placed, showNumbers: false
@@ -2150,6 +2236,28 @@
       setOrdersViewMode(false);
       setOrdersMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
     }
+  }
+
+  function refreshOrders3DFromMesh(o) {
+    var targetOrderId = o.id;
+    var meshPromise = ordersOrderMesh(o);
+    if (!meshPromise) {
+      setOrdersMsg(HC.t("3D недоступен: не удалось начать резку STEP (папка отключена?)."), "error");
+      return;
+    }
+    setOrdersMsg(HC.t("Режу карманы в STEP…"));
+    meshPromise.then(function (meshData) {
+      if (!ordersMode3d || currentOrderId !== targetOrderId) return; // выбор сменился, пока считалось
+      var ok = HC.viewer3d.updateMesh($("ordersView3dHost"), meshData);
+      if (ok) setOrdersMsg("");
+      else {
+        setOrdersViewMode(false);
+        setOrdersMsg(HC.t("3D-вид недоступен в этом браузере (нет WebGL)."), "error");
+      }
+    }).catch(function (err) {
+      if (currentOrderId !== targetOrderId) return;
+      setOrdersMsg(HC.t("Не удалось вырезать карманы в STEP: {0}", (err && err.message) || err), "error");
+    });
   }
 
   function setOrdersViewMode(is3d) {
@@ -2180,6 +2288,7 @@
     $("orderInfo").innerHTML = renderOrderInfo(o);
     $("orderActionMsg").textContent = "";
     refreshOrdersSVG();
+    updateOrdersView3dStepToggle();
     refreshOrders3D();
   }
 
@@ -2322,8 +2431,32 @@
   $("showNumbers").addEventListener("change", refreshView);
   $("view2dBtn").addEventListener("click", function () { setViewMode(false); });
   $("view3dBtn").addEventListener("click", function () { setViewMode(true); });
+  $("view3dLiteBtn").addEventListener("click", function () {
+    if (mode3dStep === "lite") return;
+    mode3dStep = "lite";
+    updateView3dStepToggle();
+    refresh3D();
+  });
+  $("view3dStpBtn").addEventListener("click", function () {
+    if (mode3dStep === "stp") return;
+    mode3dStep = "stp";
+    updateView3dStepToggle();
+    refresh3D();
+  });
   $("blanksView2dBtn").addEventListener("click", function () { setBlanksViewMode(false); });
   $("blanksView3dBtn").addEventListener("click", function () { setBlanksViewMode(true); });
+  $("blanksView3dLiteBtn").addEventListener("click", function () {
+    if (blanksMode3dStep === "lite") return;
+    blanksMode3dStep = "lite";
+    updateBlanksView3dStepToggle();
+    refreshBlanks3D();
+  });
+  $("blanksView3dStpBtn").addEventListener("click", function () {
+    if (blanksMode3dStep === "stp") return;
+    blanksMode3dStep = "stp";
+    updateBlanksView3dStepToggle();
+    refreshBlanks3D();
+  });
   $("blankSaveBtn").addEventListener("click", saveBlankEdits);
   $("addBlankBtn").addEventListener("click", openAddBlankModal);
   $("connectBlankFolderBtn").addEventListener("click", connectBlankFolder);
@@ -2331,6 +2464,18 @@
   $("addBlankModalCancelBtn").addEventListener("click", closeAddBlankModal);
   $("addBlankView2dBtn").addEventListener("click", function () { setAddBlankViewMode(false); });
   $("addBlankView3dBtn").addEventListener("click", function () { setAddBlankViewMode(true); });
+  $("addBlankView3dLiteBtn").addEventListener("click", function () {
+    if (addBlankMode3dStep === "lite") return;
+    addBlankMode3dStep = "lite";
+    updateAddBlankView3dStepToggle();
+    refreshAddBlank3D();
+  });
+  $("addBlankView3dStpBtn").addEventListener("click", function () {
+    if (addBlankMode3dStep === "stp") return;
+    addBlankMode3dStep = "stp";
+    updateAddBlankView3dStepToggle();
+    refreshAddBlank3D();
+  });
   $("mbDia").addEventListener("input", function () { syncCoatingZoneAuto(); scheduleConstructorPreview(); });
   $("mbThk").addEventListener("input", scheduleConstructorPreview);
   $("mbRecessOn").addEventListener("change", function (e) {
@@ -2426,6 +2571,18 @@
   $("ordersCancelBtn").addEventListener("click", ordersCancelSelection);
   $("ordersView2dBtn").addEventListener("click", function () { setOrdersViewMode(false); });
   $("ordersView3dBtn").addEventListener("click", function () { setOrdersViewMode(true); });
+  $("ordersView3dLiteBtn").addEventListener("click", function () {
+    if (ordersMode3dStep === "lite") return;
+    ordersMode3dStep = "lite";
+    updateOrdersView3dStepToggle();
+    refreshOrders3D();
+  });
+  $("ordersView3dStpBtn").addEventListener("click", function () {
+    if (ordersMode3dStep === "stp") return;
+    ordersMode3dStep = "stp";
+    updateOrdersView3dStepToggle();
+    refreshOrders3D();
+  });
   $("orderCsvBtn").addEventListener("click", function () {
     var o = currentOrderFromRegistry();
     if (o) HC.downloadCSV(o);

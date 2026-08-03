@@ -97,6 +97,76 @@ g2.traverse((o) => {
 });
 check("полный диск: все вершины конечны (крепёж + канавка не дали NaN)", finite2);
 
+// --- fixtures.holes с пазом (3-й элемент точки — slotAngle, см.
+// js/step-import.js groupKeepoutsByDiameter) — реальный D-образный контур
+// (посадка+паз), а не просто круглый кружок; иначе на 3D "Lite" у STEP-болванок
+// (реконструкция из уже разобранной геометрии) паз под пинцет терялся бы,
+// хотя честный STEP/previewSVG его показывают правильно ---
+function maxRadialReach(group, ignoreAbove) {
+  let maxReach = 0;
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    const a = o.geometry.attributes.position.array;
+    for (let i = 0; i < a.length; i += 3) {
+      const r = Math.hypot(a[i], a[i + 1]);
+      if (r > maxReach && r < ignoreAbove) maxReach = r;
+    }
+  });
+  return maxReach;
+}
+const slotFixtureModel = {
+  discDiameter: 200, blankDiameter: 220, thickness: 6,
+  fixtures: { holes: [{ d: 25.6, points: [[0, 0, 30]] }] }, // паз на 30°
+  controlHoles: [], placed: [], showNumbers: false
+};
+const reachWithSlot = maxRadialReach(HC.viewer3d._buildGroup(slotFixtureModel), 50);
+check("паз в крепеже болванки: контур реально выступает за посадку (Ø25.6/2=12.8)",
+  reachWithSlot > 12.8 + 0.5, "reach=" + reachWithSlot);
+
+const noSlotFixtureModel = Object.assign({}, slotFixtureModel, { fixtures: { holes: [{ d: 25.6, points: [[0, 0]] }] } });
+const reachNoSlot = maxRadialReach(HC.viewer3d._buildGroup(noSlotFixtureModel), 50);
+check("без паза (только [x,y]): контур не выступает — обычный круглый кружок",
+  reachNoSlot < 12.8 + 0.5, "reach=" + reachNoSlot);
+
+// --- паз/посадка свидетеля болванки — ГЛУХАЯ, не сквозная (регрессия: сперва
+// резалась через всю толщину, как обычный крепёжный болт) ---
+const layersSlotFixture = layerMeshes(HC.viewer3d._buildGroup(slotFixtureModel));
+check("паз в крепеже болванки: диск разбит на 2 слоя (глубина посадки + сплошной низ) — не сквозной",
+  layersSlotFixture.length === 2, String(layersSlotFixture.length));
+const layersNoSlotFixture = layerMeshes(HC.viewer3d._buildGroup(noSlotFixtureModel));
+check("обычный крепёж без паза остаётся сквозным (1 слой, как раньше)",
+  layersNoSlotFixture.length === 1, String(layersNoSlotFixture.length));
+// с явной глубиной (4-й элемент точки) — используется она, а не дефолт T-1.5
+const slotFixtureExplicitDepth = Object.assign({}, slotFixtureModel, {
+  fixtures: { holes: [{ d: 25.6, points: [[0, 0, 30, 2]] }] } // глубина 2мм явно
+});
+const layersExplicitDepth = layerMeshes(HC.viewer3d._buildGroup(slotFixtureExplicitDepth));
+check("явная глубина посадки (4-й элемент) задаёт свою границу слоя (2 слоя, разделены на Z=2)",
+  layersExplicitDepth.length === 2, String(layersExplicitDepth.length));
+
+// --- составная посадка свидетеля (5-й элемент — apertureCA): регрессия —
+// после того, как посадку сделали глухой (не сквозной, см. выше), зона
+// напыления (CA) под ней тихо пропадала — нижний слой оставался СПЛОШНЫМ,
+// хотя должен был иметь свою (меньшую) сквозную дырку ---
+const slotCAFixtureModel = {
+  discDiameter: 200, blankDiameter: 220, thickness: 6,
+  fixtures: { holes: [{ d: 25.6, points: [[0, 0, 30, 3, 22.6]] }] }, // паз 30°, глубина 3, CA=22.6
+  controlHoles: [], placed: [], showNumbers: false
+};
+const layersCA = layerMeshes(HC.viewer3d._buildGroup(slotCAFixtureModel)).sort((a, b) => a.position.z - b.position.z);
+check("составная посадка (паз+CA): 2 слоя (глухая посадка сверху + сквозная CA снизу)",
+  layersCA.length === 2, String(layersCA.length));
+if (layersCA.length === 2) {
+  const bottomLayer = layersCA[0]; // самый нижний по Z (position.z наиболее отрицательный)
+  const a = bottomLayer.geometry.attributes.position.array;
+  let hasNearCenterVertex = false;
+  for (let i = 0; i < a.length; i += 3) {
+    if (Math.hypot(a[i], a[i + 1]) < 15) { hasNearCenterVertex = true; break; }
+  }
+  check("нижний слой (под посадкой) имеет свою дырку CA — не сплошной (регрессия: CA пропадала)",
+    hasNearCenterVertex);
+}
+
 // --- реальный диск disc-298: крепёж Mounting2 лежит внутри вырезов Mountings ---
 require(path.join(__dirname, "..", "js", "catalog.js"));
 const disc = HC.CATALOG.discs[0];

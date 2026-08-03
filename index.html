@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Конфигуратор подложкодержателей</title>
-<link rel="stylesheet" href="css/style.css?v=202607291827">
+<link rel="stylesheet" href="css/style.css?v=202608031154">
 </head>
 <body>
 <div id="loginOverlay" class="login-overlay">
@@ -82,6 +82,10 @@
             <button type="button" id="view2dBtn" class="active">2D</button>
             <button type="button" id="view3dBtn">3D</button>
           </div>
+          <div class="view-toggle" id="view3dStepToggle" hidden>
+            <button type="button" id="view3dLiteBtn" class="active" data-i18n="Lite">Lite</button>
+            <button type="button" id="view3dStpBtn" data-i18n="STP">STP</button>
+          </div>
           <label class="numbers-toggle"><input type="checkbox" id="showNumbers"> <span data-i18n="номера позиций">номера позиций</span></label>
         </div>
       </div>
@@ -136,6 +140,10 @@
           <div class="view-toggle">
             <button type="button" id="blanksView2dBtn" class="active">2D</button>
             <button type="button" id="blanksView3dBtn">3D</button>
+          </div>
+          <div class="view-toggle" id="blanksView3dStepToggle" hidden>
+            <button type="button" id="blanksView3dLiteBtn" class="active" data-i18n="Lite">Lite</button>
+            <button type="button" id="blanksView3dStpBtn" data-i18n="STP">STP</button>
           </div>
           <button type="button" id="blanksCancelBtn" class="link" data-i18n="Отмена">Отмена</button>
         </div>
@@ -264,6 +272,10 @@
               <button type="button" id="addBlankView2dBtn" class="active">2D</button>
               <button type="button" id="addBlankView3dBtn">3D</button>
             </div>
+            <div class="view-toggle" id="addBlankView3dStepToggle" hidden>
+              <button type="button" id="addBlankView3dLiteBtn" class="active" data-i18n="Lite">Lite</button>
+              <button type="button" id="addBlankView3dStpBtn" data-i18n="STP">STP</button>
+            </div>
           </div>
           <div id="addBlankPreviewHost" class="svg-host"></div>
           <div id="addBlankView3dHost" class="view3d" hidden></div>
@@ -303,6 +315,10 @@
           <div class="view-toggle">
             <button type="button" id="ordersView2dBtn" class="active">2D</button>
             <button type="button" id="ordersView3dBtn">3D</button>
+          </div>
+          <div class="view-toggle" id="ordersView3dStepToggle" hidden>
+            <button type="button" id="ordersView3dLiteBtn" class="active" data-i18n="Lite">Lite</button>
+            <button type="button" id="ordersView3dStpBtn" data-i18n="STP">STP</button>
           </div>
           <button type="button" id="ordersCancelBtn" class="link" data-i18n="Отмена">Отмена</button>
         </div>
@@ -350,20 +366,20 @@
   document.head.appendChild(s);
 })();
 </script>
-<script src="js/catalog.js?v=202607291827"></script>
-<script src="js/i18n.js?v=202607291827"></script>
-<script src="js/geometry.js?v=202607291827"></script>
-<script src="js/packer.js?v=202607291827"></script>
-<script src="js/render.js?v=202607291827"></script>
-<script src="js/export-csv.js?v=202607291827"></script>
-<script src="js/step-export.js?v=202607291827"></script>
-<script src="js/step-import.js?v=202607291827"></script>
-<script src="js/blank-storage.js?v=202607291827"></script>
-<script src="js/report.js?v=202607291827"></script>
-<script src="js/sheets.js?v=202607291827"></script>
-<script src="js/viewer3d.js?v=202607291827"></script>
-<script src="js/holder-import.js?v=202607291827"></script>
-<script src="js/blank-builder.js?v=202607291827"></script>
-<script src="js/app.js?v=202607291827"></script>
+<script src="js/catalog.js?v=202608031154"></script>
+<script src="js/i18n.js?v=202608031154"></script>
+<script src="js/geometry.js?v=202608031154"></script>
+<script src="js/packer.js?v=202608031154"></script>
+<script src="js/render.js?v=202608031154"></script>
+<script src="js/export-csv.js?v=202608031154"></script>
+<script src="js/step-export.js?v=202608031154"></script>
+<script src="js/step-import.js?v=202608031154"></script>
+<script src="js/blank-storage.js?v=202608031154"></script>
+<script src="js/report.js?v=202608031154"></script>
+<script src="js/sheets.js?v=202608031154"></script>
+<script src="js/viewer3d.js?v=202608031154"></script>
+<script src="js/holder-import.js?v=202608031154"></script>
+<script src="js/blank-builder.js?v=202608031154"></script>
+<script src="js/app.js?v=202608031154"></script>
 </body>
 </html>

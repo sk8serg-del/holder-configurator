@@ -23,6 +23,7 @@
 
   var PART_COLORS = [0x2b6cb0, 0x2f855a, 0xc05621, 0x6b46c1, 0xc53030];
   var CTRL_COLOR = 0x9b111e; // контрольные отверстия — рубиновые стенки counterbore
+  var BLANK_FEATURE_COLOR = 0x8a8a84; // составная/глухая посадка САМОЙ болванки (свидетель/паз) — тот же серый, что и у простого декоративного крепежа, не рубиновый (это не КО заказа)
 
   var st = null; // единственный экземпляр: {renderer, scene, camera, group, host, sph, ...}
 
@@ -41,6 +42,47 @@
   // здесь для 3D, и в packer.js для точного клиренса в гекс-раскладке).
   function seatOutline(cx, cy, D, slotOn, slotAngleRad) {
     return HC.geom.seatOutline(cx, cy, D, slotOn, slotAngleRad, 96);
+  }
+
+  // Группировка ПЕРЕСЕКАЮЩИХСЯ кружков (union-find по перекрытию окружностей)
+  // — цепочка отверстий "гантели"/keyhole (см. step-import.js mergeDogboneHoles)
+  // приходит сюда как несколько налегающих друг на друга кружков разного
+  // диаметра; если пробить их как N независимых отверстий, рёбра контуров
+  // пересекаются и ExtrudeGeometry триангулирует эту кашу в мусор
+  // (самопересекающиеся осколки — видно на скриншоте пользователя).
+  function groupOverlappingCircles(circles) {
+    var n = circles.length;
+    var parent = [];
+    for (var i = 0; i < n; i++) parent.push(i);
+    function find(i) { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
+    function union(a, b) { var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+    for (var i = 0; i < n; i++) {
+      for (var j = i + 1; j < n; j++) {
+        var dist = Math.hypot(circles[i].cx - circles[j].cx, circles[i].cy - circles[j].cy);
+        if (dist < circles[i].r + circles[j].r + 0.02) union(i, j);
+      }
+    }
+    var groups = {};
+    circles.forEach(function (c, i) {
+      var root = find(i);
+      (groups[root] = groups[root] || []).push(c);
+    });
+    return Object.keys(groups).map(function (k) { return groups[k]; });
+  }
+
+  // Контур объединения группы пересекающихся кружков — выпуклая оболочка их
+  // насэмплированных границ (не точная булева уния, но гладкий контур без
+  // самопересечений; для цепочки кружков одного "гантельного" выреза
+  // визуально практически неотличимо от настоящей формы).
+  function hullOfCircles(circles, seg) {
+    var pts = [];
+    circles.forEach(function (c) {
+      for (var i = 0; i < seg; i++) {
+        var a = (i / seg) * Math.PI * 2;
+        pts.push({ x: c.cx + c.r * Math.cos(a), y: c.cy + c.r * Math.sin(a) });
+      }
+    });
+    return HC.geom.convexHull(pts);
   }
 
   function toShape(pts) {
@@ -143,6 +185,29 @@
         });
       }
     });
+
+    // Свидетели/составные посадки САМОЙ болванки (STEP-разбор — см.
+    // js/step-import.js groupKeepoutsByDiameter): точка с 5 элементами
+    // [x,y,slotAngle,depth,apertureCA] вместо простого [x,y] — та же логика,
+    // что и у контрольных отверстий заказа: глухой карман (+паз, если есть)
+    // + отдельная сквозная CA, а не один сплошной сквозной кружок (иначе
+    // после фикса «паз насквозь» CA просто пропадала — резать было некуда).
+    // Обычный простой крепёж (болт, точка [x,y]) сюда не попадает — остаётся
+    // в fixtureCircles (buildGroup), он честно сквозной.
+    ((model.fixtures && model.fixtures.holes) || []).forEach(function (grp) {
+      if (grp.countersink) return;
+      (grp.points || []).forEach(function (p) {
+        if (p.length <= 2) return;
+        var slotAngleDeg = p[2], depth = p[3] > 0 ? p[3] : defDepth, apertureCA = p[4] > 0 ? p[4] : 0;
+        var ang = slotAngleDeg != null ? (slotAngleDeg * Math.PI) / 180 : Math.atan2(p[1], p[0]);
+        fs.push({
+          outline: seatOutline(p[0], p[1], grp.d, slotAngleDeg != null, ang),
+          depth: depth,
+          ca: apertureCA > 0 ? { cx: p[0], cy: p[1], r: apertureCA / 2 } : null,
+          color: BLANK_FEATURE_COLOR
+        });
+      });
+    });
     return fs;
   }
 
@@ -179,13 +244,20 @@
     var eps = 1e-6;
     var group = new THREE.Group();
 
-    // крепёж/штифты/резьба болванки — сквозные отверстия (декор, серые стенки).
-    // Группы с countersink рисуются отдельно конусом (см. ниже), не насквозь.
+    // крепёж/штифты/резьба болванки — простые сквозные отверстия (декор,
+    // серые стенки). Группы с countersink рисуются отдельно конусом (см.
+    // ниже), не насквозь. Точки составной/глухой посадки (5 элементов —
+    // [x,y,slotAngle,depth,apertureCA], см. js/step-import.js
+    // groupKeepoutsByDiameter) сюда НЕ попадают — это настоящая посадка
+    // свидетеля, а не крепёжный болт насквозь, обрабатывается ниже как
+    // полноценный «карман» через collectFeatures (глухая глубина + паз +
+    // отдельная сквозная CA), см. BLANK_FEATURE_COLOR.
     var fixtureCircles = [];
     if (model.fixtures && model.fixtures.holes) {
       model.fixtures.holes.forEach(function (grp) {
         if (grp.countersink) return;
         (grp.points || []).forEach(function (p) {
+          if (p.length > 2) return; // составная/глухая посадка — уже в features
           fixtureCircles.push({ cx: p[0], cy: p[1], r: grp.d / 2 });
         });
       });
@@ -231,6 +303,15 @@
       });
     });
 
+    // цепочки пересекающихся кружков (гантельный/keyhole вырез) — схлопнуть
+    // в один контур ДО раскладки по слоям (см. groupOverlappingCircles/hullOfCircles).
+    var mergedCircles = [];
+    groupOverlappingCircles(fixtureCircles).forEach(function (group) {
+      if (group.length === 1) mergedCircles.push(group[0]);
+      else fixturePolys.push(hullOfCircles(group, 48));
+    });
+    fixtureCircles = mergedCircles;
+
     var features = collectFeatures(model).map(function (f) {
       f.depth = Math.min(Math.max(f.depth, 0.3), T);
       f.through = f.depth >= T - eps;
@@ -254,7 +335,9 @@
       edgeRecess = null; // диаметр занижения не меньше диска — некорректно, не строим
     }
 
-    // границы слоёв: 0, все глубины посадок, границы занижения, толщина
+    // границы слоёв: 0, все глубины посадок (включая составные/глухие посадки
+    // болванки — они теперь тоже часть features, см. collectFeatures),
+    // границы занижения, толщина
     var bounds = [0, T];
     features.forEach(function (f) { if (!f.through) bounds.push(f.depth); });
     if (edgeRecess) { bounds.push(erT0); bounds.push(erT1); }
