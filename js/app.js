@@ -1082,7 +1082,44 @@
       // раз есть готовая раскладка — скорее всего, дойдут и до «Скачать STEP»;
       // начинаем тихо тянуть CAD-движок (WASM) в фоне заранее, а не ждать клика
       if (HC.preloadSTEP) HC.preloadSTEP();
+      recomputeEngraving();
     }
+  }
+
+  // ---------- гравировка номера/названия подложкодержателя ----------
+  // Считается ФОНОМ (нужен тот же WASM-движок + шрифт по CDN, см.
+  // js/engraving.js) и кэшируется на lastResult; когда готово — тихо
+  // перерисовывает 2D/3D повторно (refreshView), без блокировки формы.
+  // Пересчёт — после новой раскладки и при вводе «Номер» (debounce, тот же
+  // приём, что и у остального автообновления формы — см. markDirty/autoPack).
+
+  function engravingModel(lr) {
+    return {
+      discDiameter: lr.opts.discDiameter, blankDiameter: physicalDiameter(lr.disc),
+      placed: lr.placed, controlHoles: lr.opts.controlHoles, fixtures: lr.disc.fixtures,
+      edgeRecess: lr.disc.edgeRecess
+    };
+  }
+
+  function recomputeEngraving() {
+    if (!lastResult || !HC.engraving) return;
+    var targetResult = lastResult;
+    var holderNo = $("holderNo").value.trim(), holderName = $("holderName").value.trim();
+    if (!holderNo && !holderName) { targetResult.engraving = null; refreshView(); return; }
+    HC.engraving.loadFont().then(function (rep) {
+      if (lastResult !== targetResult) return; // раскладка сменилась, пока грузился шрифт
+      // сначала одной строкой (номер+название); если целиком не влезает ни в
+      // одну дугу даже с уменьшением высоты — разбивается на два отдельных
+      // фрагмента в разных промежутках у края (см. computeOrderEngraving)
+      targetResult.engraving = HC.engraving.computeOrderEngraving(rep, engravingModel(targetResult), holderNo, holderName);
+      refreshView();
+    }).catch(function () { /* нет сети/CDN — гравировки просто не будет, форма не блокируется */ });
+  }
+
+  var engraveTimer = null;
+  function scheduleEngraveRecompute() {
+    if (engraveTimer) clearTimeout(engraveTimer);
+    engraveTimer = setTimeout(recomputeEngraving, 400);
   }
 
   function refreshSVG() {
@@ -1097,7 +1134,8 @@
       edgeClearance: lastResult.opts.clearances.pe,
       controlHoles: lastResult.opts.controlHoles,
       placed: lastResult.placed,
-      showNumbers: $("showNumbers").checked
+      showNumbers: $("showNumbers").checked,
+      engraving: lastResult.engraving
     });
   }
 
@@ -1147,7 +1185,8 @@
       thickness: d.thickness || 6,
       controlHoles: lastResult.opts.controlHoles,
       placed: lastResult.placed,
-      showNumbers: $("showNumbers").checked
+      showNumbers: $("showNumbers").checked,
+      engraving: lastResult.engraving
     });
     if (!ok) {
       setViewMode(false);
@@ -1158,18 +1197,20 @@
   // Болванка с настоящим STEP-файлом — настоящий меш С УЖЕ ВЫРЕЗАННЫМИ
   // карманами деталей заказа (см. HC.buildOrderMeshFromImported — та же
   // булева вырезка, что и при экспорте STEP), а не приближённая декаль
-  // поверх нетронутой геометрии. Кэш по ССЫЛКЕ на lastResult — новый
-  // doPack() создаёт новый объект lastResult, автоматически инвалидируя кэш;
-  // ВНИМАНИЕ: вырезка — та же дорогая булева операция, что и при экспорте,
-  // на плотных раскладках (полусотня+ деталей) может заметно подвиснуть.
-  var orderMeshCache = { lastResult: null, promise: null };
+  // поверх нетронутой геометрии. Кэш по ССЫЛКЕ на lastResult И на
+  // lastResult.engraving — гравировка досчитывается асинхронно ПОСЛЕ того,
+  // как этот кэш мог уже собраться без нёе (шрифт ещё грузился) — сброс по
+  // второму ключу гарантирует пересчёт меша, когда гравировка появится/
+  // изменится (новый doPack() тоже создаёт новый lastResult, инвалидируя оба).
+  var orderMeshCache = { lastResult: null, engraving: null, promise: null };
   function orderMesh(d) {
-    if (orderMeshCache.lastResult !== lastResult) {
+    if (orderMeshCache.lastResult !== lastResult || orderMeshCache.engraving !== lastResult.engraving) {
       orderMeshCache.lastResult = lastResult;
+      orderMeshCache.engraving = lastResult.engraving;
       orderMeshCache.promise = (!HC.blankStorage || !HC.blankStorage.isConnected() || !HC.buildOrderMeshFromImported)
         ? null
         : HC.blankStorage.readStepFile(d.fileName).then(function (buf) {
-            var order = { disc: { thickness: d.thickness }, controlHoles: lastResult.opts.controlHoles, placed: lastResult.placed };
+            var order = { disc: { thickness: d.thickness }, controlHoles: lastResult.opts.controlHoles, placed: lastResult.placed, engraving: lastResult.engraving };
             return HC.buildOrderMeshFromImported(order, buf);
           });
     }
@@ -1267,7 +1308,7 @@
         "<td>" + escHtml(HC.t(d.name)) + "</td>" +
         "<td>" + (d.installation ? escHtml(d.installation) : "—") + "</td>" +
         "<td>" + (d.description ? escHtml(d.description) : "—") + "</td>" +
-        "<td>" + d.diameter + "</td>" +
+        "<td>" + physicalDiameter(d) + "</td>" +
         "<td>" + ynControl(d, "Reference") + "</td>" +
         "<td>" + ynControl(d, "Свидетель") + "</td>" +
         "<td>" + ynControl(d, "Свидетель Центр") + "</td>" +
@@ -2050,6 +2091,10 @@
       },
       holderNo: $("holderNo").value.trim(),
       holderName: $("holderName").value.trim(),
+      // {glyphs,textHeight,offset,fits} из HC.engraving.computeLayout — если
+      // шрифт ещё не успел догрузиться в фоне к моменту сборки заказа, тут
+      // будет null (см. recomputeEngraving) — гравировки на детали не будет.
+      engraving: lr.engraving || null,
       disc: {
         id: lr.disc.id, name: lr.disc.name, diameter: lr.disc.diameter, blankDiameter: lr.disc.blankDiameter,
         thickness: lr.disc.thickness, edgeRecess: lr.disc.edgeRecess, fixtures: lr.disc.fixtures,
@@ -2181,7 +2226,8 @@
       discDiameter: packBoundaryDiameter(o.disc), blankDiameter: physicalDiameter(o.disc), fixtures: o.disc.fixtures,
       edgeRecess: o.disc.edgeRecess, coatingZoneDiameter: o.disc.coatingZoneDiameter, previewSVG: o.disc.previewSVG,
       edgeClearance: o.clearances.pe,
-      controlHoles: o.controlHoles, placed: o.placed, showNumbers: false
+      controlHoles: o.controlHoles, placed: o.placed, showNumbers: false,
+      engraving: o.engraving
     });
   }
 
@@ -2207,7 +2253,7 @@
       ordersOrderMeshCache.promise = (!HC.blankStorage || !HC.blankStorage.isConnected() || !HC.buildOrderMeshFromImported)
         ? null
         : HC.blankStorage.readStepFile(o.disc.fileName).then(function (buf) {
-            var order = { disc: { thickness: o.disc.thickness }, controlHoles: o.controlHoles, placed: o.placed };
+            var order = { disc: { thickness: o.disc.thickness }, controlHoles: o.controlHoles, placed: o.placed, engraving: o.engraving };
             return HC.buildOrderMeshFromImported(order, buf);
           });
     }
@@ -2230,7 +2276,8 @@
     var ok = HC.viewer3d.update($("ordersView3dHost"), {
       discDiameter: packBoundaryDiameter(o.disc), blankDiameter: physicalDiameter(o.disc), fixtures: o.disc.fixtures,
       edgeRecess: o.disc.edgeRecess, thickness: o.disc.thickness || 6,
-      controlHoles: o.controlHoles, placed: o.placed, showNumbers: false
+      controlHoles: o.controlHoles, placed: o.placed, showNumbers: false,
+      engraving: o.engraving
     });
     if (!ok) {
       setOrdersViewMode(false);
@@ -2429,6 +2476,7 @@
   $("addPart").addEventListener("click", function () { parts.push(defaultPart()); renderParts(); markDirty(); });
   $("packBtn").addEventListener("click", doPack);
   $("showNumbers").addEventListener("change", refreshView);
+  $("holderNo").addEventListener("input", scheduleEngraveRecompute);
   $("view2dBtn").addEventListener("click", function () { setViewMode(false); });
   $("view3dBtn").addEventListener("click", function () { setViewMode(true); });
   $("view3dLiteBtn").addEventListener("click", function () {

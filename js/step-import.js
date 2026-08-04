@@ -161,64 +161,8 @@
     return Math.hypot(px - cx, py - cy);
   }
 
-  // Разбор одного фрагмента SVG-пути проекции replicad (toSVGPaths) —
-  // ТОЛЬКО команды M/L/A/Q/Z (дуги всегда окружности, без поворота, это
-  // проекция цилиндрических граней сверху) — в полилинию точек. Нужно, чтобы
-  // достать РЕАЛЬНЫЙ контур выреза-гантели прямо из геометрии STEP, а не
-  // приближать его кружками (см. mergeDogboneHoles/dogboneRealOutline).
-  function flattenSVGPath(d, segPerArc) {
-    segPerArc = segPerArc || 24;
-    var tokens = d.match(/[MLAQZ]|-?\d+\.?\d*(?:e-?\d+)?/gi) || [];
-    var pts = [], cur = null, i = 0;
-    function num() { return parseFloat(tokens[i++]); }
-    while (i < tokens.length) {
-      var cmd = tokens[i++];
-      if (cmd === "M" || cmd === "L") {
-        var x = num(), y = num();
-        pts.push({ x: x, y: y });
-        cur = { x: x, y: y };
-      } else if (cmd === "Q") {
-        var qx = num(), qy = num(), x2 = num(), y2 = num();
-        for (var s = 1; s <= segPerArc; s++) {
-          var t = s / segPerArc, mt = 1 - t;
-          pts.push({ x: mt * mt * cur.x + 2 * mt * t * qx + t * t * x2, y: mt * mt * cur.y + 2 * mt * t * qy + t * t * y2 });
-        }
-        cur = { x: x2, y: y2 };
-      } else if (cmd === "A") {
-        var rx = num(); num(); num(); // ry, поворот — не нужны (окружность)
-        var laf = num(), sf = num(), x3 = num(), y3 = num();
-        appendArcPoints(pts, cur.x, cur.y, x3, y3, rx, laf, sf, segPerArc);
-        cur = { x: x3, y: y3 };
-      } else {
-        // Z/z — замыкание, первая точка контура уже добавлена
-      }
-    }
-    return pts;
-  }
-
-  // Точки дуги ОКРУЖНОСТИ радиуса r между (x1,y1) и (x2,y2) — стандартное SVG
-  // параметрическое преобразование "конечные точки → центр", упрощённое для
-  // случая rx=ry=r (наши дуги — всегда проекции цилиндров, без эллипсов/поворота).
-  function appendArcPoints(pts, x1, y1, x2, y2, r, largeArc, sweep, seg) {
-    var dx2 = (x1 - x2) / 2, dy2 = (y1 - y2) / 2;
-    var lenSq = dx2 * dx2 + dy2 * dy2;
-    if (lenSq < 1e-12) return;
-    var rr = Math.max(r * r, lenSq); // страховка от погрешности (хорда чуть больше 2r)
-    var sign = largeArc !== sweep ? 1 : -1;
-    var co = sign * Math.sqrt(Math.max(0, rr - lenSq) / lenSq);
-    var cx = co * dy2 + (x1 + x2) / 2;
-    var cy = -co * dx2 + (y1 + y2) / 2;
-    var a1 = Math.atan2(y1 - cy, x1 - cx);
-    var a2 = Math.atan2(y2 - cy, x2 - cx);
-    var span = a2 - a1;
-    if (sweep && span < 0) span += 2 * Math.PI;
-    if (!sweep && span > 0) span -= 2 * Math.PI;
-    var steps = Math.max(1, Math.round((Math.abs(span) / (2 * Math.PI)) * seg * 4));
-    for (var k = 1; k <= steps; k++) {
-      var a = a1 + (span * k) / steps;
-      pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
-    }
-  }
+  // Разбор SVG-пути — HC.geom.flattenSVGPath (geometry.js), общий примитив.
+  var flattenSVGPath = HC.geom.flattenSVGPath;
 
   // Настоящий контур выреза-гантели прямо из вида сверху (а не приближение
   // кружками): собираем точки проекции (visible+hidden), которые реально

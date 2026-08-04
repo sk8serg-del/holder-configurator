@@ -230,11 +230,30 @@
     return out.join("");
   };
 
+  // Команды контура гравировки (см. js/engraving.js computeLayout) — M/L/Q,
+  // где Q — настоящая квадратичная кривая (контрольная точка cx/cy) — в SVG
+  // "Q" ровно такая же команда, один в один, без приближения полигоном.
+  function svgPathFromCommands(cmds) {
+    var parts = [];
+    cmds.forEach(function (c) {
+      if (c.cmd === "M") parts.push("M " + fmt(c.x) + "," + fmt(c.y));
+      else if (c.cmd === "L") parts.push("L " + fmt(c.x) + "," + fmt(c.y));
+      else if (c.cmd === "Q") parts.push("Q " + fmt(c.cx) + "," + fmt(c.cy) + " " + fmt(c.x) + "," + fmt(c.y));
+    });
+    return parts.join(" ") + " Z";
+  }
+
   HC.renderSVG = function (model) {
     var Ruse = model.discDiameter / 2;                 // полезная зона — граница раскладки
     var R = (model.blankDiameter || model.discDiameter) / 2; // полный диск (для отображения)
     var pad = Math.max(4, R * 0.08);
-    var vb = fmt(-R - pad) + " " + fmt(-R - pad) + " " + fmt(2 * (R + pad)) + " " + fmt(2 * (R + pad));
+    // сверху и справа нужно больше места, чем слева/снизу — там сидит
+    // диагональная выноска диаметрального размера с подписью ØXXX (см. ниже)
+    var dimFs = Math.max(R * 0.045, pad * 0.6);
+    var dimExtra = dimFs * 5;
+    var vbMinX = -R - pad, vbMaxX = R + pad + dimExtra;
+    var vbMinY = -R - pad - dimExtra, vbMaxY = R + pad;
+    var vb = fmt(vbMinX) + " " + fmt(vbMinY) + " " + fmt(vbMaxX - vbMinX) + " " + fmt(vbMaxY - vbMinY);
     var sw = Math.max(0.2, R / 200); // толщина линий в мм-координатах
     var out = [];
 
@@ -402,6 +421,48 @@
         );
       }
     });
+
+    // гравировка номера/названия подложкодержателя (см. js/engraving.js
+    // computeLayout) — контур уже изогнут вдоль свободной дуги у края и
+    // считается в координатах диска, здесь просто рисуем как есть. Тонкой
+    // линией без заливки (тех.разметка, не настоящая заливка металла) —
+    // дырки самих букв («D», «0», «8» и т.п.) через fill-rule="evenodd" в
+    // ОДНОМ <path> на букву, а не вычитанием полигонов вручную.
+    ((model.engraving && model.engraving.glyphs) || []).forEach(function (gl) {
+      var d = svgPathFromCommands(gl.outer);
+      (gl.holes || []).forEach(function (h) { d += " " + svgPathFromCommands(h); });
+      out.push('<path d="' + d + '" fill="none" fill-rule="evenodd" stroke="#444" stroke-width="' + fmt(sw) + '"/>');
+    });
+
+    // Диаметральный размер внешнего физического диаметра болванки (Ø) —
+    // стандартное черчёное оформление: линия под углом ЧЕРЕЗ ВЕСЬ диск (через
+    // центр), СТРЕЛКИ С ОБЕИХ СТОРОН (остриё каждой — на своей кромке диска,
+    // тело — наружу), с дальней стороны линия продолжается за вторую стрелку
+    // и переходит в горизонтальную выноску к подписи ØXXX. Чёрный цвет.
+    var dimAng = 35 * Math.PI / 180;
+    var ux = Math.cos(dimAng), uy = Math.sin(dimAng);
+    var perpX = -uy, perpY = ux;
+    var arrow = Math.max(R * 0.025, sw * 7);
+    var nearX = -R * ux, nearY = -R * uy; // ближний конец — на кромке диска
+    var nearBaseX = nearX - arrow * ux, nearBaseY = nearY - arrow * uy; // наружный (широкий) конец ближней стрелки
+    var farX = R * ux, farY = R * uy; // дальний конец — на кромке диска, с другой стороны
+    var farBaseX = farX + arrow * ux, farBaseY = farY + arrow * uy; // наружный конец дальней стрелки
+    var bendX = farBaseX + R * 0.1 * ux, bendY = farBaseY + R * 0.1 * uy;
+    var hLen = dimFs * 3.6;
+    var endX = bendX + hLen;
+    function arrowPath(tipX, tipY, baseX, baseY) {
+      return '<path d="M ' + fmt(tipX) + ' ' + fmt(tipY) +
+        ' L ' + fmt(baseX + perpX * arrow * 0.35) + ' ' + fmt(baseY + perpY * arrow * 0.35) +
+        ' L ' + fmt(baseX - perpX * arrow * 0.35) + ' ' + fmt(baseY - perpY * arrow * 0.35) + ' Z" fill="#000"/>';
+    }
+    out.push(
+      '<line x1="' + fmt(nearBaseX) + '" y1="' + fmt(nearBaseY) + '" x2="' + fmt(bendX) + '" y2="' + fmt(bendY) + '" stroke="#000" stroke-width="' + fmt(sw) + '"/>' +
+      '<line x1="' + fmt(bendX) + '" y1="' + fmt(bendY) + '" x2="' + fmt(endX) + '" y2="' + fmt(bendY) + '" stroke="#000" stroke-width="' + fmt(sw) + '"/>' +
+      arrowPath(nearX, nearY, nearBaseX, nearBaseY) +
+      arrowPath(farX, farY, farBaseX, farBaseY) +
+      '<text x="' + fmt(bendX + hLen / 2) + '" y="' + fmt(-(bendY + dimFs * 0.7)) + '" transform="scale(1,-1)" font-size="' + fmt(dimFs) + '" text-anchor="middle" dominant-baseline="central" fill="#000">' +
+      "Ø" + fmt(2 * R) + "</text>"
+    );
 
     out.push("</g></svg>");
     return out.join("");

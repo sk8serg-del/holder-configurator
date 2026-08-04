@@ -72,5 +72,42 @@ check("без previewSVG полезная зона со старой непро�
   /r="50" fill="#fdfdfc"/.test(svgNoPreview), svgNoPreview);
 check("с previewSVG деталь раскладки всё равно рисуется (translate(10,0))", svgWithPreview.indexOf('translate(10,0)') !== -1);
 
+// --- гравировка (js/engraving.js computeLayout) — тонкая линия без заливки,
+// дырки буквы («D», «0» и т.п.) через fill-rule=evenodd в одном <path> ---
+// contour — точки [x,y] для теста; реальный computeLayout отдаёт команды
+// {cmd,x,y[,cx,cy]} (M/L/Q — см. HC.geom.parseSVGPathCommands), тут только
+// M/L, этого достаточно для проверки отрисовки контура/дырок.
+function cmdsFromPoly(poly) {
+  return poly.map(function (p, i) { return { cmd: i === 0 ? "M" : "L", x: p[0], y: p[1] }; });
+}
+var engravingModel = withoutPreview({
+  engraving: { glyphs: [
+    { outer: cmdsFromPoly([[10, 20], [15, 20], [15, 25], [10, 25]]), holes: [] },
+    { outer: cmdsFromPoly([[20, 20], [25, 20], [25, 25], [20, 25]]), holes: [cmdsFromPoly([[21, 21], [24, 21], [24, 24], [21, 24]])] }
+  ] }
+});
+var svgEngrave = HC.renderSVG(engravingModel);
+check("гравировка: контур буквы без дырки нарисован (одна буква — один <path>)",
+  (svgEngrave.match(/<path d="M 10,20/g) || []).length === 1, svgEngrave);
+check("гравировка: без заливки (fill=\"none\")", /fill="none" fill-rule="evenodd"[^>]*d="M 20,20/.test(svgEngrave) || /d="M 20,20[^"]*"\s+fill="none"/.test(svgEngrave), svgEngrave);
+check("гравировка: у буквы с дыркой — оба под-контура в ОДНОМ <path> через fill-rule=evenodd",
+  svgEngrave.indexOf("M 20,20") !== -1 && svgEngrave.indexOf("M 21,21") !== -1 &&
+  svgEngrave.indexOf('fill-rule="evenodd"') !== -1, svgEngrave);
+check("без engraving в модели — гравировка не рисуется вообще", HC.renderSVG(withoutPreview({})).indexOf("fill-rule") === -1);
+
+// --- размер внешнего диаметра болванки (Ø) — подпись со значением 2R,
+// НЕ Ø полезной зоны (discDiameter=100 в baseModel), а blankDiameter=120 ---
+var svgDim = HC.renderSVG(withoutPreview({}));
+check("размер: подпись показывает настоящий внешний диаметр (Ø120 = blankDiameter), не Ø полезной зоны (100)",
+  svgDim.indexOf(">Ø120<") !== -1, svgDim);
+check("размер: диаметральный — стрелки С ОБЕИХ СТОРОН, остриём на кромке диска (R=60, угол 35°: ±49.149,±34.415)",
+  svgDim.indexOf('<path d="M -49.149 -34.415 ') !== -1 && svgDim.indexOf('<path d="M 49.149 34.415 ') !== -1, svgDim);
+check("размер: чёрный цвет (не серый)", svgDim.indexOf('fill="#000"') !== -1 && svgDim.indexOf('stroke="#000"') !== -1, svgDim);
+check("размер: линия проходит через центр (0,0) — соединяет ближний и дальний края диска", svgDim.indexOf("#666") === -1, svgDim);
+// без blankDiameter (только discDiameter, физический диск = полезная зона) — подпись по discDiameter
+var svgDimNoBlank = HC.renderSVG(withoutPreview({ blankDiameter: undefined, discDiameter: 100 }));
+check("размер: без отдельного blankDiameter — подпись по discDiameter (Ø100)",
+  svgDimNoBlank.indexOf(">Ø100<") !== -1, svgDimNoBlank);
+
 console.log(failures ? failures + " FAIL" : "Тест render.js (previewSVG-фон) пройден.");
 process.exit(failures ? 1 : 0);

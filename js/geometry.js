@@ -402,6 +402,88 @@
     return lower.concat(upper);
   }
 
+  // Точки дуги ОКРУЖНОСТИ радиуса r между (x1,y1) и (x2,y2) — стандартное SVG
+  // параметрическое преобразование "конечные точки → центр", упрощённое для
+  // случая rx=ry=r (наши дуги — всегда проекции цилиндров, без эллипсов/поворота).
+  function appendArcPoints(pts, x1, y1, x2, y2, r, largeArc, sweep, seg) {
+    var dx2 = (x1 - x2) / 2, dy2 = (y1 - y2) / 2;
+    var lenSq = dx2 * dx2 + dy2 * dy2;
+    if (lenSq < 1e-12) return;
+    var rr = Math.max(r * r, lenSq); // страховка от погрешности (хорда чуть больше 2r)
+    var sign = largeArc !== sweep ? 1 : -1;
+    var co = sign * Math.sqrt(Math.max(0, rr - lenSq) / lenSq);
+    var cx = co * dy2 + (x1 + x2) / 2;
+    var cy = -co * dx2 + (y1 + y2) / 2;
+    var a1 = Math.atan2(y1 - cy, x1 - cx);
+    var a2 = Math.atan2(y2 - cy, x2 - cx);
+    var span = a2 - a1;
+    if (sweep && span < 0) span += 2 * Math.PI;
+    if (!sweep && span > 0) span -= 2 * Math.PI;
+    var steps = Math.max(1, Math.round((Math.abs(span) / (2 * Math.PI)) * seg * 4));
+    for (var k = 1; k <= steps; k++) {
+      var a = a1 + (span * k) / steps;
+      pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+    }
+  }
+
+  // Разбор одного фрагмента SVG-пути (M/L/A/Q/Z — команды, которые реально
+  // встречаются в выходе replicad: Drawing.toSVGPaths() у проекций (дуги —
+  // окружности, без поворота) и у контуров букв (drawText — квадратичные
+  // кривые, TrueType)) в полилинию точек. Общий примитив: используется и для
+  // настоящего контура выреза-гантели из STEP-проекции (step-import.js), и
+  // для контуров букв гравировки (engraving.js).
+  function flattenSVGPath(d, segPerArc) {
+    segPerArc = segPerArc || 24;
+    var tokens = d.match(/[MLAQZ]|-?\d+\.?\d*(?:e-?\d+)?/gi) || [];
+    var pts = [], cur = null, i = 0;
+    function num() { return parseFloat(tokens[i++]); }
+    while (i < tokens.length) {
+      var cmd = tokens[i++];
+      if (cmd === "M" || cmd === "L") {
+        var x = num(), y = num();
+        pts.push({ x: x, y: y });
+        cur = { x: x, y: y };
+      } else if (cmd === "Q") {
+        var qx = num(), qy = num(), x2 = num(), y2 = num();
+        for (var s = 1; s <= segPerArc; s++) {
+          var t = s / segPerArc, mt = 1 - t;
+          pts.push({ x: mt * mt * cur.x + 2 * mt * t * qx + t * t * x2, y: mt * mt * cur.y + 2 * mt * t * qy + t * t * y2 });
+        }
+        cur = { x: x2, y: y2 };
+      } else if (cmd === "A") {
+        var rx = num(); num(); num(); // ry, поворот — не нужны (окружность)
+        var laf = num(), sf = num(), x3 = num(), y3 = num();
+        appendArcPoints(pts, cur.x, cur.y, x3, y3, rx, laf, sf, segPerArc);
+        cur = { x: x3, y: y3 };
+      } else {
+        // Z/z — замыкание, первая точка контура уже добавлена
+      }
+    }
+    return pts;
+  }
+
+  // Разбор SVG-пути в СИМВОЛЬНЫЕ команды (M/L/Q — с сохранением контрольной
+  // точки кривой, БЕЗ тесселяции в полилинию). Нужно там, где дальше кривую
+  // разворачивают (например, вдоль дуги — см. engraving.js) и передают как
+  // НАСТОЯЩУЮ кривую конечному потребителю (SVG "Q", THREE.Path.
+  // quadraticCurveTo, replicad Pen.quadraticBezierCurveTo) — так гладкая
+  // кривая шрифта остаётся гладкой (одна кривая), а не приближается ломаной
+  // из многих отрезков. Используются только команды M/L/Q — ровно то, что
+  // реально встречается в контурах букв (replicad drawText, TrueType).
+  function parseSVGPathCommands(d) {
+    var tokens = d.match(/[MLQZ]|-?\d+\.?\d*(?:e-?\d+)?/gi) || [];
+    var out = [], i = 0;
+    function num() { return parseFloat(tokens[i++]); }
+    while (i < tokens.length) {
+      var cmd = tokens[i++];
+      if (cmd === "M") out.push({ cmd: "M", x: num(), y: num() });
+      else if (cmd === "L") out.push({ cmd: "L", x: num(), y: num() });
+      else if (cmd === "Q") out.push({ cmd: "Q", cx: num(), cy: num(), x: num(), y: num() });
+      // Z/z — замыкание, отдельной командой не нужно (первая M уже есть)
+    }
+    return out;
+  }
+
   HC.geom = {
     EPS: EPS,
     rectPoly: rectPoly,
@@ -419,6 +501,9 @@
     pointInPoly: pointInPoly,
     circleEdgeOverlap: circleEdgeOverlap,
     circleMinusCircles: circleMinusCircles,
-    convexHull: convexHull
+    convexHull: convexHull,
+    flattenSVGPath: flattenSVGPath,
+    distPointSeg: distPointSeg,
+    parseSVGPathCommands: parseSVGPathCommands
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

@@ -24,6 +24,7 @@
   var PART_COLORS = [0x2b6cb0, 0x2f855a, 0xc05621, 0x6b46c1, 0xc53030];
   var CTRL_COLOR = 0x9b111e; // контрольные отверстия — рубиновые стенки counterbore
   var BLANK_FEATURE_COLOR = 0x8a8a84; // составная/глухая посадка САМОЙ болванки (свидетель/паз) — тот же серый, что и у простого декоративного крепежа, не рубиновый (это не КО заказа)
+  var ENGRAVE_COLOR = 0x000000; // гравировка — чёрная (заливка), чтобы отличаться от серого металла диска
 
   var st = null; // единственный экземпляр: {renderer, scene, camera, group, host, sph, ...}
 
@@ -101,6 +102,20 @@
     return p;
   }
 
+  // Строит THREE.Shape/Path из команд контура гравировки (см. js/engraving.js
+  // computeLayout) — M/L/Q, Q — quadraticCurveTo НАПРЯМУЮ (настоящая кривая,
+  // не приближение полигоном точек).
+  function applyCommands(target, cmds) {
+    cmds.forEach(function (c) {
+      if (c.cmd === "M") target.moveTo(c.x, c.y);
+      else if (c.cmd === "L") target.lineTo(c.x, c.y);
+      else if (c.cmd === "Q") target.quadraticCurveTo(c.cx, c.cy, c.x, c.y);
+    });
+    target.closePath();
+    return target;
+  }
+  function pathFromCommands(cmds) { return applyCommands(new g.THREE.Path(), cmds); }
+
   // Контур зоны напыления: полигон (некруглые детали) или круг (круглые/КО).
   function caPolyOf(ca) {
     return ca.poly ? ca.poly : circlePoly(ca.cx, ca.cy, ca.r, 64);
@@ -158,15 +173,27 @@
 
     (model.placed || []).forEach(function (p) {
       var color = PART_COLORS[(p.partIndex || 0) % PART_COLORS.length];
+      // метки-ориентиры (см. js/geometry.js MARK_D/MARK_ANGLE) — только у
+      // деталей с пазом (markCount = разновидность детали, 1-я — одна метка
+      // и т.д., та же формула, что в export-csv.js/step-export.js features());
+      // геометрия позиций — 1 в 1 как в step-export.js slotGeom, иначе метки
+      // в Lite 3D оказались бы не там, где реальный STEP их вырезает.
+      var markCount = (p.partIndex || 0) + 1;
       if (p.type === "circle") {
         var seat = p.seatD > 0 ? p.seatD : p.d;
         // угол паза от раскладчика (гекс — по высоте треугольника); запас — радиально
         var ang = p.slotAngle != null ? p.slotAngle * Math.PI / 180 : Math.atan2(p.cy, p.cx);
+        var marks = [];
+        if (p.slotOn) {
+          var halfW = Math.min(9, seat * 0.75) / 2;
+          marks = HC.geom.slotMarkPoints(p.cx, p.cy, seat / 2, halfW, ang, HC.MARK_OFF, HC.MARK_SIDE, markCount, HC.MARK_PITCH);
+        }
         fs.push({
           outline: seatOutline(p.cx, p.cy, seat, !!p.slotOn, ang),
           depth: defDepth,
           ca: p.apertureCA > 0 ? { cx: p.cx, cy: p.cy, r: p.apertureCA / 2 } : null,
-          color: color
+          color: color,
+          marks: marks
         });
       } else {
         // некруглая деталь: карман = контур посадки (габарит + припуск),
@@ -177,11 +204,22 @@
         var caShape = (ci > 0 && p.w - 2 * ci > 0 && p.h - 2 * ci > 0)
           ? HC.geom.shapePoly(p.type, p.cx, p.cy, p.w - 2 * ci, p.h - 2 * ci, p.chamfer || 0, p.rot)
           : null;
+        var marksNc = [];
+        if (p.slotOn) {
+          var ang2 = ((p.rot || 0) + (p.slotAngle || 0)) * Math.PI / 180;
+          var ux = Math.cos(ang2), uy = Math.sin(ang2);
+          var seatPoly = HC.geom.shapePoly(p.type, 0, 0, p.w + 2 * g2, p.h + 2 * g2, p.chamfer || 0, p.rot || 0);
+          var halfExt = 0;
+          seatPoly.forEach(function (q) { var pr = Math.abs(q.x * ux + q.y * uy); if (pr > halfExt) halfExt = pr; });
+          var widNc = Math.min(9, (Math.min(p.w, p.h) + 2 * g2) * 0.75);
+          marksNc = HC.geom.slotMarkPoints(p.cx, p.cy, halfExt, widNc / 2, ang2, HC.MARK_OFF, HC.MARK_SIDE, markCount, HC.MARK_PITCH);
+        }
         fs.push({
           outline: HC.geom.shapePoly(p.type, p.cx, p.cy, p.w + 2 * g2, p.h + 2 * g2, p.chamfer || 0, p.rot),
           depth: defDepth,
           ca: caShape ? { poly: caShape } : null,
-          color: color
+          color: color,
+          marks: marksNc
         });
       }
     });
@@ -235,6 +273,31 @@
     return geo;
   }
 
+  // Команды контура гравировки (M/L/Q, см. js/engraving.js computeLayout) →
+  // полилиния точек — только для цветной стенки/дна кармана (wallGeometry/
+  // ShapeGeometry ожидают точки, не кривые); сама верхняя грань кармана
+  // режется настоящей кривой через pathFromCommands, тут просто нужно
+  // разумно плотно провести стенку вдоль той же кривой.
+  function commandsToPoints(cmds, segPerCurve) {
+    segPerCurve = segPerCurve || 8;
+    var pts = [], cur = null;
+    cmds.forEach(function (c) {
+      if (c.cmd === "Q" && cur) {
+        for (var s = 1; s <= segPerCurve; s++) {
+          var t = s / segPerCurve, mt = 1 - t;
+          pts.push({
+            x: mt * mt * cur.x + 2 * mt * t * c.cx + t * t * c.x,
+            y: mt * mt * cur.y + 2 * mt * t * c.cy + t * t * c.y
+          });
+        }
+      } else {
+        pts.push({ x: c.x, y: c.y });
+      }
+      cur = { x: c.x, y: c.y };
+    });
+    return pts;
+  }
+
   // ---------- сборка сцены ----------
 
   function buildGroup(model) {
@@ -252,6 +315,22 @@
     // свидетеля, а не крепёжный болт насквозь, обрабатывается ниже как
     // полноценный «карман» через collectFeatures (глухая глубина + паз +
     // отдельная сквозная CA), см. BLANK_FEATURE_COLOR.
+    // гравировка номера/названия подложкодержателя (см. js/engraving.js
+    // computeLayout) — контуры букв уже изогнуты вдоль дуги у края, в
+    // координатах диска, командами M/L/Q (Q — настоящая квадратичная кривая,
+    // не приближение полигоном — см. pathFromCommands); здесь только
+    // неглубокий (HC.ENGRAVE_DEPTH) карман сверху, обычные непересекающиеся
+    // контуры (не путать с гантелью — там налегающие кружки ломали
+    // триангуляцию, тут дырки — часть буквы).
+    function avgRadius(cmds) {
+      var sx = 0, sy = 0;
+      cmds.forEach(function (c) { sx += c.x; sy += c.y; });
+      return Math.hypot(sx / cmds.length, sy / cmds.length);
+    }
+    var engravingGlyphs = ((model.engraving && model.engraving.glyphs) || []).map(function (gl) {
+      return { outer: gl.outer, holes: gl.holes || [] };
+    });
+
     var fixtureCircles = [];
     if (model.fixtures && model.fixtures.holes) {
       model.fixtures.holes.forEach(function (grp) {
@@ -318,6 +397,20 @@
       return f;
     });
 
+    // метки-ориентиры — та же коническая зенковка, что и в STEP-экспорте
+    // (см. step-export.js countersink). Сама метка сидит в НЕтронутом
+    // материале рядом с посадкой (не внутри её кармана), поэтому декоративный
+    // конус-меш ниже (после features.forEach) без РЕАЛЬНОГО отверстия в самом
+    // диске был бы полностью скрыт внутри сплошной геометрии — регрессия,
+    // пойманная пользователем («не вижу»). Пробиваем настоящую (цилиндрическую,
+    // Lite-приближение конуса) дырку в верхнем слое диска, как гравировка.
+    var markHalfAngle = (HC.MARK_ANGLE / 2) * Math.PI / 180;
+    var markT = Math.tan(markHalfAngle);
+    var markRSurf = HC.MARK_D / 2;
+    var markDepth = markT > 0 ? markRSurf / markT : 0.5;
+    var allMarks = [];
+    features.forEach(function (f) { (f.marks || []).forEach(function (m) { allMarks.push(m); }); });
+
     // Занижение по краю (model.edgeRecess: {side, diameter, depth}) — кольцо
     // снаружи diameter занижено на depth от указанной грани. "Глубина от
     // верха" диапазон занижения: top -> [0, depth], bottom -> [T-depth, T].
@@ -335,12 +428,29 @@
       edgeRecess = null; // диаметр занижения не меньше диска — некорректно, не строим
     }
 
+    // Гравировка попадает под занижение по краю (top-side edgeRecess) — если
+    // буква сидит на радиусе БОЛЬШЕ erInnerR, там уже нет материала в слое
+    // [0,erT1] (тот слой урезан до layerR=erInnerR, см. ниже) — вырезать
+    // карман от глобального верха (Z=0) означало бы резать «в воздухе» (там,
+    // где уже занижено), карман физически не появился бы. Такие буквы режем
+    // от ЛОКАЛЬНОЙ поверхности (erT1), а не от Z=0. Отдельно от boundary-side
+    // "bottom" — тот низа диска не трогает верхнюю грань, где сидит гравировка.
+    var erIsTop = !!(edgeRecess && edgeRecess.side !== "bottom");
+    var glyphsAtGlobalTop = [], glyphsInRecessRing = [];
+    engravingGlyphs.forEach(function (gl) {
+      if (erIsTop && avgRadius(gl.outer) > erInnerR + eps) glyphsInRecessRing.push(gl);
+      else glyphsAtGlobalTop.push(gl);
+    });
+
     // границы слоёв: 0, все глубины посадок (включая составные/глухие посадки
     // болванки — они теперь тоже часть features, см. collectFeatures),
     // границы занижения, толщина
     var bounds = [0, T];
     features.forEach(function (f) { if (!f.through) bounds.push(f.depth); });
     if (edgeRecess) { bounds.push(erT0); bounds.push(erT1); }
+    if (glyphsAtGlobalTop.length) bounds.push(Math.min(HC.ENGRAVE_DEPTH, T));
+    if (glyphsInRecessRing.length) bounds.push(Math.min(erT1 + HC.ENGRAVE_DEPTH, T));
+    if (allMarks.length) bounds.push(Math.min(markDepth, T));
     bounds.sort(function (a, b) { return a - b; });
     bounds = bounds.filter(function (v, i, arr) { return i === 0 || v - arr[i - 1] > eps; });
 
@@ -378,7 +488,39 @@
       fixturePolys.forEach(function (poly) {
         shape.holes.push(toPath(poly)); // фигурный вырез — насквозь
       });
-      var geo = new THREE.ExtrudeGeometry(shape, { depth: t1 - t0, bevelEnabled: false, curveSegments: 4 });
+      // гравировка — только в неглубоком верхнем слое (0..ENGRAVE_DEPTH).
+      // ТОЛЬКО внешний контур буквы, без её собственных дырок («D», «0», «8»
+      // и т.п.) — проверено вживую: ExtrudeGeometry/Shape в three.js не
+      // поддерживают вложенные дырки-в-дырке (Shape со своими holes,
+      // вложенный в holes другого Shape, триангулируется как СПЛОШНОЙ по
+      // внешнему контуру — внутренний «остров» буквы теряется, 0 вершин
+      // внутри контрольной проверки). Для Lite-приближения это приемлемо
+      // (буква без острова-перемычки выглядит чуть иначе, но Lite и так
+      // приближение) — настоящий STP-экспорт режет через OC .cut(), там
+      // вложенность работает корректно (проверено в scratchpad).
+      if (t0 < HC.ENGRAVE_DEPTH - eps) {
+        glyphsAtGlobalTop.forEach(function (gl) {
+          shape.holes.push(pathFromCommands(gl.outer));
+        });
+      }
+      if (erIsTop && t0 >= erT1 - eps && t0 < erT1 + HC.ENGRAVE_DEPTH - eps) {
+        glyphsInRecessRing.forEach(function (gl) {
+          shape.holes.push(pathFromCommands(gl.outer));
+        });
+      }
+      // метка-ориентир — маленькая круглая дырка (Lite-приближение конуса
+      // цилиндром) в самом верхнем слое, только там, где реально сидит конус
+      if (t0 < markDepth - eps) {
+        allMarks.forEach(function (m) {
+          shape.holes.push(toPath(circlePoly(m.x, m.y, markRSurf, 16)));
+        });
+      }
+      // curveSegments: раньше не имело значения (все контуры — точки через
+      // lineTo, без настоящих кривых); теперь буквы гравировки используют
+      // quadraticCurveTo (см. pathFromCommands) — увеличено, чтобы дуги букв
+      // не тесселировались обратно в гранёные при рендере (на сам диск и его
+      // круглые контуры не влияет — они самплированы вручную, lineTo).
+      var geo = new THREE.ExtrudeGeometry(shape, { depth: t1 - t0, bevelEnabled: false, curveSegments: 16 });
       var mesh = new THREE.Mesh(geo, discMat);
       mesh.position.z = -t1;
       group.add(mesh);
@@ -415,6 +557,52 @@
         group.add(mesh);
       }
     });
+
+    // метки-ориентиры деталей (зенковка Ø2мм/90°, см. js/geometry.js
+    // HC.MARK_*, константы markHalfAngle/markT/markRSurf/markDepth уже
+    // посчитаны выше — там же, где пробита сама дырка) — конус-меш КЛАДЁМ
+    // ВНУТРЬ уже пробитой дырки: широкий конец у верхней грани z=0, сужается
+    // до точки на глубину markDepth, узкий конец — к −Z (вглубь материала).
+    features.forEach(function (f) {
+      (f.marks || []).forEach(function (m) {
+        var cone = new THREE.CylinderGeometry(markRSurf, 0.02, markDepth, 16, 1, true);
+        cone.rotateX(Math.PI / 2); // ось Y → Z: широкий конец (markRSurf) к +Z
+        var mesh = new THREE.Mesh(cone, matFor(f.color));
+        mesh.position.set(m.x, m.y, -markDepth / 2);
+        group.add(mesh);
+      });
+    });
+
+    // гравировка — цветные стенка+дно кармана (тёмное золото, ENGRAVE_COLOR).
+    // Верхняя грань кармана (вырезанная В САМОМ ДИСКЕ, shape.holes.push
+    // выше) — ТОЛЬКО внешний контур буквы, без дырок «D»/«0»/«8» (см.
+    // пояснение у glyphsAtGlobalTop/glyphsInRecessRing: THREE Shape не
+    // поддерживает дырку-в-дырке, когда контур с дыркой сам вкладывается
+    // КАК дырка в другой Shape). Но дно/стенка кармана — СВОЙ, ОТДЕЛЬНЫЙ
+    // ShapeGeometry (не вложен ни в какой другой Shape) — тут дырка-в-нём
+    // самом РАБОТАЕТ нормально (проверено), поэтому здесь дырки буквы
+    // ПРАВИЛЬНО вычтены: «O»/«D»/«0»/«8» дно/стенки — кольцом, а не сплошным
+    // залитым кругом (регрессия, которую поймал пользователь после первой
+    // версии окраски — сплошная заливка «съедала» контррельеф буквы).
+    var engraveMat = matFor(ENGRAVE_COLOR);
+    function engraveWallAndFloor(gl, topZ) {
+      var pts = commandsToPoints(gl.outer);
+      if (pts.length < 3) return;
+      var botZ = topZ - HC.ENGRAVE_DEPTH;
+      group.add(new THREE.Mesh(wallGeometry(pts, topZ, botZ, inset), engraveMat));
+      var floorShape = toShape(pts);
+      (gl.holes || []).forEach(function (h) {
+        var holePts = commandsToPoints(h);
+        if (holePts.length < 3) return;
+        floorShape.holes.push(toPath(holePts));
+        group.add(new THREE.Mesh(wallGeometry(holePts, topZ, botZ, inset), engraveMat));
+      });
+      var floorMesh = new THREE.Mesh(new THREE.ShapeGeometry(floorShape), engraveMat);
+      floorMesh.position.z = botZ + 0.02;
+      group.add(floorMesh);
+    }
+    glyphsAtGlobalTop.forEach(function (gl) { engraveWallAndFloor(gl, 0); });
+    if (erIsTop) glyphsInRecessRing.forEach(function (gl) { engraveWallAndFloor(gl, -erT1); });
 
     // кольцевые канавки маски — тёмная полоса на поверхности (декор). polygonOffset
     // прижимает её к верхней грани без z-файтинга (иначе на большом диске пропадает).

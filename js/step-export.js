@@ -213,6 +213,54 @@
       }
     });
 
+    // Гравировка номера/названия подложкодержателя (см. js/engraving.js
+    // computeLayout — контур уже изогнут вдоль свободной дуги у края,
+    // координаты диска). Неглубокий вырез — тем же надёжным способом (fuse
+    // всех карманов, потом одно вычитание), что и всё остальное выше; дырки
+    // самой буквы («D», «0», «8» и т.п.) — через Drawing.cut(), реальная
+    // булева операция (в отличие от Lite 3D — там дырка-в-дырке теряется,
+    // см. viewer3d.js, здесь такого ограничения нет).
+    //
+    // Занижение по краю (order.disc.edgeRecess, top-side): буквы у самого
+    // края обычно попадают ИМЕННО в занижённое кольцо (радиус > erInnerR) —
+    // там реальная поверхность уже НИЖЕ на edgeRecess.depth, чем номинальный
+    // верх (topZ). Резать от topZ, как обычно, означало бы резать «в воздухе»
+    // (материала там ещё нет на глубину depth) — карман физически не
+    // появился бы (см. регрессия пользователя). Считаем локальный верх для
+    // каждой буквы по её среднему радиусу — та же логика, что и в
+    // viewer3d.js buildGroup (erIsTop/erInnerR/glyphsInRecessRing).
+    var edgeRecess = order.disc.edgeRecess;
+    var erIsTop = !!(edgeRecess && edgeRecess.diameter > 0 && edgeRecess.depth > 0 && edgeRecess.side !== "bottom");
+    var erInnerR = erIsTop ? edgeRecess.diameter / 2 : 0;
+    var erDepth = erIsTop ? edgeRecess.depth : 0;
+    function glyphAvgRadius(cmds) {
+      var sx = 0, sy = 0;
+      cmds.forEach(function (c) { sx += c.x; sy += c.y; });
+      return Math.hypot(sx / cmds.length, sy / cmds.length);
+    }
+    // Команды контура (M/L/Q — Q настоящая квадратичная кривая, контрольная
+    // точка cx/cy) — строим НАСТОЯЩУЮ кривую через quadraticBezierCurveTo
+    // (порядок аргументов у replicad — (конец, контрольная точка), проверено
+    // вживую), а не приближаем полигоном по тесселированным точкам.
+    function drawFromCommands(cmds) {
+      var d = rep.draw([cmds[0].x, cmds[0].y]);
+      for (var i = 1; i < cmds.length; i++) {
+        var c = cmds[i];
+        d = c.cmd === "Q" ? d.quadraticBezierCurveTo([c.x, c.y], [c.cx, c.cy]) : d.lineTo([c.x, c.y]);
+      }
+      return d.close();
+    }
+    ((order.engraving && order.engraving.glyphs) || []).forEach(function (gl, gi) {
+      try {
+        var outer = drawFromCommands(gl.outer);
+        (gl.holes || []).forEach(function (hole) { outer = outer.cut(drawFromCommands(hole)); });
+        var localTopZ = (erIsTop && glyphAvgRadius(gl.outer) > erInnerR) ? topZ - erDepth : topZ;
+        cutters.push(outer.sketchOnPlane("XY", localTopZ + TOP).extrude(-(HC.ENGRAVE_DEPTH + TOP)));
+      } catch (e) {
+        warnings.push("гравировка, символ #" + (gi + 1) + ": " + ((e && e.message) || e));
+      }
+    });
+
     if (!cutters.length) return baseSolid;
 
     // ВНИМАНИЕ: два способа ускорить это уже пробовались и ОБА тихо портят

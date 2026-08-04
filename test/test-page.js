@@ -673,6 +673,17 @@ setTimeout(() => {
   check("физический диск всё равно в полный рост — r=140 (Ø280) присутствует, не сжат до зоны напыления",
     svgCoating.indexOf('r="140"') !== -1, svgCoating.slice(0, 200));
 
+  // --- столбец «Ø, мм» в таблице болванок — настоящий физический диаметр
+  // (physicalDiameter: blankDiameter, если задан отдельно, иначе diameter),
+  // а НЕ Ø полезной зоны — иначе для CSV/STEP-болванок с зоной напыления
+  // столбец показывал бы зону напыления вместо реального внешнего Ø диска ---
+  mbDisc.blankDiameter = 324.5; // отдельный от diameter=280 — симулируем реальную CSV/STEP-болванку
+  $("blanksCancelBtn").click();
+  d.querySelector('#blanksTableBody tr[data-id="' + mbDisc.id + '"]').click();
+  const mbRow = d.querySelector('#blanksTableBody tr[data-id="' + mbDisc.id + '"]');
+  check("столбец Ø — настоящий физический диаметр (324.5), а не Ø полезной зоны (280)",
+    mbRow.children[3].textContent.trim() === "324.5", mbRow.children[3].textContent);
+
   // --- загрузка своей подложки из CSV через модальное окно (FileReader → buildDiscEntry → каталог) ---
   const uploadCsv = [
     "holes-dump;1", "part;Up", "columns;name;x;y;diameter;depth;type;extra1;extra2;tapped",
